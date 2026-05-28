@@ -12,8 +12,8 @@
  */
 
 import { _decorator, Component, Node, Label, Prefab, instantiate } from 'cc';
-import { MahjongRoomBase, MahjongTile, AvailableActions, DiscardResult, MahjongEventCallbacks } from '../GameCommon/MahjongRoomBase';
-import { RoomInfo, RoundSettlementData, FinalSettlementData, PlayerSettlementInfo } from '../GameCommon/GameTypes';
+import { MahjongRoomBase, MahjongTile, AvailableActions, DiscardResult, MahjongEventCallbacks } from '../../GameCommon/MahjongRoomBase';
+import { RoomInfo, RoundSettlementData, FinalSettlementData, PlayerSettlementInfo } from '../../GameCommon/GameTypes';
 
 const { ccclass, property } = _decorator;
 

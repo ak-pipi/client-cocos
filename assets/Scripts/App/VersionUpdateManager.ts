@@ -334,7 +334,7 @@ export class VersionUpdateManager {
                 }
             };
 
-            xhr.onload = () => {
+            xhr.onload = async () => {
                 if (xhr.status === 200) {
                     const buffer = xhr.response as ArrayBuffer;
                     console.log(`[VersionUpdate] Download complete: ${buffer.byteLength} bytes`);

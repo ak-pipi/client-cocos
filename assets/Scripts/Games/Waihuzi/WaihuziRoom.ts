@@ -14,8 +14,8 @@
  */
 
 import { _decorator, Component, Node, Label } from 'cc';
-import { ZipaiRoomBase, ZipaiTile, ZipaiRank, ZipaiSuit, ZipaiAction, ZipaiAvailableActions, MeldType, ZipaiMeld, ZipaiEventCallbacks } from '../GameCommon/ZipaiRoomBase';
-import { RoomInfo, RoundSettlementData, FinalSettlementData } from '../GameCommon/GameTypes';
+import { ZipaiRoomBase, ZipaiTile, ZipaiRank, ZipaiSuit, ZipaiAction, ZipaiAvailableActions, MeldType, ZipaiMeld, ZipaiEventCallbacks } from '../../GameCommon/ZipaiRoomBase';
+import { RoomInfo, RoundSettlementData, FinalSettlementData } from '../../GameCommon/GameTypes';
 
 const { ccclass, property } = _decorator;
 

@@ -3,7 +3,7 @@
 // Email 393817707@qq.com
 // Date 2025.10.23
 
-import CryptoJS from 'crypto-js';
+import * as CryptoJS from 'crypto-js';
 
 export class AesUtils {
     // 16字节的密钥1

@@ -3,7 +3,7 @@ import { NetMsgHandler, NetMsgManager } from '../../Manager/NetMsgManager';
 import { ConnectionHandler, NetworkManager } from '../../Manager/NetworkManager';
 import { GameManager } from '../../Manager/GameManager';
 import { VoiceRecord, VoiceManager } from '../../Manager/VoiceManager';
-import { Base64 } from 'js-base64';
+import * as Base64 from 'js-base64';
 import { Client } from '../Client';
 import { CommonUtils } from '../../Utils/CommonUtils';
 import { PlayCardFailed } from '../../Common/ConstDefines';
@@ -800,7 +800,7 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
     private onVoiceServer(msg: any) {
         if (!msg) return;
         let rec: VoiceRecord = new VoiceRecord();
-        rec.data = Base64.toUint8Array(msg.base64);
+        rec.data = (Base64 as any).Base64.toUint8Array(msg.base64);
         rec.onPlayStart = () => { this.onVoicePlayStart(msg.seat, msg.playerId); };
         rec.onPlayEnd = () => { this.onVoicePlayEnd(msg.seat, msg.playerId); };
         VoiceManager.Instance.addRecord(rec);

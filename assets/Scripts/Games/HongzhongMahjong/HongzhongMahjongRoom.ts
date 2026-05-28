@@ -13,8 +13,8 @@
  */
 
 import { _decorator, Component, Node, Label, Prefab, instantiate, Vec3, Color } from 'cc';
-import { MahjongRoomBase, MahjongTile, AvailableActions, DiscardResult, MahjongEventCallbacks } from '../GameCommon/MahjongRoomBase';
-import { RoomInfo, RoundSettlementData, FinalSettlementData } from '../GameCommon/GameTypes';
+import { MahjongRoomBase, MahjongTile, AvailableActions, DiscardResult, MahjongEventCallbacks } from '../../GameCommon/MahjongRoomBase';
+import { RoomInfo, RoundSettlementData, FinalSettlementData } from '../../GameCommon/GameTypes';
 
 const { ccclass, property } = _decorator;
 

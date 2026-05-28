@@ -3,8 +3,8 @@
 // Email 393817707@qq.com
 // Date 2025.10.24
 
-import CryptoJS from 'crypto-js';
-import { Base64 } from 'js-base64';
+import * as CryptoJS from 'crypto-js';
+import * as Base64 from 'js-base64';
 
 export class CommonUtils {
     private static readonly CapitalLetters: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -166,13 +166,13 @@ export class CommonUtils {
 
     public static encodeBase64(text: string): string {
         if (!text) return null;
-        let base64: string = Base64.encode(text);
+        let base64: string = (Base64 as any).Base64.encode(text);
         return base64;
     }
 
     public static decodeBase64(base64: string): string {
         if (!base64) return null;
-        let text: string = Base64.decode(base64);
+        let text: string = (Base64 as any).Base64.decode(base64);
         return text;
     }
 

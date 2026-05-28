@@ -1,9 +1,6 @@
 // 网络消息管理者
-/*import 'core-js'
-import { Encoder, Decoder } from "@msgpack/msgpack";*/
-//import { default as msgpack } from "msgpack-lite";
-import msgpack from "msgpack-lite/dist/msgpack.min.js";
-import { Base64 } from 'js-base64';
+import * as msgpack from "msgpack-lite";
+import * as Base64 from 'js-base64';
 import { NetworkManager } from './NetworkManager';
 
 async function waitMilliseconds(ms: number) {
@@ -164,7 +161,7 @@ export class NetMsgManager {
 
     private onDecode(data: any) {
         try {
-            let buf: Uint8Array = Base64.toUint8Array(data.msgPack);
+            let buf: Uint8Array = (Base64 as any).Base64.toUint8Array(data.msgPack);
             let mw = new MsgWrapper();
             mw.msgType = data.msgType;
             mw.msg = msgpack.decode(buf);

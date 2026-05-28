@@ -14,8 +14,8 @@
  */
 
 import { NetworkManager } from '../Manager/NetworkManager';
-import msgpack from 'msgpack-lite/dist/msgpack.min.js';
-import { Base64 } from 'js-base64';
+import * as msgpack from 'msgpack-lite';
+import * as Base64 from 'js-base64';
 
 // ==================== 事件类型定义 ====================
 
@@ -194,7 +194,7 @@ export class WsEventRouter {
             // 包装成兼容格式发送
             const wrappedData = {
                 msgType: '__event__',
-                msgPack: Base64.fromUint8Array(buf),
+                msgPack: (Base64 as any).Base64.fromUint8Array(buf),
             };
             const finalBuf = msgpack.encode(wrappedData);
 

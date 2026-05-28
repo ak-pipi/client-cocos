@@ -15,6 +15,8 @@
 
 import { _decorator, Component, Node, AudioSource, AudioClip, resources, AssetManager, director, game } from 'cc';
 
+const { ccclass, property } = _decorator;
+
 // ==================== 类型定义 ====================
 
 /** 音频轨道类型 */

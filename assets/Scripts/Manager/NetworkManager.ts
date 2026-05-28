@@ -1,7 +1,6 @@
 // 网络相关
-//import { default as msgpack } from "msgpack-lite";
-import msgpack from "msgpack-lite/dist/msgpack.min.js";
-import { Base64 } from 'js-base64';
+import * as msgpack from "msgpack-lite";
+import * as Base64 from 'js-base64';
 import { Client } from "../Game/Client";
 import { GameManager } from "./GameManager";
 import { NetMsgManager, NetMsgHandler, MsgWrapper } from "./NetMsgManager";
@@ -309,7 +308,7 @@ export class NetworkManager implements NetMsgHandler  {
             }
             let data = {
                 msgType: msgType,
-                msgPack: Base64.fromUint8Array(buf)
+                msgPack: (Base64 as any).Base64.fromUint8Array(buf)
             };
             buf = msgpack.encode(data);
             this.connection.send(buf);
