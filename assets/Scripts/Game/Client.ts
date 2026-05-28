@@ -3,7 +3,7 @@
 // Email 393817707@qq.com
 // Date 2025.10.22
 
-import { _decorator, Component, Node, Prefab, instantiate, AudioSource, AudioClip } from 'cc';
+import { _decorator, Component, Node, Prefab, instantiate, AudioSource, AudioClip, director } from 'cc';
 import { GameManager } from '../Manager/GameManager';
 import { NetMsgManager } from '../Manager/NetMsgManager';
 import { VoiceManager } from '../Manager/VoiceManager';
@@ -14,6 +14,14 @@ import { Login } from './Login';
 import { GameLoader } from './GameLoader';
 import { NetworkManager } from '../Manager/NetworkManager';
 import { Hall } from './Hall';
+import { AppLayoutAdapter } from './AppLayoutAdapter';
+import { ResourceManager } from '../App/ResourceManager';
+import { GAME_ASSET_CONFIGS } from '../App/GameAssetConfigs';
+import { AudioManager } from '../App/AudioManager';
+import { EffectManager } from '../App/EffectManager';
+import { GameSettings } from '../App/GameSettings';
+import { CrashReporter } from '../App/CrashReporter';
+import { PerformanceMonitor } from '../App/PerformanceMonitor';
 const { ccclass, property } = _decorator;
 
 @ccclass('Client')
@@ -65,6 +73,7 @@ export class Client extends Component {
     protected onLoad(): void {
         if (Client._instance === null) {
             Client._instance = this;
+            this.ensureLayoutAdapter();
         } else {
             console.log("Client is already existed!");
             this.destroy();
@@ -77,12 +86,19 @@ export class Client extends Component {
         NetMsgManager.Instance.init();
         VoiceManager.Instance.start();
         this.setMusicVolume();
+        this.initResourceManager();
+        this.initAudioManager();
+        this.initEffectManager();
+        this.initGameSettings();
+        this.initCrashReporter();
+        this.initPerformanceMonitor();
     }
 
     update(deltaTime: number) {
         NetMsgManager.Instance.handleMessages();
         NetworkManager.Instance.update(deltaTime);
         GameManager.Instance.heartbeat();
+        PerformanceMonitor.Instance.onUpdate(deltaTime);
     }
     
     public onLoadComplete() {
@@ -247,5 +263,56 @@ export class Client extends Component {
     public showConnecting(show: boolean) {
         this.connect.active = show;
     }
-}
 
+    private ensureLayoutAdapter() {
+        if (AppLayoutAdapter.Instance) return;
+        const node = new Node('AppLayoutAdapter');
+        node.parent = this.node;
+        node.addComponent(AppLayoutAdapter);
+        director.addPersistRootNode(node);
+    }
+
+    private initResourceManager() {
+        // 注册所有游戏资源配置
+        ResourceManager.Instance.registerGames(GAME_ASSET_CONFIGS);
+        console.log(`[Client] ResourceManager initialized with ${GAME_ASSET_CONFIGS.length} games registered`);
+    }
+
+    private initAudioManager() {
+        // 初始化全局音频引擎
+        AudioManager.Instance.init();
+        console.log('[Client] AudioManager initialized');
+    }
+
+    private initEffectManager() {
+        // 初始化特效管理器（挂载到客户端根节点）
+        EffectManager.Instance.init(this.node);
+        console.log('[Client] EffectManager initialized');
+    }
+
+    private initGameSettings() {
+        // 初始化设置管理器（加载持久化设置并应用）
+        GameSettings.Instance.init();
+        console.log('[Client] GameSettings initialized');
+    }
+
+    private initCrashReporter() {
+        // 初始化崩溃日志上报系统
+        CrashReporter.Instance.init({
+            reportUrl: '',  // TODO: 替换为实际的上报地址
+            enableRealTimeReport: true,
+            sampleRate: 1.0,
+        });
+        console.log('[Client] CrashReporter initialized');
+    }
+
+    private initPerformanceMonitor() {
+        // 初始化性能监控系统
+        PerformanceMonitor.Instance.init({
+            enabled: true,
+            reportUrl: '',  // TODO: 替换为实际的上报地址
+            reportIntervalMs: 60000,
+        });
+        console.log('[Client] PerformanceMonitor initialized');
+    }
+}
