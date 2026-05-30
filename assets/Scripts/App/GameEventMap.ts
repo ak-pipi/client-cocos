@@ -7,7 +7,7 @@
  * Author: AI Assistant
  */
 
-import { GameFactory, GameId } from './GameFactory';
+import { GameFactory } from './GameFactory';
 
 // ==================== 事件类型常量 ====================
 

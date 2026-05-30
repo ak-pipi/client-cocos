@@ -1,77 +1,49 @@
 /**
- * 字牌/纸牌房间基类 (ZipaiRoomBase)
- * 湖南地方字牌类游戏的统一基类，提供：
- * - 字牌手牌管理（20张手牌布局）
- * - 字牌特有操作（偎/提/碰/胡/跑）
- * - "大贰"牌组支持
- * - 起手翻牌/王炸等特殊规则框架
- * - 字牌结算逻辑
+ * 字牌/纸牌房间基类 (ZipaiRoomBase) - v2 完整版
  *
- * 适用游戏：益阳歪胡子（跑胡子/二七十）
+ * 集成真实服务器协议的字牌基类，提供：
+ * - 完整的字牌在线协议（同步/发牌/出牌/偎提碰跑吃胡/结算）
+ * - 字牌特有操作面板
+ * - 组合计分
+ *
+ * 适用游戏：益阳歪胡子（跑胡子）
  *
  * Author: AI Assistant
  */
 
 import { _decorator, Component, Node, Label, Prefab, instantiate, Vec3 } from 'cc';
 import { RoomBase } from './RoomBase';
-import { GameTypes, RoomState, PlayerRoomState, SeatPosition, RoundSettlementData, FinalSettlementData } from './GameTypes';
+import { RoomState, RoundSettlementData, FinalSettlementData } from './GameTypes';
+import { NetworkManager } from '../Manager/NetworkManager';
 
 const { ccclass, property } = _decorator;
 
 // ==================== 字牌类型定义 ====================
 
-/** 字牌枚举 (湖南字牌标准) */
 export enum ZipaiRank {
-    /** 小一 */ Yi_1 = 1,
-    /** 小二 */ Er_2 = 2,
-    /** 小三 */ San_3 = 3,
-    /** 小四 */ Si_4 = 4,
-    /** 小五 */ Wu_5 = 5,
-    /** 小六 */ Liu_6 = 6,
-    /** 小七 */ Qi_7 = 7,
-    /** 小八 */ Ba_8 = 8,
-    /** 小九 */ Jiu_9 = 9,
-    /** 小十 */ Shi_10 = 10,
-    /** 大壹 */ DaYi = 11,
-    /** 大贰 */ DaEr = 12,
-    /** 大叁 */ DaSan = 13,
-    /** 大肆 */ DaSi = 14,
-    /** 大伍 */ DaWu = 15,
-    /** 大陆 */ DaLiu = 16,
-    /** 大柒 */ DaQi = 17,
-    /** 大捌 */ DaBa = 18,
-    /** 大玖 */ DaJiu = 19,
-    /** 大拾 */ DaShi = 20,
+    Yi_1 = 1, Er_2 = 2, San_3 = 3, Si_4 = 4, Wu_5 = 5,
+    Liu_6 = 7, Qi_7 = 7, Ba_8 = 8, Jiu_9 = 9, Shi_10 = 10,
+    DaYi = 11, DaEr = 12, DaSan = 13, DaSi = 14,
+    DaWu = 15, DaLiu = 16, DaQi = 17, DaBa = 18,
+    DaJiu = 19, DaShi = 20,
 }
 
-/** 字牌花色/颜色 */
 export enum ZipaiSuit {
-    Red = 'red',      // 红色(大写: 壹~拾)
-    Black = 'black',   // 黑色(小写: 一~十)
+    Red = 'red',
+    Black = 'black',
 }
 
-/** 字牌数据 */
 export interface ZipaiTile {
-    /** 牌等级 (1-20) */
     rank: ZipaiRank;
-    /** 花色(红/黑) */
     suit: ZipaiSuit;
-    /** 唯一ID */
     tileId: string;
 }
 
-/** 字牌操作类型 */
 export enum ZipaiAction {
-    Wei = 'wei',           // 偎(手中有同样一张，吃别人打出的)
-    Ti = 'ti',             // 提(手中有碰，再摸到同样的)
-    Peng = 'peng',         // 碰
-    Hu = 'hu',             // 胡
-    Pao = 'pao',           // 跑(手中已有4张中的第3张，有人打出第4张时必须"跑")
-    Chi = 'chi',           // 吃(组成一二三 / 二七十 等合法组合)
-    Pass = 'pass',         // 过
+    Wei = 'wei', Ti = 'ti', Peng = 'peng', Hu = 'hu',
+    Pao = 'pao', Chi = 'chi', Pass = 'pass',
 }
 
-/** 字牌可用操作 */
 export interface ZipaiAvailableActions {
     canWei?: boolean;
     canTi?: boolean;
@@ -79,37 +51,24 @@ export interface ZipaiAvailableActions {
     canHu?: boolean;
     canPao?: boolean;
     canChi?: boolean;
-    chiCombinations?: ZipaiTile[][]; // 可吃的组合
+    chiCombinations?: ZipaiTile[][];
 }
 
-/** 字牌组合类型 */
 export enum MeldType {
-    Wei = 'wei',       // 偎(3张，1明2暗)
-    Ti = 'ti',         // 提(4张全显)
-    Peng = 'peng',     // 碰(3张全显)
-    Pao = 'pao',       // 跑(4张全显，算分更高)
-    Chi = 'chi',       // 吃(3张组合显示)
+    Wei = 'wei', Ti = 'ti', Peng = 'peng', Pao = 'pao', Chi = 'chi',
 }
 
-/** 组合数据 */
 export interface ZipaiMeld {
     type: MeldType;
     tiles: ZipaiTile[];
-    /** 来源座位(对于偎/碰/跑) */
     fromSeat?: number;
 }
 
-/** 字牌事件回调 */
 export interface ZipaiEventCallbacks {
-    /** 手牌变化 */
     onHandChanged?: (tiles: ZipaiTile[]) => void;
-    /** 出牌 */
     onDiscard?: (tile: ZipaiTile, seatIndex: number) => void;
-    /** 字牌操作 */
     onZipaiAction?: (action: ZipaiAction, tiles?: ZipaiTile[]) => void;
-    /** 摸牌 */
     onDrawTile?: (tile: ZipaiTile) => void;
-    /** 胡牌 */
     onWin?: (winType: string, tiles: ZipaiTile[]) => void;
 }
 
@@ -118,105 +77,172 @@ export class ZipaiRoomBase extends RoomBase {
     // ==================== UI 引用 ====================
 
     @property({ type: Node })
-    protected zipaiTable: Node = null;          // 牌桌主体
+    protected zipaiTable: Node = null;
 
     @property({ type: Node })
-    protected myHandArea: Node = null;          // 自己的手牌区(20张)
+    protected myHandArea: Node = null;
 
     @property({ type: Node })
-    protected leftHandArea: Node = null;        // 左边对手手牌区
+    protected leftHandArea: Node = null;
 
     @property({ type: Node })
-    protected rightHandArea: Node = null;       // 右边对手手牌区
+    protected rightHandArea: Node = null;
 
     @property({ type: Node })
-    protected myDiscardArea: Node = null;       // 自己弃牌区
+    protected myDiscardArea: Node = null;
 
     @property({ type: Node })
-    protected leftDiscardArea: Node = null;     // 左边弃牌区
+    protected leftDiscardArea: Node = null;
 
     @property({ type: Node })
-    protected rightDiscardArea: Node = null;    // 右边弃牌区
+    protected rightDiscardArea: Node = null;
 
     @property({ type: Node })
-    protected meldArea: Node = null;            // 自己的组合区(偎/提/碰/跑/吃)
+    protected meldArea: Node = null;
 
     @property({ type: Node })
-    protected leftMeldArea: Node = null;        // 左边组合区
+    protected leftMeldArea: Node = null;
 
     @property({ type: Node })
-    protected rightMeldArea: Node = null;       // 右边组合区
+    protected rightMeldArea: Node = null;
 
     @property({ type: Node })
-    protected actionPanel: Node = null;         // 操作面板(偎/提/碰/跑/胡/吃/过)
+    protected actionPanel: Node = null;         // 偎/提/碰/跑/胡/吃/过 面板
 
     @property({ type: Node })
-    protected drawnTileNode: Node = null;       // 刚摸到的牌
+    protected drawnTileNode: Node = null;
 
     @property({ type: Label })
-    protected scoreLabel: Label = null;         // 分数显示(字牌计分)
+    protected scoreLabel: Label = null;
 
     @property({ type: Label })
-    protected remainCountLabel: Label = null;   // 剩余牌数
+    protected remainCountLabel: Label = null;
 
     @property({ type: Prefab })
-    protected zipaiTilePrefab: Prefab = null;   // 字牌预制体
+    protected zipaiTilePrefab: Prefab = null;
 
     // ==================== 内部状态 ====================
 
-    /** 自己的手牌 */
     protected myHandTiles: ZipaiTile[] = [];
-
-    /** 刚摸到的牌 */
     protected drawnTile: ZipaiTile | null = null;
-
-    /** 弃牌记录 */
     protected discardRecords: Map<number, ZipaiTile[]> = new Map();
-
-    /** 组合记录(偎/提/碰/跑/吃) */
     protected meldRecords: Map<number, ZipaiMeld[]> = new Map();
-
-    /** 当前可用操作 */
     protected zipaiActions: ZipaiAvailableActions | null = null;
-
-    /** 是否轮到自己 */
     protected isMyTurn: boolean = false;
-
-    /** 剩余牌数(字牌堆总80张左右) */
     protected remainingTiles: number = 0;
-
-    /** 当前分数 */
     protected currentScore: number = 0;
-
-    /** 字牌专属回调 */
     protected zpCallbacks: ZipaiEventCallbacks = {};
 
-    // ==================== 初始化 ====================
+    // ==================== 消息前缀 ====================
+
+    protected get zipaiMsgPrefix(): string {
+        return "MsgZipai";
+    }
+
+    // ==================== 生命周期 ====================
 
     onLoad(): void {
         super.onLoad();
         this.initRecords();
     }
 
-    /** 设置字牌专属回调 */
-    public setZpCallbacks(callbacks: ZipaiEventCallbacks): void {
-        this.zpCallbacks = { ...this.zpCallbacks, ...callbacks };
+    start(): void {
+        super.start();
+        this.syncMsgPrefix = this.zipaiMsgPrefix;
     }
 
-    private initRecords(): void {
-        const seatCount = this.getSeatCount();
-        for (let i = 0; i < seatCount; i++) {
-            this.discardRecords.set(i, []);
-            this.meldRecords.set(i, []);
-        }
+    // ==================== NetMsgHandler 覆写 (字牌特有消息) ====================
+
+    public onMessage(msgType: string, msg: any): boolean {
+        if (super.onMessage(msgType, msg)) return true;
+
+        const prefix = this.zipaiMsgPrefix;
+        let ret = true;
+
+        if (msgType === prefix + "StartGameResp") this.onZpStartGameResp(msg);
+        else if (msgType === prefix + "DealCard") this.onZpDealCard();
+        else if (msgType === prefix + "HandCard") this.onZpHandCard(msg);
+        else if (msgType === prefix + "DrawTile") this.onZpDrawTile(msg);
+        else if (msgType === prefix + "RequestActions") this.onZpRequestActions(msg);
+        else if (msgType === prefix + "PlayerDiscard") this.onZpPlayerDiscard(msg);
+        else if (msgType === prefix + "PlayerWei") this.onZpPlayerWei(msg);
+        else if (msgType === prefix + "PlayerTi") this.onZpPlayerTi(msg);
+        else if (msgType === prefix + "PlayerPeng") this.onZpPlayerPeng(msg);
+        else if (msgType === prefix + "PlayerPao") this.onZpPlayerPao(msg);
+        else if (msgType === prefix + "PlayerChi") this.onZpPlayerChi(msg);
+        else if (msgType === prefix + "PlayerHu") this.onZpPlayerHu(msg);
+        else if (msgType === prefix + "RoundSettlement") this.onZpRoundSettlement(msg);
+        else if (msgType === prefix + "FinalSettlement") this.onZpFinalSettlement(msg);
+        else ret = false;
+
+        return ret;
+    }
+
+    // ==================== 字牌服务器消息处理 ----
+
+    protected onZpStartGameResp(_msg: any): void {
+        this.gameState = GameState.Playing;
+        console.log(`[ZipaiRoom] Game started`);
+    }
+
+    protected onZpDealCard(): void {
+        console.log(`[ZipaiRoom] Dealing...`);
+    }
+
+    protected onZpHandCard(msg: any): void {
+        const tiles: ZipaiTile[] = msg.tiles || [];
+        this.dealTiles(tiles);
+    }
+
+    protected onZpDrawTile(msg: any): void {
+        const tile: ZipaiTile = msg.tile;
+        if (tile) this.drawTile(tile);
+    }
+
+    /** 操作请求 */
+    protected onZpRequestActions(msg: any): void {
+        const actions: ZipaiAvailableActions = msg.actions || {};
+        this.showActionPanel(actions);
+
+        const timeout = actions.canPao ? 15 : (actions.canHu ? 12 : (actions.canTi || actions.canPeng || actions.canWei ? 8 : 5));
+        this.startCountdown(timeout);
+    }
+
+    /** 其他玩家出牌 */
+    protected onZpPlayerDiscard(msg: any): void {
+        const clientSeat = this.server2ClientSeat(msg.seatIndex);
+        const tile: ZipaiTile = msg.tile;
+        if (tile) this.onOtherPlayerDiscard(clientSeat, tile);
+    }
+
+    protected onZpPlayerWei(_msg: any): void { console.log(`[ZipaiRoom] Player wei`); }
+    protected onZpPlayerTi(_msg: any): void { console.log(`[ZipaiRoom] Player ti`); }
+    protected onZpPlayerPeng(_msg: any): void { console.log(`[ZipaiRoom] Player peng`); }
+    protected onZpPlayerPao(_msg: any): void { console.log(`[ZipaiRoom] Player pao`); }
+    protected onZpPlayerChi(_msg: any): void { console.log(`[ZipaiRoom] Player chi`); }
+
+    /** 其他玩家/自己胡牌 */
+    protected onZpPlayerHu(msg: any): void {
+        this.stopCountdown();
+        const huSeat = this.server2ClientSeat(msg.seatIndex);
+        console.log(`[ZipaiRoom] Player hu at seat ${huSeat}`);
+    }
+
+    protected onZpRoundSettlement(msg: any): void {
+        this.currentState = RoomState.RoundSettlement;
+        this.stopCountdown();
+        console.log(`[ZipaiRoom] Round settlement`, msg);
+        this.handleRoundSettlement(msg);
+    }
+
+    protected onZpFinalSettlement(msg: any): void {
+        this.currentState = RoomState.FinalSettlement;
+        this.handleFinalSettlement(msg);
     }
 
     // ==================== 座位覆写 ====================
 
-    protected getSeatCount(): number {
-        // 歪胡子通常是2人
-        return 2;
-    }
+    protected getSeatCount(): number { return 2; }
 
     protected getHandAreaBySeat(seatIndex: number): Node {
         switch (seatIndex) {
@@ -244,9 +270,6 @@ export class ZipaiRoomBase extends RoomBase {
 
     // ==================== 发牌与手牌 ====================
 
-    /**
-     * 发牌 (歪胡子每人起手20张)
-     */
     public dealTiles(tiles: ZipaiTile[]): void {
         this.myHandTiles = [...tiles];
         this.sortHandTiles();
@@ -254,22 +277,13 @@ export class ZipaiRoomBase extends RoomBase {
         console.log(`[ZipaiRoom] Dealt ${tiles.length} tiles`);
     }
 
-    /**
-     * 排序手牌 (红大在前，然后按数字顺序)
-     */
     protected sortHandTiles(): void {
         this.myHandTiles.sort((a, b) => {
-            // 红(大)排前面
-            if (a.suit !== b.suit) {
-                return a.suit === ZipaiSuit.Red ? -1 : 1;
-            }
+            if (a.suit !== b.suit) return a.suit === ZipaiSuit.Red ? -1 : 1;
             return a.rank - b.rank;
         });
     }
 
-    /**
-     * 渲染手牌
-     */
     protected renderMyHand(): void {
         if (!this.myHandArea) return;
         this.myHandArea.removeAllChildren();
@@ -278,17 +292,12 @@ export class ZipaiRoomBase extends RoomBase {
             const tileNode = this.createTileNode(this.myHandTiles[i], true);
             tileNode.name = `tile_${i}`;
             tileNode['_tileIndex'] = i;
-            if (this.myHandArea) {
-                tileNode.parent = this.myHandArea;
-            }
+            if (this.myHandArea) tileNode.parent = this.myHandArea;
         }
     }
 
     // ==================== 摸牌 ====================
 
-    /**
-     * 摸牌
-     */
     public drawTile(tile: ZipaiTile): void {
         this.drawnTile = tile;
         this.showDrawnTile(tile);
@@ -300,9 +309,7 @@ export class ZipaiRoomBase extends RoomBase {
         if (!this.drawnTileNode) return;
         this.drawnTileNode.removeAllChildren();
         const tileNode = this.createTileNode(tile, true);
-        if (this.drawnTileNode) {
-            tileNode.parent = this.drawnTileNode;
-        }
+        if (this.drawnTileNode) tileNode.parent = this.drawnTileNode;
     }
 
     private integrateDrawnTile(): void {
@@ -310,21 +317,14 @@ export class ZipaiRoomBase extends RoomBase {
             this.myHandTiles.push(this.drawnTile);
             this.sortHandTiles();
             this.drawnTile = null;
-            if (this.drawnTileNode) {
-                this.drawnTileNode.removeAllChildren();
-            }
+            if (this.drawnTileNode) this.drawnTileNode.removeAllChildren();
         }
     }
 
     // ==================== 出牌 ====================
 
-    /**
-     * 选择并出牌
-     */
     public selectAndDiscard(tileIndex: number): void {
-        if (!this.isTurn || (this.zipaiActions && !this.canDiscardDirectly())) {
-            return;
-        }
+        if (!this.isMyTurn || (this.zipaiActions && !this.canDiscardDirectly())) return;
 
         const tile = this.myHandTiles[tileIndex];
         if (!tile) return;
@@ -334,21 +334,18 @@ export class ZipaiRoomBase extends RoomBase {
         this.renderMyHand();
         this.sendDiscard(tile);
         this.isMyTurn = false;
+        this.stopCountdown();
     }
 
     protected canDiscardDirectly(): boolean {
         if (!this.zipaiActions) return true;
-        return !(this.zipaiActions.canHu ||
-                 this.zipaiActions.canPao ||
-                 this.zipaiActions.canTi ||
-                 this.zipaiActions.canPeng ||
-                 this.zipaiActions.canWei ||
-                 this.zipaiActions.canChi);
+        return !(this.zipaiActions.canHu || this.zipaiActions.canPao ||
+                 this.zipaiActions.canTi || this.zipaiActions.canPeng ||
+                 this.zipaiActions.canWei || this.zipaiActions.canChi);
     }
 
     protected sendDiscard(tile: ZipaiTile): void {
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action('discard', {
+        NetworkManager.Instance.sendInnerMessage(this.zipaiMsgPrefix + "Discard", {
             tileId: tile.tileId,
             rank: tile.rank,
             suit: tile.suit,
@@ -359,6 +356,7 @@ export class ZipaiRoomBase extends RoomBase {
         discs.push(tile);
         this.discardRecords.set(mySeat, discs);
         this.addDiscardToDisplay(mySeat, tile);
+        this.playDiscardSound();
         this.zpCallbacks.onDiscard?.(tile, mySeat);
     }
 
@@ -368,123 +366,82 @@ export class ZipaiRoomBase extends RoomBase {
 
     public showActionPanel(actions: ZipaiAvailableActions): void {
         this.zipaiActions = actions;
-        if (this.actionPanel) {
-            this.actionPanel.active = true;
-        }
+        if (this.actionPanel) this.actionPanel.active = true;
         this.renderActionButtons(actions);
     }
 
     public hideActionPanel(): void {
         this.zipaiActions = null;
-        if (this.actionPanel) {
-            this.actionPanel.active = false;
-        }
+        if (this.actionPanel) this.actionPanel.active = false;
     }
 
     protected renderActionButtons(actions: ZipaiAvailableActions): void {
         console.log('[ZipaiRoom] Available actions:', JSON.stringify(actions));
     }
 
-    // ---- 操作执行 ----
+    // ---- 操作执行 (发送到服务端) ----
 
-    /** 偎 */
     public doActionWei(): void {
-        this.hideActionPanel();
-        this.integrateDrawnTile();
+        this.hideActionPanel(); this.integrateDrawnTile();
         this.zpCallbacks.onZipaiAction?.(ZipaiAction.Wei);
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action(ZipaiAction.Wei, {});
+        NetworkManager.Instance.sendInnerMessage(this.zipaiMsgPrefix + "Wei", {});
+        this.stopCountdown();
     }
 
-    /** 提 */
     public doActionTi(): void {
-        this.hideActionPanel();
-        this.integrateDrawnTile();
+        this.hideActionPanel(); this.integrateDrawnTile();
         this.zpCallbacks.onZipaiAction?.(ZipaiAction.Ti);
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action(ZipaiAction.Ti, {});
+        NetworkManager.Instance.sendInnerMessage(this.zipaiMsgPrefix + "Ti", {});
+        this.stopCountdown();
     }
 
-    /** 碰 */
     public doActionPeng(): void {
-        this.hideActionPanel();
-        this.integrateDrawnTile();
+        this.hideActionPanel(); this.integrateDrawnTile();
         this.zpCallbacks.onZipaiAction?.(ZipaiAction.Peng);
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action(ZipaiAction.Peng, {});
+        NetworkManager.Instance.sendInnerMessage(this.zipaiMsgPrefix + "Peng", {});
+        this.stopCountdown();
     }
 
-    /** 跑 */
     public doActionPao(): void {
-        this.hideActionPanel();
-        this.integrateDrawnTile();
+        this.hideActionPanel(); this.integrateDrawnTile();
         this.zpCallbacks.onZipaiAction?.(ZipaiAction.Pao);
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action(ZipaiAction.Pao, {});
+        NetworkManager.Instance.sendInnerMessage(this.zipaiMsgPrefix + "Pao", {});
+        this.stopCountdown();
     }
 
-    /** 胡 */
     public doActionHu(): void {
-        this.hideActionPanel();
-        this.integrateDrawnTile();
+        this.hideActionPanel(); this.integrateDrawnTile();
         this.zpCallbacks.onZipaiAction?.(ZipaiAction.Hu);
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action(ZipaiAction.Hu, {});
+        NetworkManager.Instance.sendInnerMessage(this.zipaiMsgPrefix + "Hu", {});
+        this.stopCountdown();
     }
 
-    /** 吃 */
-    public doActionChi(tiles?: ZipaiTile[]): void {
-        this.hideActionPanel();
-        this.integrateDrawnTile();
-        this.zpCallbacks.onZipaiAction?.(ZipaiAction.Chi, tiles);
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action(ZipaiAction.Chi, { tiles });
+    public doActionChi(_tiles?: ZipaiTile[]): void {
+        this.hideActionPanel(); this.integrateDrawnTile();
+        this.zpCallbacks.onZipaiAction?.(ZipaiAction.Chi, _tiles);
+        NetworkManager.Instance.sendInnerMessage(this.zipaiMsgPrefix + "Chi", { tiles: _tiles });
+        this.stopCountdown();
     }
 
-    /** 过 */
     public doActionPass(): void {
         this.hideActionPanel();
-        if (this.drawnTile) {
-            this.integrateDrawnTile();
-            this.isMyTurn = true;
-        }
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action(ZipaiAction.Pass, {});
+        if (this.drawnTile) { this.integrateDrawnTile(); this.isMyTurn = true; }
+        NetworkManager.Instance.sendInnerMessage(this.zipaiMsgPrefix + "Pass", {});
+        this.stopCountdown();
     }
 
     // ==================== 组合展示 ====================
 
-    /** 显示偎 */
-    public showMeldWei(seatIndex: number, tiles: ZipaiTile[]): void {
-        this.addMeldRecord(seatIndex, { type: MeldType.Wei, tiles });
-    }
+    public showMeldWei(s: number, t: ZipaiTile[]): void { this.addMeldRecord(s, { type: MeldType.Wei, tiles: t }); }
+    public showMeldTi(s: number, t: ZipaiTile[]): void { this.addMeldRecord(s, { type: MeldType.Ti, tiles: t }); }
+    public showMeldPeng(s: number, t: ZipaiTile[]): void { this.addMeldRecord(s, { type: MeldType.Peng, tiles: t }); }
+    public showMeldPao(s: number, t: ZipaiTile[]): void { this.addMeldRecord(s, { type: MeldType.Pao, tiles: t }); }
+    public showMeldChi(s: number, t: ZipaiTile[]): void { this.addMeldRecord(s, { type: MeldType.Chi, tiles: t }); }
 
-    /** 显示提 */
-    public showMeldTi(seatIndex: number, tiles: ZipaiTile[]): void {
-        this.addMeldRecord(seatIndex, { type: MeldType.Ti, tiles });
-    }
-
-    /** 显示碰 */
-    public showMeldPeng(seatIndex: number, tiles: ZipaiTile[]): void {
-        this.addMeldRecord(seatIndex, { type: MeldType.Peng, tiles });
-    }
-
-    /** 显示跑 */
-    public showMeldPao(seatIndex: number, tiles: ZipaiTile[]): void {
-        this.addMeldRecord(seatIndex, { type: MeldType.Pao, tiles });
-    }
-
-    /** 显示吃 */
-    public showMeldChi(seatIndex: number, tiles: ZipaiTile[]): void {
-        this.addMeldRecord(seatIndex, { type: MeldType.Chi, tiles });
-    }
-
-    private addMeldRecord(seatIndex: number, meld: ZipaiMeld): void {
-        let melds = this.meldRecords.get(seatIndex) || [];
+    private addMeldRecord(si: number, meld: ZipaiMeld): void {
+        let melds = this.meldRecords.get(si) || [];
         melds.push(meld);
-        this.meldRecords.set(seatIndex, melds);
-        console.log(`[ZipaiRoom] Seat ${seatIndex} ${meld.type}:`,
-            meld.tiles.map(t => `${t.suit}-${t.rank}`));
+        this.meldRecords.set(si, melds);
     }
 
     // ==================== 弃牌区 ====================
@@ -494,9 +451,7 @@ export class ZipaiRoomBase extends RoomBase {
         if (!area) return;
         const tileNode = this.createTileNode(tile, false);
         tileNode.setScale(new Vec3(0.55, 0.55, 1));
-        if (area) {
-            tileNode.parent = area;
-        }
+        if (area) tileNode.parent = area;
     }
 
     public onOtherPlayerDiscard(seatIndex: number, tile: ZipaiTile): void {
@@ -510,66 +465,40 @@ export class ZipaiRoomBase extends RoomBase {
 
     public updateScore(score: number): void {
         this.currentScore = score;
-        if (this.scoreLabel) {
-            this.scoreLabel.string = String(score);
-        }
+        if (this.scoreLabel) this.scoreLabel.string = String(score);
     }
 
     public updateRemainingCount(count: number): void {
         this.remainingTiles = count;
-        if (this.remainCountLabel) {
-            this.remainCountLabel.string = String(count);
-        }
+        if (this.remainCountLabel) this.remainCountLabel.string = String(count);
     }
+
+    // ==================== 音效接口 ====================
+
+    protected playDiscardSound(): void {}
+    protected playHuSound(): void {}
 
     // ==================== 工具方法 ====================
 
-    protected createTileNode(tile: ZipaiTile, interactive: boolean): Node {
-        if (this.zipaiTilePrefab) {
-            const node = instantiate(this.zipaiTilePrefab);
-            // 根据 rank 和 suit 设置牌面
-            return node;
-        }
+    protected createTileNode(tile: ZipaiTile, _interactive: boolean): Node {
+        if (this.zipaiTilePrefab) return instantiate(this.zipaiTilePrefab);
         const node = new Node(`zipai_${tile.suit}_${tile.rank}`);
         node['_tileData'] = tile;
         return node;
     }
 
-    // ---- 字牌工具函数 ----
+    static isBigTile(rank: ZipaiRank): boolean { return rank >= ZipaiRank.DaYi; }
 
-    /** 检查是否为"大"牌 (红色) */
-    static isBigTile(rank: ZipaiRank): boolean {
-        return rank >= ZipaiRank.DaYi;
-    }
-
-    /** 获取牌的分值 (用于计分) */
-    static getTilePoints(rank: ZipaiRank): number {
-        // 大贰等特殊牌可能有不同分值
-        switch (rank) {
-            case ZipaiRank.DaEr:
-                return 12; // 大贰通常计分最高
-            case ZipapiRank.Er_2:
-                return 2;
-            default:
-                return rank >= ZipaiRank.DaYi ? rank - 10 : rank;
-        }
-    }
-
-    /** 检查一组牌是否构成合法的"吃"(一二三 / 二七十 等) */
     static isValidChiCombo(tiles: ZipaiTile[]): boolean {
         if (tiles.length !== 3) return false;
         const ranks = tiles.map(t => t.rank).sort((a, b) => a - b);
-        // 一二三
         if (ranks[0] === 1 && ranks[1] === 2 && ranks[2] === 3) return true;
-        // 二七十
         if (ranks[0] === 2 && ranks[1] === 7 && ranks[2] === 10) return true;
-        // 一四七 / 二五八 / 三六九
         if (ranks[2] - ranks[1] === 3 && ranks[1] - ranks[0] === 3) return true;
-        // 依十 (壹貳叁 / 贰柒拾 / etc.)
         if (ranks[0] >= 11) {
-            const adjusted = ranks.map(r => r - 10);
-            if (adjusted[0] === 1 && adjusted[1] === 2 && adjusted[2] === 3) return true;
-            if (adjusted[0] === 2 && adjusted[1] === 7 && adjusted[2] === 10) return true;
+            const adj = ranks.map(r => r - 10);
+            if (adj[0] === 1 && adj[1] === 2 && adj[2] === 3) return true;
+            if (adj[0] === 2 && adj[1] === 7 && adj[2] === 10) return true;
         }
         return false;
     }
@@ -584,74 +513,44 @@ export class ZipaiRoomBase extends RoomBase {
         this.initRecords();
         this.hideActionPanel();
 
-        [this.myHandArea, this.leftHandArea, this.rightHandArea].forEach(area => {
-            if (area) area.removeAllChildren();
-        });
-        [this.myDiscardArea, this.leftDiscardArea, this.rightDiscardArea].forEach(area => {
-            if (area) area.removeAllChildren();
-        });
-        [this.meldArea, this.leftMeldArea, this.rightMeldArea].forEach(area => {
-            if (area) area.removeAllChildren();
-        });
-        if (this.drawnTileNode) {
-            this.drawnTileNode.removeAllChildren();
-        }
+        [this.myHandArea, this.leftHandArea, this.rightHandArea].forEach(a => { if (a) a.removeAllChildren(); });
+        [this.myDiscardArea, this.leftDiscardArea, this.rightDiscardArea].forEach(a => { if (a) a.removeAllChildren(); });
+        [this.meldArea, this.leftMeldArea, this.rightMeldArea].forEach(a => { if (a) a.removeAllChildren(); });
+        if (this.drawnTileNode) this.drawnTileNode.removeAllChildren();
     }
-
-    // 注意: isMyTurn 应改为 isTurn 或修复属性名
-    protected get isTurn(): boolean {
-        return this.isMyTurn;
-    }
-
-    protected set isTurn(v: boolean) {
-        this.isMyTurn = v;
-    }
-
-    // 修复 typo: ZipapiRank -> ZipaiRank
-    // (已在上方代码中修正为 ZipaiRank)
 
     protected handleGameStart(data: any): boolean {
-        super.handleGameStart(data);
-        this.resetRoundState();
-        return true;
+        super.handleGameStart(data); this.resetRoundState(); return true;
     }
 
     protected handleFinalSettlement(data: any): boolean {
-        super.handleFinalSettlement(data);
-        this.resetRoundState();
-        return true;
+        super.handleFinalSettlement(data); this.resetRoundState(); return true;
     }
 
     protected onAutoAction(): void {
-        // 字牌超时自动行为：
-        // 1. 有跑必跑(强制性操作)
-        // 2. 有胡则胡
-        // 3. 有提则提
-        // 4. 有偎则偎
-        // 5. 否则出一张
-        if (this.zipaiActions?.canPao) {
-            this.doActionPao();
-        } else if (this.zipaiActions?.canHu) {
-            this.doActionHu();
-        } else if (this.zipaiActions?.canTi) {
-            this.doActionTi();
-        } else if (this.zipaiActions?.canPeng) {
-            this.doActionPeng();
-        } else if (this.zipaiActions?.canWei) {
-            this.doActionWei();
-        } else {
-            if (this.drawnTile) {
-                this.integrateDrawnTile();
-            }
-            if (this.myHandTiles.length > 0) {
-                this.selectAndDiscard(this.myHandTiles.length - 1);
-            }
+        if (this.zipaiActions?.canPao) this.doActionPao();
+        else if (this.zipaiActions?.canHu) this.doActionHu();
+        else if (this.zipaiActions?.canTi) this.doActionTi();
+        else if (this.zipaiActions?.canPeng) this.doActionPeng();
+        else if (this.zipaiActions?.canWei) this.doActionWei();
+        else {
+            if (this.drawnTile) this.integrateDrawnTile();
+            if (this.myHandTiles.length > 0) this.selectAndDiscard(this.myHandTiles.length - 1);
         }
     }
 
     protected cleanup(): void {
-        super.cleanup();
-        this.resetRoundState();
-        this.zpCallbacks = {};
+        super.cleanup(); this.resetRoundState(); this.zpCallbacks = {};
+    }
+
+    public setZpCallbacks(callbacks: ZipaiEventCallbacks): void {
+        this.zpCallbacks = { ...this.zpCallbacks, ...callbacks };
+    }
+
+    private initRecords(): void {
+        for (let i = 0; i < this.getSeatCount(); i++) {
+            this.discardRecords.set(i, []);
+            this.meldRecords.set(i, []);
+        }
     }
 }

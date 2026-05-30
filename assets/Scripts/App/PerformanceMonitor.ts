@@ -10,7 +10,7 @@
  * 6. 定时汇总上报（可配置周期）
  */
 import { _decorator, sys, game, view, profiler, sys as ccSys } from 'cc';
-import { CrashReporter } from './CrashReporter';
+import { CrashReporter, CrashSeverity as CRASH_SEVERITY, CrashType as CRASH_TYPE } from './CrashReporter';
 
 // ==================== 性能指标 ====================
 export interface PerfMetrics {
@@ -411,8 +411,8 @@ export class PerformanceMonitor {
         // Critical 同时上报到 CrashReporter
         if (level === AlertLevel.CRITICAL) {
             CrashReporter.Instance.report(
-                require('./CrashReporter').CrashSeverity.WARNING,
-                require('./CrashReporter').CrashType.GAME_LOGIC_ERROR,
+                CRASH_SEVERITY.WARNING,
+                CRASH_TYPE.GAME_LOGIC_ERROR,
                 `[Perf] ${message}`,
                 { alertType: type, value, threshold }
             );

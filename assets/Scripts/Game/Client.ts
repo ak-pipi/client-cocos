@@ -12,6 +12,7 @@ import { PromptDialog } from './PromptDialog';
 import { PromptTip } from './PromptTip';
 import { Login } from './Login';
 import { GameLoader } from './GameLoader';
+import { NewGameHall } from './NewGameHall';
 import { NetworkManager } from '../Manager/NetworkManager';
 import { Hall } from './Hall';
 import { AppLayoutAdapter } from './AppLayoutAdapter';
@@ -219,6 +220,18 @@ export class Client extends Component {
     public initGameHall(prefab: Prefab) {
         this.gameHallNode = instantiate(prefab);
         this.gameHallNode.parent = this.gameHall;
+    }
+
+    public showNewGameHall(gameId: string, gameName: string) {
+        if (this.gameHallNode) {
+            this.gameHallNode.destroy();
+            this.gameHallNode = null;
+        }
+        const hallNode = new Node('NewGameHall');
+        hallNode.parent = this.gameHall;
+        const hall = hallNode.addComponent(NewGameHall);
+        hall.init(gameId, gameName);
+        this.gameHallNode = hallNode;
     }
 
     public initGameRoom(prefab: Prefab) {

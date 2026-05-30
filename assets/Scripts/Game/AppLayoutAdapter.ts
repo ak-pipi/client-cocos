@@ -1,4 +1,4 @@
-import { _decorator, Component, game, sys, view } from 'cc';
+import { _decorator, Component, game, sys, view, screen } from 'cc';
 const { ccclass, property } = _decorator;
 
 export type LayoutSnapshot = {
@@ -67,7 +67,7 @@ export class AppLayoutAdapter extends Component {
     }
 
     public recalculate(): void {
-        const frame = view.getFrameSize();
+        const frame = { width: screen.windowSize.width, height: screen.windowSize.height };
         const visible = view.getVisibleSize();
         const dpr = this.getDevicePixelRatio();
         const orientation: 'landscape' | 'portrait' = frame.width >= frame.height ? 'landscape' : 'portrait';
@@ -114,7 +114,7 @@ export class AppLayoutAdapter extends Component {
     }
 
     private getSafeArea(): { x: number; y: number; width: number; height: number } {
-        const frame = view.getFrameSize();
+        const frame = { width: screen.windowSize.width, height: screen.windowSize.height };
         if (!sys.isMobile) {
             return { x: 0, y: 0, width: frame.width, height: frame.height };
         }

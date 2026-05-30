@@ -1,11 +1,11 @@
 /**
- * 扑克房间基类 (PokerRoomBase)
- * 所有扑克牌类游戏的统一基类，提供：
- * - 扑克手牌管理（横屏扇形/水平排列）
- * - 出牌选牌交互
- * - 扑克牌型判断辅助
- * - 顺子/连对/炸弹等组合识别
- * - 扑克结算逻辑
+ * 扑克房间基类 (PokerRoomBase) - v2 完整版
+ *
+ * 集成真实服务器协议的扑克基类，提供：
+ * - 完整的扑克在线协议消息处理（同步/发牌/出牌/提示/结算）
+ * - 手牌管理、选牌交互、出牌比较
+ * - 倒计时与超时自动操作
+ * - 炸弹倍数管理
  *
  * 适用游戏：跑得快、沅江千分
  *
@@ -22,44 +22,33 @@ const { ccclass, property } = _decorator;
 
 /** 扑克牌数据 */
 export interface PokerCard {
-    /** 牌值 (2-14, 14=A, 15=小王, 16=大王) */
-    value: number;
-    /** 花色 (0=黑桃, 1=红桃, 2=梅花, 3=方块, -1=王牌无花色) */
-    suit: number;
-    /** 唯一ID */
+    value: number;     // 2-14(A), 15(小王), 16(大王)
+    suit: number;      // 0=黑桃, 1=红桃, 2=梅花, 3=方块, -1=王牌
     cardId: string;
 }
 
 /** 出牌组合 */
 export interface CardPlay {
-    /** 主牌型 */
     pattern: PokerPattern;
-    /** 出的牌列表 */
     cards: PokerCard[];
-    /** 牌型权重(用于比较大小) */
     weight: number;
 }
 
 /** 扑克可用操作 */
 export interface PokerAvailableActions {
-    canPlay?: boolean;          // 可以出牌
-    canPass?: boolean;          // 可以不出(要得起时不可用)
-    canHint?: boolean;          // 提示可用
-    isLeader?: boolean;         // 是否首出(可出任意牌型)
-    mustPlay?: boolean;         // 必须出牌(最小牌时)
+    canPlay?: boolean;
+    canPass?: boolean;
+    canHint?: boolean;
+    isLeader?: boolean;
+    mustPlay?: boolean;
 }
 
 /** 扑克事件回调 */
 export interface PokerEventCallbacks {
-    /** 手牌变化 */
     onHandChanged?: (cards: PokerCard[]) => void;
-    /** 出牌事件 */
     onCardPlay?: (play: CardPlay, seatIndex: number) => void;
-    /** 一轮结束(比大小) */
     onRoundEnd?: (winnerSeat: number, plays: CardPlay[]) => void;
-    /** 游戏结束 */
     onGameOver?: (rankings: number[]) => void;
-    /** 选中的牌变化 */
     onSelectionChanged?: (selectedIndices: number[]) => void;
 }
 
@@ -68,49 +57,55 @@ export class PokerRoomBase extends RoomBase {
     // ==================== UI 引用 ====================
 
     @property({ type: Node })
-    protected pokerTable: Node = null;           // 牌桌主体
+    protected pokerTable: Node = null;
 
     @property({ type: Node })
-    protected myHandArea: Node = null;           // 自己的手牌区
+    protected myHandArea: Node = null;
 
     @property({ type: Node })
-    protected leftHandArea: Node = null;         // 左边对手手牌区
+    protected leftHandArea: Node = null;
 
     @property({ type: Node })
-    protected rightHandArea: Node = null;        // 右边对手手牌区
+    protected rightHandArea: Node = null;
 
     @property({ type: Node })
-    protected topHandArea: Node = null;          // 对面手牌区(部分模式)
+    protected topHandArea: Node = null;
 
     @property({ type: Node })
-    protected playArea: Node = null;             // 中央出牌区
+    protected playArea: Node = null;
 
     @property({ type: Node })
-    protected myPlayArea: Node = null;           // 自己的出牌展示区
+    protected myPlayArea: Node = null;
 
     @property({ type: Node })
-    protected leftPlayArea: Node = null;         // 左边出牌区
+    protected leftPlayArea: Node = null;
 
     @property({ type: Node })
-    protected rightPlayArea: Node = null;        // 右边出牌区
+    protected rightPlayArea: Node = null;
 
     @property({ type: Node })
-    protected topPlayArea: Node = null;          // 对面出牌区
+    protected topPlayArea: Node = null;
 
     @property({ type: Node })
-    protected actionPanel: Node = null;          // 操作按钮区(出牌/不出/提示)
+    protected actionPanel: Node = null;          // 出牌/不出/提示按钮区
+
+    @property({ type: Node })
+    protected passGroup: Node = null;            // 不要按钮组
+
+    @property({ type: Node })
+    protected playGroup: Node = null;            // 出牌按钮组
 
     @property({ type: Label })
-    protected cardCountLabel: Label = null;      // 剩余手牌数
+    protected cardCountLabel: Label = null;
 
     @property({ type: Label })
-    protected multiLabel: Label = null;          // 倍数显示
+    protected multiLabel: Label = null;
 
     @property({ type: Prefab })
-    protected cardPrefab: Prefab = null;         // 扑克牌预制体
+    protected cardPrefab: Prefab = null;
 
     @property({ type: Prefab })
-    protected cardBackPrefab: Prefab = null;     // 牌背预制体
+    protected cardBackPrefab: Prefab = null;
 
     // ==================== 内部状态 ====================
 
@@ -144,22 +139,151 @@ export class PokerRoomBase extends RoomBase {
     /** 扑克专属回调 */
     protected pokerCallbacks: PokerEventCallbacks = {};
 
-    // ==================== 初始化 ====================
+    // ==================== 消息前缀 ====================
+
+    protected get pokerMsgPrefix(): string {
+        return "MsgPoker";
+    }
+
+    // ==================== 生命周期 ====================
 
     onLoad(): void {
         super.onLoad();
     }
 
-    /** 设置扑克专属回调 */
-    public setPokerCallbacks(callbacks: PokerEventCallbacks): void {
-        this.pokerCallbacks = { ...this.pokerCallbacks, ...callbacks };
+    start(): void {
+        super.start();
+        this.syncMsgPrefix = this.pokerMsgPrefix;
+    }
+
+    // ==================== NetMsgHandler 覆写 (扑克特有消息) ====================
+
+    public onMessage(msgType: string, msg: any): boolean {
+        if (super.onMessage(msgType, msg)) return true;
+
+        const prefix = this.pokerMsgPrefix;
+        let ret = true;
+
+        if (msgType === prefix + "StartGameResp") this.onPkStartGameResp(msg);
+        else if (msgType === prefix + "DealCard") this.onPkDealCard();
+        else if (msgType === prefix + "HandCard") this.onPkHandCard(msg);
+        else if (msgType === prefix + "CardNums") this.onPkCardNums(msg);
+        else if (msgType === prefix + "WaitPlay") this.onPkWaitPlay(msg);
+        else if (msgType === prefix + "PlayCard") this.onPkPlayCard(msg);
+        else if (msgType === prefix + "PlayCardFailed") this.onPkPlayCardFailed(msg);
+        else if (msgType === prefix + "HintCardResp") this.onPkHintCardResp(msg);
+        else if (msgType === prefix + "ClearPlayedOut") this.onPkClearPlayedOut();
+        else if (msgType === prefix + "Finished") this.onPkFinished(msg);
+        else if (msgType === prefix + "Result") this.onPkResult(msg);
+        else ret = false;
+
+        return ret;
+    }
+
+    // ==================== 扑克服务器消息处理 ----
+
+    protected onPkStartGameResp(_msg: any): void {
+        this.gameState = GameState.Playing;
+        console.log(`[PokerRoom] Game started`);
+    }
+
+    protected onPkDealCard(): void {
+        console.log(`[PokerRoom] Dealing cards...`);
+    }
+
+    protected onPkHandCard(msg: any): void {
+        const cards: PokerCard[] = msg.cards || [];
+        this.dealCards(cards);
+    }
+
+    protected onPkCardNums(msg: any): void {
+        const nums: number[] = msg.nums || [];
+        for (let i = 0; i < nums.length && i < this.getSeatCount(); i++) {
+            this.updatePlayerCardCount(i, nums[i]);
+        }
+    }
+
+    /** 轮到自己出牌 */
+    protected onPkWaitPlay(_msg: any): void {
+        this.isMyTurn = true;
+        this.showPassAndPlayButtons(true);
+
+        // 启动倒计时
+        this.startCountdown(15);
+
+        console.log(`[PokerRoom] Your turn to play`);
+    }
+
+    /** 其他玩家出牌 */
+    protected onPkPlayCard(msg: any): void {
+        const serverSeat = msg.seatIndex;
+        const clientSeat = this.server2ClientSeat(serverSeat);
+        const cards: PokerCard[] = msg.cards || [];
+
+        const play = this.recognizePattern(cards) || {
+            pattern: PokerPattern.Single,
+            cards,
+            weight: cards[0]?.value || 0,
+        };
+
+        this.playedRecords.set(clientSeat, play);
+        this.lastPlay = play;
+        this.showOtherPlay(clientSeat, play);
+
+        // 检查是否轮到自己了
+        const nextServerSeat = msg.nextSeat;
+        if (nextServerSeat !== undefined && this.client2ServerSeat(0) === nextServerSeat) {
+            this.isMyTurn = true;
+            this.showPassAndPlayButtons(true);
+            this.startCountdown(15);
+        } else {
+            this.isMyTurn = false;
+            this.showPassAndPlayButtons(false);
+        }
+    }
+
+    /** 出牌失败 */
+    protected onPkPlayCardFailed(msg: any): void {
+        console.warn(`[PokerRoom] Play failed:`, msg.reason || 'invalid play');
+        this.playErrorSound();
+    }
+
+    /** 提示响应 */
+    protected onPkHintCardResp(msg: any): void {
+        const indices: number[] = msg.indices || [];
+        this.clearSelection();
+        for (const idx of indices) {
+            this.selectedIndices.add(idx);
+        }
+        this.renderMyHand();
+    }
+
+    /** 清空出牌区 */
+    protected onPkClearPlayedOut(): void {
+        [this.myPlayArea, this.leftPlayArea, this.rightPlayArea, this.topPlayArea].forEach(area => {
+            if (area) area.removeAllChildren();
+        });
+        this.lastPlay = null;
+    }
+
+    /** 一局结束 */
+    protected onPkFinished(msg: any): void {
+        this.stopCountdown();
+        this.currentState = RoomState.RoundSettlement;
+        console.log(`[PokerRoom] Round finished`, msg);
+        this.handleRoundSettlement(msg);
+    }
+
+    /** 结算结果 */
+    protected onPkResult(msg: any): void {
+        console.log(`[PokerRoom] Result:`, msg);
+        this.handleFinalSettlement(msg);
     }
 
     // ==================== 座位覆写 ====================
 
     protected getSeatCount(): number {
-        // 跑得快2人/3人，千分4人
-        return 3; // 默认3人
+        return 3; // 默认3人，子类覆写
     }
 
     protected getHandAreaBySeat(seatIndex: number): Node {
@@ -184,10 +308,6 @@ export class PokerRoomBase extends RoomBase {
 
     // ==================== 发牌与手牌 ====================
 
-    /**
-     * 发牌
-     * @param cards 初始手牌
-     */
     public dealCards(cards: PokerCard[]): void {
         this.myCards = [...cards];
         this.sortHandCards();
@@ -196,22 +316,15 @@ export class PokerRoomBase extends RoomBase {
         console.log(`[PokerRoom] Dealt ${cards.length} cards`);
     }
 
-    /**
-     * 排序手牌 (先按牌值降序，同值按花色排序)
-     */
     protected sortHandCards(): void {
         this.myCards.sort((a, b) => {
-            if (a.value !== b.value) return b.value - a.value; // 大到小
+            if (a.value !== b.value) return b.value - a.value;
             return a.suit - b.suit;
         });
     }
 
-    /**
-     * 渲染手牌
-     */
     protected renderMyHand(): void {
         if (!this.myHandArea) return;
-
         this.myHandArea.removeAllChildren();
 
         for (let i = 0; i < this.myCards.length; i++) {
@@ -221,34 +334,22 @@ export class PokerRoomBase extends RoomBase {
             if (this.myHandArea) {
                 cardNode.parent = this.myHandArea;
             }
-
-            // 如果被选中，高亮显示
             if (this.selectedIndices.has(i)) {
                 this.applySelectedStyle(cardNode);
             }
         }
     }
 
-    /**
-     * 更新手牌数显示
-     */
     protected updateCardCountDisplay(): void {
         if (this.cardCountLabel) {
             this.cardCountLabel.string = `${this.myCards.length}张`;
         }
     }
 
-    /** 获取自己座位索引 */
-    protected getMySeatIndex(): number {
-        return 0;
-    }
+    protected getMySeatIndex(): number { return 0; }
 
     // ==================== 选牌交互 ====================
 
-    /**
-     * 点击选牌/取消选牌
-     * @param cardIndex 手牌索引
-     */
     public toggleCardSelection(cardIndex: number): void {
         if (!this.isMyTurn) return;
 
@@ -258,7 +359,6 @@ export class PokerRoomBase extends RoomBase {
             this.selectedIndices.add(cardIndex);
         }
 
-        // 更新选中视觉
         const cardNode = this.getCardNodeByIndex(cardIndex);
         if (cardNode) {
             if (this.selectedIndices.has(cardIndex)) {
@@ -267,59 +367,42 @@ export class PokerRoomBase extends RoomBase {
                 this.applyNormalStyle(cardNode);
             }
         }
-
         this.pokerCallbacks.onSelectionChanged?.([...this.selectedIndices]);
     }
 
-    /**
-     * 清除所有选中
-     */
     public clearSelection(): void {
         this.selectedIndices.clear();
-        this.renderMyHand(); // 重新渲染以清除高亮
+        this.renderMyHand();
     }
 
-    /**
-     * 根据索引获取卡牌节点
-     */
     protected getCardNodeByIndex(index: number): Node | null {
         if (!this.myHandArea) return null;
         return this.myHandArea.getChildByName(`card_${index}`);
     }
 
-    /**
-     * 应用选中样式(上浮)
-     */
     protected applySelectedStyle(node: Node): void {
-        node.setPosition(0, 30, 0); // 上浮
+        node.setPosition(0, 30, 0);
     }
 
-    /**
-     * 应用普通样式
-     */
     protected applyNormalStyle(node: Node): void {
         node.setPosition(0, 0, 0);
     }
 
     // ==================== 出牌操作 ====================
 
-    /**
-     * 出牌(使用当前选中的牌)
-     */
     public playSelectedCards(): void {
         if (!this.isMyTurn || this.selectedIndices.size === 0) return;
 
-        // 收集选中的牌
         const selectedCards: PokerCard[] = [];
         const indices = [...this.selectedIndices].sort((a, b) => a - b);
         for (const idx of indices) {
             selectedCards.push(this.myCards[idx]);
         }
 
-        // 验证牌型
         const pattern = this.recognizePattern(selectedCards);
         if (!pattern) {
             console.warn('[PokerRoom] Invalid card combination');
+            this.playErrorSound();
             return;
         }
 
@@ -327,6 +410,7 @@ export class PokerRoomBase extends RoomBase {
         if (!this.pokerActions?.isLeader && this.lastPlay) {
             if (!this.canBeat(pattern, this.lastPlay)) {
                 console.warn('[PokerRoom] Cannot beat last play');
+                this.playErrorSound();
                 return;
             }
         }
@@ -337,7 +421,6 @@ export class PokerRoomBase extends RoomBase {
         }
         this.selectedIndices.clear();
 
-        // 创建出牌记录
         const play: CardPlay = {
             pattern: pattern.pattern,
             cards: selectedCards,
@@ -347,179 +430,127 @@ export class PokerRoomBase extends RoomBase {
         // 发送到服务端
         this.sendPlay(play);
 
-        // 本地展示
         this.showMyPlay(play);
-
-        // 更新显示
         this.renderMyHand();
         this.updateCardCountDisplay();
         this.isMyTurn = false;
+        this.stopCountdown();
+        this.showPassAndPlayButtons(false);
 
         this.pokerCallbacks.onCardPlay?.(play, this.getMySeatIndex());
     }
 
     /**
-     * 不出/跳过
+     * 不要 / 过
      */
     public pass(): void {
         if (!this.isMyTurn || !this.pokerActions?.canPass) return;
 
         this.clearSelection();
         this.isMyTurn = false;
+        this.stopCountdown();
+        this.showPassAndPlayButtons(false);
 
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action('pass', {});
+        NetworkManager.Instance.sendInnerMessage(this.pokerMsgPrefix + "Pass", {});
 
-        // 清空自己的出牌区显示
         if (this.myPlayArea) {
             this.myPlayArea.removeAllChildren();
         }
+        this.playPassSound();
     }
 
-    /**
-     * 提示(自动选出一手能打得过的牌)
-     */
+    /** 提示 */
     public hint(): void {
         if (!this.isMyTurn) return;
         this.clearSelection();
+        NetworkManager.Instance.sendInnerMessage(this.pokerMsgPrefix + "HintCard", {});
+    }
 
-        if (this.pokerActions?.isLeader) {
-            // 首出时提示最小的单张
-            if (this.myCards.length > 0) {
-                this.selectedIndices.add(this.myCards.length - 1); // 最小的牌
-                this.renderMyHand();
-            }
-        } else if (this.lastPlay) {
-            // 找能打得过的最小组合
-            const hint = this.findSmallestBeatingPlay(this.lastPlay);
-            if (hint) {
-                for (const idx of hint.indices) {
-                    this.selectedIndices.add(idx);
-                }
-                this.renderMyHand();
-            }
-        }
+    /** 显示/隐藏出牌和不要按钮 */
+    protected showPassAndPlayButtons(show: boolean): void {
+        if (this.passGroup) this.passGroup.active = show;
+        if (this.playGroup) this.playGroup.active = show;
     }
 
     /**
      * 发送出牌到服务端
      */
     protected sendPlay(play: CardPlay): void {
-        const { WsEventRouter } = require('../Network/WsEventRouter');
-        WsEventRouter.Instance.action('play_cards', {
+        NetworkManager.Instance.sendInnerMessage(this.pokerMsgPrefix + "PlayCard", {
             cards: play.cards.map(c => ({ cardId: c.cardId, value: c.value, suit: c.suit })),
             pattern: play.pattern,
         });
 
         this.playedRecords.set(this.getMySeatIndex(), play);
+
+        // 检查炸弹/火箭加倍
+        if (play.pattern === PokerPattern.Bomb) {
+            this.addMultiplier(2);
+        } else if (play.pattern === PokerPattern.Rocket) {
+            this.addMultiplier(4);
+        }
+
+        this.playCardSound(play.pattern);
     }
 
     // ==================== 牌型识别 ====================
 
-    /**
-     * 识别牌型 (基础实现，子类可扩展)
-     * @param cards 要识别的牌
-     * @returns 识别结果，无效返回null
-     */
     protected recognizePattern(cards: PokerCard[]): CardPlay | null {
         const n = cards.length;
         if (n === 0) return null;
 
         const values = cards.map(c => c.value).sort((a, b) => a - b);
 
-        // 单张
         if (n === 1) {
             return { pattern: PokerPattern.Single, cards, weight: values[0] };
         }
-
-        // 对子
         if (n === 2 && values[0] === values[1]) {
-            // 王炸
-            if (values[0] >= 15) {
-                return { pattern: PokerPattern.Rocket, cards, weight: 1000 };
-            }
+            if (values[0] >= 15) return { pattern: PokerPattern.Rocket, cards, weight: 1000 };
             return { pattern: PokerPattern.Pair, cards, weight: values[0] };
         }
-
-        // 三条
         if (n === 3 && values[0] === values[1] && values[1] === values[2]) {
             return { pattern: PokerPattern.Triple, cards, weight: values[0] };
         }
-
-        // 炸弹(四张相同)
         if (n === 4 && values[0] === values[1] && values[1] === values[2] && values[2] === values[3]) {
             return { pattern: PokerPattern.Bomb, cards, weight: 500 + values[0] };
         }
-
-        // 三带一
         if (n === 4) {
-            const tripleValue = this.findTripleValue(values);
-            if (tripleValue !== -1) {
-                return { pattern: PokerPattern.TripleWithOne, cards, weight: tripleValue };
-            }
+            const tv = this.findTripleValue(values);
+            if (tv !== -1) return { pattern: PokerPattern.TripleWithOne, cards, weight: tv };
         }
-
-        // 三带二
         if (n === 5) {
-            const tripleValue = this.findTripleValue(values);
-            if (tripleValue !== -1) {
-                const pairValue = this.findPairValueExclude(values, tripleValue);
-                if (pairValue !== -1) {
-                    return { pattern: PokerPattern.TripleWithPair, cards, weight: tripleValue };
-                }
+            const tv = this.findTripleValue(values);
+            if (tv !== -1) {
+                const pv = this.findPairValueExclude(values, tv);
+                if (pv !== -1) return { pattern: PokerPattern.TripleWithPair, cards, weight: tv };
             }
         }
-
-        // 顺子 (5张及以上连续单牌，不含2和王)
         if (n >= 5 && this.isConsecutive(values) && !values.some(v => v >= 15)) {
             return { pattern: PokerPattern.Straight, cards, weight: values[0] };
         }
-
-        // 连对 (3对及以上连续对子)
         if (n >= 6 && n % 2 === 0 && this.isConsecutivePairs(values)) {
             return { pattern: PokerPattern.ConsecutivePairs, cards, weight: values[0] };
         }
 
-        // 飞机(连续三张不带/带翅膀) - 简化版
-        if (n >= 6) {
-            const airplane = this.recognizeAirplane(values, cards);
-            if (airplane) return airplane;
-        }
-
-        return null; // 无法识别
+        return null;
     }
 
     // ==================== 牌型比较 ====================
 
-    /**
-     * 判断 play 能否打过 target
-     */
     protected canBeat(play: CardPlay, target: CardPlay): boolean {
-        // 火箭最大
         if (play.pattern === PokerPattern.Rocket) return true;
         if (target.pattern === PokerPattern.Rocket) return false;
-
-        // 炸弹大于非炸弹
         if (play.pattern === PokerPattern.Bomb && target.pattern !== PokerPattern.Bomb) return true;
         if (target.pattern === PokerPattern.Bomb && play.pattern !== PokerPattern.Bomb) return false;
-
-        // 同牌型比重量
         if (play.pattern === target.pattern) {
             return play.weight > target.weight;
         }
-
-        // 不同非炸弹牌型不能打
         return false;
     }
 
-    /**
-     * 寻找能打过目标的最小牌型
-     */
     protected findSmallestBeatingPlay(target: CardPlay): { indices: number[]; play: CardPlay } | null {
-        // 简化实现：遍历所有可能的组合
         const n = this.myCards.length;
 
-        // 尝试单张
         if (target.pattern === PokerPattern.Single) {
             for (let i = n - 1; i >= 0; i--) {
                 if (this.myCards[i].value > target.weight) {
@@ -528,8 +559,6 @@ export class PokerRoomBase extends RoomBase {
                 }
             }
         }
-
-        // 尝试对子
         if (target.pattern === PokerPattern.Pair) {
             for (let i = n - 1; i >= 1; i--) {
                 if (this.myCards[i].value === this.myCards[i - 1].value &&
@@ -539,8 +568,6 @@ export class PokerRoomBase extends RoomBase {
                 }
             }
         }
-
-        // 尝试炸弹(通用压制)
         if (target.pattern !== PokerPattern.Rocket) {
             for (let i = 0; i <= n - 4; i++) {
                 if (this.myCards[i].value === this.myCards[i + 3].value) {
@@ -554,80 +581,52 @@ export class PokerRoomBase extends RoomBase {
                 }
             }
         }
-
         return null;
     }
 
     // ==================== 其他玩家出牌 ====================
 
-    /**
-     * 处理其他玩家出牌
-     */
     public onOtherPlayerPlay(seatIndex: number, play: CardPlay): void {
         this.playedRecords.set(seatIndex, play);
         this.lastPlay = play;
         this.showOtherPlay(seatIndex, play);
     }
 
-    /**
-     * 展示其他玩家出牌
-     */
     protected showOtherPlay(seatIndex: number, play: CardPlay): void {
         const playArea = this.getPlayAreaBySeat(seatIndex);
         if (!playArea) return;
-
         playArea.removeAllChildren();
         for (const card of play.cards) {
             const cardNode = this.createCardNode(card, false);
             cardNode.setScale(new Vec3(0.7, 0.7, 1));
-            if (playArea) {
-                cardNode.parent = playArea;
-            }
+            if (playArea) cardNode.parent = playArea;
         }
     }
 
-    /**
-     * 展示自己的出牌
-     */
     protected showMyPlay(play: CardPlay): void {
         if (!this.myPlayArea) return;
         this.myPlayArea.removeAllChildren();
         for (const card of play.cards) {
             const cardNode = this.createCardNode(card, false);
-            if (this.myPlayArea) {
-                cardNode.parent = this.myPlayArea;
-            }
+            if (this.myPlayArea) cardNode.parent = this.myPlayArea;
         }
     }
 
     // ==================== 操作面板 ====================
 
-    /**
-     * 显示扑克操作面板
-     */
     public showPokerActionPanel(actions: PokerAvailableActions): void {
         this.pokerActions = actions;
         this.isMyTurn = true;
-        if (this.actionPanel) {
-            this.actionPanel.active = true;
-        }
+        if (this.actionPanel) this.actionPanel.active = true;
     }
 
-    /**
-     * 隐藏操作面板
-     */
     public hidePokerActionPanel(): void {
         this.pokerActions = null;
-        if (this.actionPanel) {
-            this.actionPanel.active = false;
-        }
+        if (this.actionPanel) this.actionPanel.active = false;
     }
 
     // ==================== 倍数管理 ====================
 
-    /**
-     * 增加倍数
-     */
     public addMultiplier(delta: number): void {
         this.currentMultiplier *= delta;
         if (this.multiLabel) {
@@ -635,31 +634,21 @@ export class PokerRoomBase extends RoomBase {
         }
     }
 
-    /**
-     * 更新各玩家手牌数
-     */
     public updatePlayerCardCount(seatIndex: number, count: number): void {
         this.playerCardCounts.set(seatIndex, count);
-        // 子类可在各座位上显示手牌数
     }
 
     // ==================== 工具方法 ====================
 
-    /**
-     * 创建扑克牌节点
-     */
-    protected createCardNode(card: PokerCard, interactive: boolean): Node {
+    protected createCardNode(card: PokerCard, _interactive: boolean): Node {
         if (this.cardPrefab) {
-            const node = instantiate(this.cardPrefab);
-            // 子类应设置牌面贴图(根据 value + suit)
-            return node;
+            return instantiate(this.cardPrefab);
         }
         const node = new Node(`card_${card.value}_${card.suit}`);
         node['_cardData'] = card;
         return node;
     }
 
-    /** 查找三条的值 */
     protected findTripleValue(sortedValues: number[]): number {
         for (let i = 0; i <= sortedValues.length - 3; i++) {
             if (sortedValues[i] === sortedValues[i + 1] && sortedValues[i + 1] === sortedValues[i + 2]) {
@@ -669,7 +658,6 @@ export class PokerRoomBase extends RoomBase {
         return -1;
     }
 
-    /** 查找对子的值(排除某个值) */
     protected findPairValueExclude(sortedValues: number[], exclude: number): number {
         for (let i = 0; i < sortedValues.length - 1; i++) {
             if (sortedValues[i] === sortedValues[i + 1] && sortedValues[i] !== exclude) {
@@ -679,7 +667,6 @@ export class PokerRoomBase extends RoomBase {
         return -1;
     }
 
-    /** 检查是否连续(顺子) */
     protected isConsecutive(sortedValues: number[]): boolean {
         for (let i = 1; i < sortedValues.length; i++) {
             if (sortedValues[i] !== sortedValues[i - 1] + 1) return false;
@@ -687,7 +674,6 @@ export class PokerRoomBase extends RoomBase {
         return true;
     }
 
-    /** 检查是否为连续对子 */
     protected isConsecutivePairs(sortedValues: number[]): boolean {
         if (sortedValues.length % 2 !== 0) return false;
         for (let i = 0; i < sortedValues.length; i += 2) {
@@ -697,18 +683,15 @@ export class PokerRoomBase extends RoomBase {
         return true;
     }
 
-    /** 简化的飞机识别 */
-    protected recognizeAirplane(sortedValues: number[], originalCards: PokerCard[]): CardPlay | null {
-        // 连续两个三张以上即可视为飞机(简化)
-        // 实际实现需要更复杂的匹配
-        return null;
-    }
+    // ==================== 音效接口 ====================
+
+    protected playCardSound(_pattern: PokerPattern): void {}
+    protected playPassSound(): void {}
+    protected playErrorSound(): void {}
+    protected playBombSound(): void {}
 
     // ==================== 重置与清理 ====================
 
-    /**
-     * 重置一轮状态
-     */
     protected resetRoundState(): void {
         this.myCards = [];
         this.selectedIndices.clear();
@@ -719,8 +702,8 @@ export class PokerRoomBase extends RoomBase {
         this.isMyTurn = false;
         this.currentMultiplier = 1;
         this.hidePokerActionPanel();
+        this.showPassAndPlayButtons(false);
 
-        // 清空所有显示区域
         [this.myHandArea, this.leftHandArea, this.rightHandArea, this.topHandArea].forEach(area => {
             if (area) area.removeAllChildren();
         });
@@ -742,9 +725,6 @@ export class PokerRoomBase extends RoomBase {
     }
 
     protected onAutoAction(): void {
-        // 扑克超时自动行为：
-        // 1. 能出则出最小的一手
-        // 2. 不行则pass(如果允许)
         if (this.pokerActions?.mustPlay || !this.pokerActions?.canPass) {
             this.hint();
             if (this.selectedIndices.size > 0) {
@@ -759,5 +739,9 @@ export class PokerRoomBase extends RoomBase {
         super.cleanup();
         this.resetRoundState();
         this.pokerCallbacks = {};
+    }
+
+    public setPokerCallbacks(callbacks: PokerEventCallbacks): void {
+        this.pokerCallbacks = { ...this.pokerCallbacks, ...callbacks };
     }
 }

@@ -1,57 +1,40 @@
 /**
  * 游戏房间工厂 (GameFactory)
  * 统一的游戏实例创建与路由入口
- * 
- * 职责：
- * - 根据 gameId 创建对应游戏房间实例
- * - 管理当前活跃的游戏实例
- * - 游戏生命周期管理(创建/销毁/切换)
- * - 统一的事件分发入口
+ *
+ * 设计说明（v3 - 彻底解决 Cocos Creator packer-driver 跨 chunk 问题）：
+ * - Cocos Creator 3.x 的 packer-driver 将 @ccclass 类做特殊处理
+ *   跨 chunk 静态 import + addComponent(Class) 会导致 "is not defined"
+ *   静态 import Room 模块会导致循环依赖 (GameLoader → Room → RoomBase → Client → GameLoader)
+ * - 解决方案：通过 cc.js.getClassByName 字符串查找已注册的 @ccclass 类
+ *   不直接 import Room 模块，避免循环依赖和跨 chunk 符号访问问题
+ *   Cocos Creator 编辑器预览时 packer-driver 会自动加载所有脚本模块
  *
  * Author: AI Assistant
  */
 
-import { Node, director } from 'cc';
-import { RoomBase, RoomInfo } from '../GameCommon/RoomBase';
-import { MahjongRoomBase, MahjongTile, AvailableActions as MjActions } from '../GameCommon/MahjongRoomBase';
-import { PokerRoomBase, PokerCard, PokerAvailableActions as PkActions } from '../GameCommon/PokerRoomBase';
-import { ZipaiRoomBase, ZipaiTile, ZipaiAvailableActions as ZpActions } from '../GameCommon/ZipaiRoomBase';
+import { Node, js } from 'cc';
+import { RoomBase } from '../GameCommon/RoomBase';
+import { MahjongRoomBase } from '../GameCommon/MahjongRoomBase';
+import { PokerRoomBase } from '../GameCommon/PokerRoomBase';
+import { ZipaiRoomBase } from '../GameCommon/ZipaiRoomBase';
 
-// 具体游戏导入
-import { TaojiangMahjongRoom } from '../Games/TaojiangMahjong/TaojiangMahjongRoom';
-import { HongzhongMahjongRoom } from '../Games/HongzhongMahjong/HongzhongMahjongRoom';
-import { ChangshaMahjongRoom } from '../Games/ChangshaMahjong/ChangshaMahjongRoom';
-import { PaodekuaiRoom } from '../Games/Paodekuai/PaodekuaiRoom';
-import { WaihuziRoom } from '../Games/Waihuzi/WaihuziRoom';
-import { QianfenRoom } from '../Games/Qianfen/QianfenRoom';
+import { GameId, GameType, GameMetaInfo } from './GameEnums';
 
-// ==================== 游戏注册表 ====================
+export type { GameId, GameType, GameMetaInfo } from './GameEnums';
 
-/** 支持的所有游戏ID */
-export enum GameId {
-    TaojiangMahjong = 'taojiang_mahjong',
-    HongzhongMahjong = 'hongzhong_mahjong',
-    ChangshaMahjong = 'changsha_mahjong',
-    Paodekuai = 'paodekuai_poker',
-    Waihuzi = 'yiyangwaihuzi_zipai',
-    Qianfen = 'yuanjiangqianfen_poker',
-}
+/** 房间组件类型 */
+type RoomComponentCtor = new () => RoomBase;
 
-/** 游戏类型分类 */
-export enum GameType {
-    Mahjong = 'mahjong',   // 麻将类
-    Poker = 'poker',       // 扑克类
-    Zipai = 'zipai',       // 字牌类
-}
-
-/** 游戏元信息 */
-export interface GameMetaInfo {
-    id: GameId;
-    name: string;          // 中文名称
-    type: GameType;        // 类型分类
-    playerCount: number;   // 玩家数量
-    priority: number;      // 优先级(P0=0, P1=1, P2=2)
-}
+/** gameId → @ccclass 名称映射 */
+const GAME_CLASS_NAMES: Record<GameId, string> = {
+    [GameId.TaojiangMahjong]: 'TaojiangMahjongRoom',
+    [GameId.HongzhongMahjong]: 'HongzhongMahjongRoom',
+    [GameId.ChangshaMahjong]: 'ChangshaMahjongRoom',
+    [GameId.Paodekuai]: 'PaodekuaiRoom',
+    [GameId.Waihuzi]: 'WaihuziRoom',
+    [GameId.Qianfen]: 'QianfenRoom',
+};
 
 // ==================== 注册表 ====================
 
@@ -145,6 +128,23 @@ export class GameFactory {
     // ==================== 房间实例管理 ====================
 
     /**
+     * 获取房间组件类（通过 cc.js.getClassByName 查找 @ccclass 注册的类）
+     * 这种方式不依赖跨 chunk 的变量引用，避免 packer-driver 的符号访问问题
+     */
+    private static getRoomClass(gameId: GameId): RoomComponentCtor {
+        const className = GAME_CLASS_NAMES[gameId];
+        if (!className) {
+            throw new Error(`[GameFactory] No class name mapped for game: ${gameId}`);
+        }
+
+        const ctor = js.getClassByName(className) as RoomComponentCtor;
+        if (!ctor) {
+            throw new Error(`[GameFactory] Class "${className}" not found via cc.js.getClassByName. Ensure the Room script is included in the project and has @ccclass('${className}') decorator.`);
+        }
+        return ctor;
+    }
+
+    /**
      * 创建游戏房间
      * @param gameId 游戏ID
      * @param parentNode 父节点(挂载到场景中)
@@ -154,49 +154,13 @@ export class GameFactory {
         // 先销毁已有房间
         this.destroyCurrentRoom();
 
-        let roomNode: Node;
-        let room: RoomBase;
+        // 通过 cc.js.getClassByName 获取房间组件类
+        const RoomCtor = GameFactory.getRoomClass(gameId);
 
-        switch (gameId) {
-            case GameId.TaojiangMahjong:
-                roomNode = new Node('TaojiangMahjongRoom');
-                if (parentNode) roomNode.parent = parentNode;
-                room = roomNode.addComponent(TaojiangMahjongRoom);
-                break;
-
-            case GameId.HongzhongMahjong:
-                roomNode = new Node('HongzhongMahjongRoom');
-                if (parentNode) roomNode.parent = parentNode;
-                room = roomNode.addComponent(HongzhongMahjongRoom);
-                break;
-
-            case GameId.ChangshaMahjong:
-                roomNode = new Node('ChangshaMahjongRoom');
-                if (parentNode) roomNode.parent = parentNode;
-                room = roomNode.addComponent(ChangshaMahjongRoom);
-                break;
-
-            case GameId.Paodekuai:
-                roomNode = new Node('PaodekuaiRoom');
-                if (parentNode) roomNode.parent = parentNode;
-                room = roomNode.addComponent(PaodekuaiRoom);
-                break;
-
-            case GameId.Waihuzi:
-                roomNode = new Node('WaihuziRoom');
-                if (parentNode) roomNode.parent = parentNode;
-                room = roomNode.addComponent(WaihuziRoom);
-                break;
-
-            case GameId.Qianfen:
-                roomNode = new Node('QianfenRoom');
-                if (parentNode) roomNode.parent = parentNode;
-                room = roomNode.addComponent(QianfenRoom);
-                break;
-
-            default:
-                throw new Error(`[GameFactory] Unknown game ID: ${gameId}`);
-        }
+        const nodeName = GAME_REGISTRY.get(gameId)?.name || String(gameId);
+        const roomNode = new Node(`${nodeName}Room`);
+        if (parentNode) roomNode.parent = parentNode;
+        const room = roomNode.addComponent(RoomCtor);
 
         this.currentRoom = room;
         this.currentGameId = gameId;
@@ -233,7 +197,7 @@ export class GameFactory {
      */
     public destroyCurrentRoom(): void {
         if (this.currentRoom) {
-            this.currentRoom.cleanup();
+            (this.currentRoom as any).cleanup?.();
             if (this.currentRoom.node) {
                 this.currentRoom.node.destroy();
             }
@@ -292,7 +256,7 @@ export class GameFactory {
         }
 
         const gameType = this.getCurrentGameType();
-        
+
         switch (eventType) {
             // ---- 通用事件 ----
             case 'room_update':
@@ -310,7 +274,7 @@ export class GameFactory {
             // ---- 麻将特有事件 ----
             case 'deal':
                 if (gameType === GameType.Mahjong && this.currentRoom instanceof MahjongRoomBase) {
-                    this.currentRoom.onServerDeal(data.tiles || [], data.xing);
+                    (this.currentRoom as any).onServerDeal?.(data.tiles || [], data.xing);
                     return true;
                 }
                 break;
@@ -324,14 +288,14 @@ export class GameFactory {
 
             case 'request_actions':
                 if (this.currentRoom instanceof MahjongRoomBase) {
-                    this.currentRoom.onRequestActions(data as MjActions);
+                    (this.currentRoom as any).onRequestActions?.(data);
                     return true;
                 }
                 break;
 
             case 'player_discard':
                 if (gameType === GameType.Mahjong && this.currentRoom instanceof MahjongRoomBase) {
-                    this.currentRoom.onPlayerDiscord(data.seatIndex, data.tile);
+                    (this.currentRoom as any).onPlayerDiscard?.(data.seatIndex, data.tile);
                     return true;
                 }
                 break;
@@ -346,7 +310,7 @@ export class GameFactory {
 
             case 'request_play':
                 if (this.currentRoom instanceof PokerRoomBase) {
-                    this.currentRoom.showPokerActionPanel(data as PkActions);
+                    this.currentRoom.showPokerActionPanel(data);
                     return true;
                 }
                 break;
@@ -359,15 +323,15 @@ export class GameFactory {
                 break;
 
             case 'round_end':
-                if (this.currentRoom instanceof PaodekuaiRoom) {
-                    this.currentRoom.onPlayRoundEnd(data.winnerSeat, data.plays);
+                if (this.currentGameId === GameId.Paodekuai) {
+                    (this.currentRoom as any).onPlayRoundEnd?.(data.winnerSeat, data.plays);
                     return true;
                 }
                 break;
 
             case 'game_over':
-                if (this.currentRoom instanceof PaodekuaiRoom) {
-                    this.currentRoom.onGameOver(data.rankings);
+                if (this.currentGameId === GameId.Paodekuai) {
+                    (this.currentRoom as any).onGameOver?.(data.rankings);
                     return true;
                 }
                 break;
@@ -382,13 +346,12 @@ export class GameFactory {
 
             case 'request_zipai_actions':
                 if (this.currentRoom instanceof ZipaiRoomBase) {
-                    this.currentRoom.showActionPanel(data as ZpActions);
+                    this.currentRoom.showActionPanel(data);
                     return true;
                 }
                 break;
 
             default:
-                // 尝试通过基类的通用处理
                 console.log(`[GameFactory] Unhandled event type: ${eventType}, trying base handler`);
                 return false;
         }

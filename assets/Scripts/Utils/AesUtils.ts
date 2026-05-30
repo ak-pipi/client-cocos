@@ -3,7 +3,10 @@
 // Email 393817707@qq.com
 // Date 2025.10.23
 
-import * as CryptoJS from 'crypto-js';
+import * as CryptoJSNS from 'crypto-js';
+
+// crypto-js 命名空间兼容：直接导出模块默认值
+const CryptoJS = (CryptoJSNS as any).default || CryptoJSNS;
 
 export class AesUtils {
     // 16字节的密钥1

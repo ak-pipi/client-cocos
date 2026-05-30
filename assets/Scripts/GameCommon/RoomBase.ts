@@ -1,82 +1,100 @@
 /**
- * 通用房间基类 (RoomBase)
- * 所有六款游戏牌桌的基类，提供：
- * - 房间生命周期管理
- * - 玩家位管理
- * - 倒计时控制
- * - 聊天/表情入口
- * - 解散投票
- * - 托管状态
- * - 断线重连
+ * 通用房间基类 (RoomBase) - v2 完整版
+ *
+ * 所有游戏的统一基类，集成：
+ * - NetMsgHandler / ConnectionHandler 协议模式（与 GuanDan 一致）
+ * - NetworkManager WebSocket 通信
+ * - GameManager HTTP API 调用
+ * - 资源加载（复用 GuanDan Bundle 作为默认资源）
+ * - 完整的房间生命周期管理
+ * - 座位/玩家/倒计时/托管/解散投票
+ * - 断线重连同步
+ *
+ * 适用游戏：桃江麻将、红中麻将、长沙麻将、跑得快、千分、歪胡子
  *
  * Author: AI Assistant
  */
 
-import { _decorator, Component, Node, Label, Sprite, Prefab, instantiate, director } from 'cc';
+import { _decorator, Component, Node, Label, Prefab, instantiate, director, Sprite, SpriteFrame } from 'cc';
+import { NetMsgHandler, NetMsgManager } from '../Manager/NetMsgManager';
+import { ConnectionHandler, NetworkManager } from '../Manager/NetworkManager';
+import { GameManager } from '../Manager/GameManager';
+import { Client } from '../Game/Client';
+import { CommonUtils } from '../Utils/CommonUtils';
+import { ResourceLoader } from '../Manager/ResourceLoader';
 import { RoomState, PlayerRoomState, SeatPosition, RoomPlayerInfo, RoomInfo, RoundSettlementData, FinalSettlementData, CreateRoomOptions } from './GameTypes';
-import { WsEventRouter, ServerEventType, ClientEventType } from '../Network/WsEventRouter';
-import { ProtoAdapter } from '../Network/ProtoAdapter';
 
 const { ccclass, property } = _decorator;
+
+// ==================== 房间级别枚举 ====================
+
+/** 房间级别 */
+export enum RoomLevel {
+    Invalid = 0,
+    Friend = 1,       // 好友房
+    Practice = 2,     // 练习房
+    Beginner = 3,     // 初级房
+    Moderate = 4,     // 中级房
+    Advanced = 5,     // 高级房
+    Master = 6,       // 大师房
+}
+
+/** 游戏状态 */
+export enum GameState {
+    Sitting = 0,       // 等待入座
+    Waiting = 1,       // 等待开始
+    Dealing = 2,       // 发牌中
+    Playing = 3,       // 游戏进行中
+}
 
 // ==================== 事件回调类型 ====================
 
 export interface RoomEventCallbacks {
-    /** 房间状态变化 */
     onRoomStateChanged?: (state: RoomState) => void;
-    /** 玩家加入 */
     onPlayerJoined?: (player: RoomPlayerInfo) => void;
-    /** 玩家离开 */
     onPlayerLeft?: (playerId: string) => void;
-    /** 玩家准备状态变化 */
     onPlayerReadyChanged?: (playerId: string, ready: boolean) => void;
-    /** 游戏开始 */
     onGameStart?: () => void;
-    /** 单局结算 */
     onRoundSettlement?: (data: RoundSettlementData) => void;
-    /** 总结算 */
     onFinalSettlement?: (data: FinalSettlementData) => void;
-    /** 断线提示 */
     onDisconnect?: () => void;
-    /** 重连成功 */
     onReconnect?: () => void;
-    /** 房间解散 */
     onRoomDissolved?: () => void;
 }
 
 @ccclass('RoomBase')
-export class RoomBase extends Component {
-    // ==================== UI 引用 ====================
+export class RoomBase extends Component implements NetMsgHandler, ConnectionHandler {
+    // ==================== UI 引用 (子类通过 @property 覆写绑定) ====================
 
     @property({ type: Node })
-    protected topBar: Node = null;           // 顶部状态栏
+    protected topBar: Node = null;
 
     @property({ type: Node })
-    protected seatContainer: Node = null;    // 玩家位容器
+    protected seatContainer: Node = null;
 
     @property({ type: Node })
-    protected chatButton: Node = null;      // 聊天按钮（左下）
+    protected chatButton: Node = null;
 
     @property({ type: Node })
-    protected actionArea: Node = null;      // 操作按钮区（右下）
+    protected actionArea: Node = null;
 
     @property({ type: Node })
-    protected disconnectTip: Node = null;   // 断线提示
+    protected disconnectTip: Node = null;
 
     @property({ type: Node })
-    protected trusteePanel: Node = null;    // 托管面板
+    protected trusteePanel: Node = null;
 
     @property({ type: Node })
-    protected dissolvePanel: Node = null;   // 解散投票面板
+    protected dissolvePanel: Node = null;
 
     @property({ type: Label })
-    protected roomNoLabel: Label = null;     // 房号显示
+    protected roomNoLabel: Label = null;
 
     @property({ type: Label })
-    protected roundLabel: Label = null;      // 局数显示
+    protected roundLabel: Label = null;
 
     @property({ type: Label })
-    protected countdownLabel: Label = null;  // 倒计时显示
+    protected countdownLabel: Label = null;
 
     // ==================== 内部状态 ====================
 
@@ -86,11 +104,20 @@ export class RoomBase extends Component {
     /** 当前房间状态 */
     protected currentState: RoomState = RoomState.Idle;
 
-    /** 玩家位映射表 (seatIndex -> Node) */
-    protected seatNodes: Map<number, Node> = new Map();
+    /** 房间号 */
+    protected roomNumber: string = null;
 
-    /** 玩家信息映射表 (playerId -> RoomPlayerInfo) */
-    protected playerMap: Map<string, RoomPlayerInfo> = new Map();
+    /** 房间等级 */
+    protected level: number = RoomLevel.Invalid;
+
+    /** 房主座位号 */
+    protected ownerSeat: number = 0;
+
+    /** 游戏状态 */
+    protected gameState: number = GameState.Sitting;
+
+    /** 本玩家座位号 (-1=未入座/观众) */
+    protected seat: number = -1;
 
     /** 倒计时剩余秒数 */
     protected countdownSeconds: number = 0;
@@ -101,6 +128,12 @@ export class RoomBase extends Component {
     /** 倒计时累计时间 */
     protected countdownElapsed: number = 0;
 
+    /** 是否正在倒计时(自己回合) */
+    protected clockFlag: boolean = false;
+
+    /** 自己是否在倒计时 */
+    protected clockSelf: boolean = false;
+
     /** 是否托管中 */
     protected isTrustee: boolean = false;
 
@@ -110,81 +143,276 @@ export class RoomBase extends Component {
     /** 游戏ID (子类设置) */
     protected gameId: string = '';
 
+    /** 同步消息名前缀 (子类覆写，如 "MsgTaojiangMahjong") */
+    protected syncMsgPrefix: string = 'MsgGame';
+
+    /** 玩家信息列表 */
+    protected playerInfos: any[] = [];
+
+    /** 默认资源 Bundle 名 (用于加载 GuanDan 共享资源) */
+    protected static readonly DEFAULT_BUNDLE_MAIN = 'GuanDanRoomMain';
+    protected static readonly DEFAULT_BUNDLE_AUDIO = 'GuanDanAudio';
+    protected static readonly DEFAULT_BUNDLE_BG = 'GuanDanRoomBackground';
+
+    // ==================== 生命周期 ====================
+
     onLoad(): void {
-        this.setupEventListeners();
-        this.hideAllPanels();
+        NetMsgManager.Instance.registerHandler(this);
+        NetworkManager.Instance.registerHandler(this);
+    }
+
+    onDestroy(): void {
+        NetMsgManager.Instance.unregisterHandler(this);
+        NetworkManager.Instance.unregisterHandler(this);
     }
 
     start(): void {
-        // 子类可覆盖初始化逻辑
+        // 加载通用提示弹窗预制体
+        ResourceLoader.Instance.loadAsset(RoomBase.DEFAULT_BUNDLE_MAIN, "PromptDialog", Prefab, (prefab: Prefab) => {
+            if (prefab) Client.Instance.setPromptDialogPrefab(prefab);
+        });
+        ResourceLoader.Instance.loadAsset(RoomBase.DEFAULT_BUNDLE_MAIN, "PromptTip", Prefab, (prefab: Prefab) => {
+            if (prefab) Client.Instance.setPromptTipPrefab(prefab);
+        });
+
+        // 请求游戏数据同步
+        NetworkManager.Instance.sendInnerMessage(this.syncMsgPrefix + "Sync");
     }
 
     update(deltaTime: number): void {
-        if (this.isCountingDown && this.countdownSeconds > 0) {
-            this.countdownElapsed += deltaTime;
-            if (this.countdownElapsed >= 1.0) {
-                this.countdownElapsed -= 1.0;
-                this.countdownSeconds--;
-                this.updateCountdownDisplay();
-                if (this.countdownSeconds <= 0) {
-                    this.onCountdownExpired();
-                }
-            }
+        this.updateClock(deltaTime);
+    }
+
+    // ==================== NetMsgHandler 接口实现 ====================
+
+    /**
+     * 消息分发入口（子类覆写以处理各自的消息类型）
+     * 返回 true 表示已处理，false 表示不认识此消息
+     */
+    public onMessage(msgType: string, msg: any): boolean {
+        let ret: boolean = true;
+
+        if (msgType === this.syncMsgPrefix + "SyncResp") this.onSyncGame(msg);
+        else if (msgType === "MsgAddSpectator") this.onAddSpectator(msg);
+        else if (msgType === "MsgAddAvatar") this.onAddAvatar(msg);
+        else if (msgType === "MsgRemoveAvatar") this.onRemoveAvatar(msg);
+        else if (msgType === "MsgAvatarConnect") this.onAvatarConnect(msg);
+        else if (msgType === "MsgRemoveSpectator") this.onRemoveSpectator(msg);
+        else if (msgType === "MsgPlayerReadyResp") this.onPlayerReady(msg);
+        else if (msgType === "MsgPlayerAuthorizeResp") this.onPlayerAuthorize(msg);
+        else if (msgType === "MsgLeaveVenueResp") this.onLeaveVenueResp(msg);
+        else ret = false;
+
+        return ret;
+    }
+
+    // ==================== ConnectionHandler 接口实现 ====================
+
+    public onDisconnect(): void {}
+
+    public onReconnect(): void {
+        // 重连后请求全量同步
+        NetworkManager.Instance.sendInnerMessage(this.syncMsgPrefix + "Sync");
+    }
+
+    // ==================== 服务器消息处理 (基类通用) ====================
+
+    /** 全量同步响应 */
+    protected onSyncGame(msg: any): void {
+        if (!msg) return;
+        this.clearRoom();
+
+        if (msg.level !== undefined) this.level = msg.level;
+        if (msg.number !== undefined) this.roomNumber = String(msg.number);
+        if (msg.ownerSeat !== undefined) this.ownerSeat = msg.ownerSeat;
+        if (msg.gameState !== undefined) this.gameState = msg.gameState;
+        if (msg.seat !== undefined) this.seat = msg.seat;
+
+        this.updateLevelDisplay();
+        this.updateRoomDisplay();
+
+        // 入座阶段 vs 游戏阶段 UI 切换
+        const sittingPhase = (this.gameState === GameState.Sitting);
+
+        if (!sittingPhase && this.seat === -1) {
+            // 游戏进行中但未入座 → 强制离开
+            this.exitRoom();
+            return;
         }
+
+        this.onSyncGameUIUpdate(sittingPhase);
+
+        console.log(`[RoomBase] Sync: level=${this.level} room=${this.roomNumber} seat=${this.seat} state=${this.gameState}`);
+    }
+
+    /**
+     * 同步后的 UI 更新（子类覆写以控制具体 UI 显隐）
+     */
+    protected onSyncGameUIUpdate(isSitting: boolean): void {
+        // 基类空实现，子类根据自身 UI 结构覆写
+    }
+
+    protected clearRoom(): void {
+        console.log('[RoomBase] Clearing room');
+        // 子类覆写以清理所有 UI 元素
+    }
+
+    protected exitRoom(): void {
+        GameManager.Instance.leaveVenue();
+        GameManager.Instance.getCapital();
+        Client.Instance.backToGameHall();
+    }
+
+    // ---- 玩家管理消息 ----
+
+    protected onAddSpectator(_msg: any): void {}
+    protected onRemoveSpectator(_msg: any): void {}
+
+    protected onAddAvatar(msg: any): void {
+        if (!msg) return;
+        const count = msg.avatars?.length || 0;
+        for (let i = 0; i < count; i++) {
+            const info = msg.avatars[i];
+            const text = CommonUtils.decodeBase64(info.base64);
+            const extraInfo = JSON.parse(text);
+            const total = (extraInfo.winNum || 0) + (extraInfo.loseNum || 0) + (extraInfo.drawNum || 0);
+            const winRate = total > 0 ? ((extraInfo.winNum + extraInfo.drawNum) * 100.0 / total) : 100.0;
+
+            const playerInfo = {
+                playerId: info.playerId,
+                nickname: info.nickname,
+                sex: info.sex,
+                gold: extraInfo.gold,
+                headUrl: info.headUrl,
+                offline: info.offline,
+                ready: info.ready,
+                authorize: extraInfo.authorize,
+                ip: extraInfo.ip,
+                winNum: extraInfo.winNum,
+                loseNum: extraInfo.loseNum,
+                drawNum: extraInfo.drawNum,
+                winRate: winRate,
+            };
+            this.playerInfos[info.seat] = playerInfo;
+            this.onPlayerAdded(info.seat, playerInfo);
+        }
+    }
+
+    /**
+     * 新玩家加入（子类覆写以更新 UI）
+     */
+    protected onPlayerAdded(seatIndex: number, playerInfo: any): void {
+        console.log(`[RoomBase] Player added at seat ${seatIndex}: ${playerInfo.nickname}`);
+    }
+
+    protected onRemoveAvatar(msg: any): void {
+        if (!msg) return;
+        if (msg.seat === this.seat) this.seat = -1;
+        this.playerInfos[msg.seat] = null;
+        this.onPlayerRemoved(msg.seat);
+    }
+
+    /**
+     * 玩家离开（子类覆写）
+     */
+    protected onPlayerRemoved(seatIndex: number): void {
+        console.log(`[RoomBase] Player removed at seat ${seatIndex}`);
+    }
+
+    protected onAvatarConnect(msg: any): void {
+        if (!msg) return;
+        if (this.playerInfos[msg.seat]) {
+            this.playerInfos[msg.seat].offline = msg.offline;
+        }
+        this.onPlayerOfflineChanged(msg.seat, msg.offline);
+    }
+
+    protected onPlayerOfflineChanged(_seatIndex: number, _offline: boolean): void {}
+
+    protected onPlayerReady(msg: any): void {
+        if (!msg) return;
+        if (this.playerInfos[msg.seat]) {
+            this.playerInfos[msg.seat].ready = true;
+        }
+        this.onPlayerReadyUIUpdate(msg.seat);
+    }
+
+    /** 准备状态 UI 更新（子类覆写） */
+    protected onPlayerReadyUIUpdate(_seatIndex: number): void {}
+
+    protected onPlayerAuthorize(msg: any): void {
+        if (!msg) return;
+        if (this.playerInfos[msg.seat]) {
+            this.playerInfos[msg.seat].authorize = msg.authorize;
+        }
+        this.onPlayerAuthorizeUIUpdate(msg.seat, msg.authorize);
+    }
+
+    /** 托管状态 UI 更新（子类覆写） */
+    protected onPlayerAuthorizeUIUpdate(_seatIndex: number, _authorize: boolean): void {}
+
+    protected onLeaveVenueResp(_msg: any): void {}
+
+    // ==================== 座位转换 ====================
+
+    /** 服务端座位 → 客户端座位 (视角旋转) */
+    protected server2ClientSeat(s: number): number {
+        if (this.seat === -1) return s;
+        if (this.gameState === GameState.Sitting) return s;
+        const seatCount = this.getSeatCount();
+        return (s + seatCount - this.seat) % seatCount;
+    }
+
+    /** 客户端座位 → 服务端座位 */
+    protected client2ServerSeat(s: number): number {
+        if (this.seat === -1) return s;
+        if (this.gameState === GameState.Sitting) return s;
+        return (s + this.seat) % this.getSeatCount();
     }
 
     // ==================== 初始化 ====================
 
-    /**
-     * 初始化房间（创建房间后调用）
-     */
     init(roomInfo: RoomInfo): void {
         this.roomInfo = roomInfo;
         this.currentState = roomInfo.gameState;
         this.updateRoomDisplay();
-        this.initSeats();
         console.log(`[RoomBase] Room initialized: ${roomInfo.roomNo}`);
     }
 
-    /**
-     * 设置事件回调
-     */
     setCallbacks(callbacks: RoomEventCallbacks): void {
         this.callbacks = { ...this.callbacks, ...callbacks };
     }
 
     // ==================== UI 更新方法 ====================
 
-    /** 更新顶部栏显示 */
     protected updateRoomDisplay(): void {
-        if (this.roomNoLabel && this.roomInfo) {
-            this.roomNoLabel.string = `房号: ${this.roomInfo.roomNo}`;
+        if (this.roomNoLabel && this.roomNumber) {
+            this.roomNoLabel.string = this.roomNumber;
         }
         if (this.roundLabel && this.roomInfo) {
             this.roundLabel.string = `${this.roomInfo.currentRound}/${this.roomInfo.totalRounds}`;
         }
     }
 
-    /** 更新倒计时显示 */
+    protected updateLevelDisplay(): void {
+        // 子类覆写以显示房间等级名称
+    }
+
     protected updateCountdownDisplay(): void {
         if (this.countdownLabel) {
-            this.countdownLabel.string = String(this.countdownSeconds);
+            this.countdownLabel.string = String(Math.max(0, Math.ceil(this.countdownSeconds - this.countdownElapsed)));
         }
     }
 
-    /** 隐藏所有面板 */
     protected hideAllPanels(): void {
         if (this.disconnectTip) this.disconnectTip.active = false;
         if (this.trusteePanel) this.trusteePanel.active = false;
         if (this.dissolvePanel) this.dissolvePanel.active = false;
     }
 
-    // ==================== 座位管理 (子类实现) ====================
+    // ==================== 座位管理 ====================
 
-    /** 初始化座位布局 (根据玩家数量) */
     protected initSeats(): void {
-        this.seatNodes.clear();
-        // 子类应根据具体游戏的玩家数量创建座位节点
         const seatCount = this.getSeatCount();
         for (let i = 0; i < seatCount; i++) {
             this.createSeatNode(i);
@@ -193,71 +421,89 @@ export class RoomBase extends Component {
 
     /** 获取当前游戏的座位数量 (子类覆写) */
     protected getSeatCount(): number {
-        return 2; // 默认 2 人
+        return 4;
     }
 
-    /** 创建单个座位节点 (子类可覆写以自定义样式) */
-    protected createSeatNode(seatIndex: number): Node {
-        // 基本实现：创建空节点占位
-        // 实际使用时应通过预制体实例化
-        const node = new Node(`Seat_${seatIndex}`);
-        if (this.seatContainer) {
-            node.parent = this.seatContainer;
-        }
-        this.seatNodes.set(seatIndex, node);
-        return node;
+    protected createSeatNode(_seatIndex: number): Node {
+        // 基类占位，实际由编辑器预制体提供
+        return null;
     }
 
-    /** 更新指定座位上的玩家信息 */
-    protected updateSeatPlayer(seatIndex: number, player: RoomPlayerInfo | null): void {
-        const seatNode = this.seatNodes.get(seatIndex);
-        if (!seatNode) return;
-
-        if (!player) {
-            // 清空座位
-            seatNode.removeAllChildren();
-            return;
-        }
-
-        // 更新玩家信息到座位UI
-        this.playerMap.set(player.playerId, player);
-        this.renderSeatInfo(seatNode, player);
-    }
-
-    /** 渲染座位信息 (子类覆写以自定义渲染) */
-    protected renderSeatInfo(seatNode: Node, player: RoomPlayerInfo): void {
-        // 基本实现：子类应覆写此方法来渲染头像、昵称、状态等
-        console.log(`[RoomBase] Render seat ${player.seatIndex}: ${player.nickname} (${player.state})`);
-    }
-
-    // ==================== 倒计时 ====================
+    // ==================== 倒计时系统 ====================
 
     /** 开始倒计时 */
     public startCountdown(seconds: number): void {
         this.countdownSeconds = seconds;
         this.countdownElapsed = 0;
         this.isCountingDown = true;
+        this.clockFlag = true;
+        this.clockSelf = true;
+        this.updateCountdownDisplay();
+    }
+
+    /** 开始他人倒计时 (仅显示不播放音效) */
+    public startOtherCountdown(seconds: number): void {
+        this.countdownSeconds = seconds;
+        this.countdownElapsed = 0;
+        this.isCountingDown = true;
+        this.clockFlag = true;
+        this.clockSelf = false;
         this.updateCountdownDisplay();
     }
 
     /** 停止倒计时 */
     public stopCountdown(): void {
         this.isCountingDown = false;
+        this.clockFlag = false;
         this.countdownSeconds = 0;
         this.updateCountdownDisplay();
     }
 
-    /** 倒计时结束回调 (超时自动处理) */
+    /** 帧更新倒计时 (GuanDan 风格的15秒倒计时时钟) */
+    private updateClock(deltaTime: number): void {
+        if (!this.clockFlag) return;
+        if (this.countdownElapsed < 15.0) {
+            const prevElapsed = this.countdownElapsed;
+            this.countdownElapsed += deltaTime;
+            const sec = Math.max(0, Math.floor(15.0 - this.countdownElapsed));
+            if (this.countdownLabel) {
+                this.countdownLabel.string = String(sec);
+            }
+
+            // 倒计时音效 (9s-14s 播放 warning1~5)
+            if (this.clockSelf) {
+                this.checkAndPlayClockWarning(prevElapsed);
+            }
+        } else {
+            this.clockFlag = false;
+            this.isCountingDown = false;
+            if (this.countdownLabel) this.countdownLabel.string = "0";
+            this.onCountdownExpired();
+        }
+    }
+
+    /** 检查并播放倒计时告警音效 (9s~14s 各秒播一次) */
+    protected checkAndPlayClockWarning(prevElapsed: number): void {
+        const thresholds = [9, 10, 11, 12, 13, 14];
+        for (let i = 0; i < thresholds.length; i++) {
+            if (prevElapsed < thresholds[i] && this.countdownElapsed >= thresholds[i]) {
+                this.playClockWarning(5 - i); // 9s->warning5, 14s->warning0
+                break;
+            }
+        }
+    }
+
+    /** 播放倒计时告警音效（子类可覆写使用自己的音频控制器） */
+    protected playClockWarning(_count: number): void {}
+
     protected onCountdownExpired(): void {
         this.isCountingDown = false;
         console.log('[RoomBase] Countdown expired');
-        // 默认行为：子类可覆写，如自动出牌/托管等
         this.onAutoAction();
     }
 
     /** 超时自动操作 (子类覆写) */
     protected onAutoAction(): void {
-        // 默认进入托管或过
         if (!this.isTrustee) {
             this.setTrustee(true);
         }
@@ -265,24 +511,28 @@ export class RoomBase extends Component {
 
     // ==================== 托管 ====================
 
-    /** 设置托管状态 */
     public setTrustee(trustee: boolean): void {
         this.isTrustee = trustee;
         if (this.trusteePanel) {
             this.trusteePanel.active = trustee;
         }
         console.log(`[RoomBase] Trustee mode: ${trustee}`);
+        NetworkManager.Instance.sendInnerMessage("MsgPlayerAuthorize");
+    }
 
-        if (trustee) {
-            WsEventRouter.Instance.action('trust', { enable: true });
-        } else {
-            WsEventRouter.Instance.action('cancel_trust', { enable: false });
-        }
+    /** 点击自动/托管按钮 */
+    public onAutoClick(): void {
+        NetworkManager.Instance.sendInnerMessage("MsgPlayerAuthorize");
+    }
+
+    /** 点击准备按钮 */
+    public onReadyClick(): void {
+        if (this.seat === -1) return;
+        NetworkManager.Instance.sendInnerMessage("MsgPlayerReady");
     }
 
     // ==================== 断线重连 ====================
 
-    /** 显示断线提示 */
     public showDisconnectTip(show: boolean): void {
         if (this.disconnectTip) {
             this.disconnectTip.active = show;
@@ -292,36 +542,25 @@ export class RoomBase extends Component {
         }
     }
 
-    /** 处理重连数据 */
     public handleReconnect(data: any): void {
         console.log('[RoomBase] Handling reconnect data');
         this.showDisconnectTip(false);
-
-        // 根据重连数据恢复房间状态
         if (data.roomState) {
             this.currentState = data.roomState as RoomState;
         }
-        if (data.players) {
-            for (const p of data.players) {
-                this.playerMap.set(p.playerId, p);
-            }
-        }
-
         this.callbacks.onReconnect?.();
     }
 
     // ==================== 解散投票 ====================
 
-    /** 显示解散投票面板 */
-    public showDissolveVote(initiatorId: string): void {
+    public showDissolveVote(_initiatorId: string): void {
         if (this.dissolvePanel) {
             this.dissolvePanel.active = true;
         }
     }
 
-    /** 投票响应 */
     public voteDissolve(agree: boolean): void {
-        WsEventRouter.Instance.dissolveVote(agree);
+        NetworkManager.Instance.sendInnerMessage("MsgDisbandChoice", { agree });
         if (this.dissolvePanel) {
             this.dissolvePanel.active = false;
         }
@@ -329,24 +568,95 @@ export class RoomBase extends Component {
 
     // ==================== 聊天入口 ====================
 
-    /** 打开聊天面板 */
     public openChat(): void {
         console.log('[RoomBase] Open chat');
-        // 子类可覆写以打开具体聊天UI
+    }
+
+    // ==================== HTTP API 辅助方法 ====================
+
+    /**
+     * 创建房间 (HTTP API)
+     * @param gameType GameType 枚举值 (来自 ConstDefines)
+     * @param level 房间级别
+     * @param extraData 额外参数
+     */
+    protected createRoomAPI(gameType: number, level: number, extraData?: any): Promise<void> {
+        const data = Object.assign({ level }, extraData || {});
+        const text = JSON.stringify(data);
+        const encoded = CommonUtils.encodeBase64(text);
+        const msg = { gameType, base64: encoded };
+
+        return GameManager.Instance.authPost("/player/game/create", msg).then((dto: any) => {
+            if (dto.code !== "00000000") {
+                Client.Instance.showPromptDialog("创建房间失败: " + dto.msg);
+                return;
+            }
+            GameManager.Instance.enterVenue(dto.wsAddress, dto.venueId, gameType, () => {
+                this.onEnterVenue();
+            });
+        }).catch((err: any) => {
+            console.error("Create room error:", err);
+        });
+    }
+
+    /**
+     * 通过 districtId 加入场次
+     */
+    protected enterDistrictAPI(districtId: number, gameType: number): Promise<void> {
+        const url = "/player/game/enter/district?districtId=" + districtId.toString();
+        return GameManager.Instance.authPost(url, null).then((dto: any) => {
+            if (dto.code !== "00000000") {
+                Client.Instance.showPromptDialog("加入房间失败: " + dto.msg);
+                return;
+            }
+            GameManager.Instance.enterVenue(dto.wsAddress, dto.venueId, gameType, () => {
+                this.onEnterVenue();
+            });
+        }).catch((err: any) => {
+            console.error("Enter district error:", err);
+        });
+    }
+
+    /**
+     * 通过房号加入房间
+     */
+    protected joinRoomByNumberAPI(number: string, gameType: number): Promise<void> {
+        const data = { number, gameType };
+        return GameManager.Instance.authPost("/player/game/enter/number", data).then((dto: any) => {
+            if (!dto) {
+                Client.Instance.showPromptDialog("加入房间失败，服务器无响应");
+                return;
+            }
+            if (dto.code !== "00000000") {
+                Client.Instance.showPromptDialog("加入房间失败: " + dto.msg);
+                return;
+            }
+            GameManager.Instance.enterVenue(dto.wsAddress, dto.venueId, gameType, () => {
+                this.onEnterVenue();
+            });
+        }).catch((err: any) => {
+            console.error("Join room error:", err);
+        });
+    }
+
+    /**
+     * 进入场地后加载房间场景（子类覆写以指定预制体名）
+     */
+    protected onEnterVenue(): void {
+        ResourceLoader.Instance.loadAsset(RoomBase.DEFAULT_BUNDLE_MAIN, "Room", Prefab, (prefab: Prefab) => {
+            if (!prefab) {
+                Client.Instance.showPromptDialog("游戏加载失败");
+                return;
+            }
+            Client.Instance.initGameRoom(prefab);
+        });
     }
 
     // ==================== 退出房间 ====================
 
-    /** 返回大厅 */
     public backToHall(): void {
-        // 通知服务端离开
-        WsEventRouter.Instance.send(ClientEventType.ROOM_JOIN, { action: 'leave' }, true);
-
-        // 清理资源
-        this.cleanup();
-
-        // 切换回大厅场景/界面
-        const { Client } = require('../Game/Client');
+        GameManager.Instance.leaveVenue();
+        GameManager.Instance.getCapital();
         Client.Instance.backToGameHall();
     }
 
@@ -354,81 +664,26 @@ export class RoomBase extends Component {
     protected cleanup(): void {
         this.stopCountdown();
         this.hideAllPanels();
-        this.seatNodes.clear();
-        this.playerMap.clear();
+        this.playerInfos = [];
         this.roomInfo = null;
-        WsEventRouter.Instance.removeAllHandlers();
+        this.roomNumber = null;
     }
 
-    // ==================== 事件监听 ====================
+    // ==================== 事件监听 (保留兼容旧 WsEventRouter 的接口) ====================
 
-    /** 设置 WS 事件监听 */
     protected setupEventListeners(): void {
-        // 注册房间相关事件处理
-        WsEventRouter.Instance.on(ServerEventType.ROOM_UPDATE, {
-            handleEvent: (type, data) => this.handleRoomUpdate(data),
-        });
-
-        WsEventRouter.Instance.on(ServerEventType.GAME_START, {
-            handleEvent: (type, data) => this.handleGameStart(data),
-        });
-
-        WsEventRouter.Instance.on(ServerEventType.GAME_SETTLEMENT, {
-            handleEvent: (type, data) => this.handleRoundSettlement(data),
-        });
-
-        WsEventRouter.Instance.on(ServerEventType.ROOM_FINAL_SETTLEMENT, {
-            handleEvent: (type, data) => this.handleFinalSettlement(data),
-        });
-
-        WsEventRouter.Instance.on(ServerEventType.USER_RECONNECT, {
-            handleEvent: (type, data) => this.handleReconnect(data),
-        });
+        // 已迁移到 NetMsgHandler 模式，此处保留为空兼容
     }
 
-    /** 处理房间更新事件 */
     protected handleRoomUpdate(data: any): boolean {
         console.log('[RoomBase] Room update:', data);
-
         if (data.state) {
             this.currentState = data.state as RoomState;
             this.callbacks.onRoomStateChanged?.(this.currentState);
         }
-
-        // 处理玩家变化
-        if (data.players) {
-            for (const pData of data.players) {
-                const existing = this.playerMap.get(pData.playerId);
-                if (!existing) {
-                    // 新玩家加入
-                    const playerInfo: RoomPlayerInfo = {
-                        playerId: pData.playerId,
-                        nickname: pData.nickname,
-                        avatar: pData.avatar,
-                        seatIndex: pData.seatIndex,
-                        seatPosition: this.indexToPosition(pData.seatIndex),
-                        state: pData.state || PlayerRoomState.NotReady,
-                        isOwner: pData.isOwner || false,
-                    };
-                    this.playerMap.set(playerInfo.playerId, playerInfo);
-                    this.updateSeatPlayer(pData.seatIndex, playerInfo);
-                    this.callbacks.onPlayerJoined?.(playerInfo);
-                } else {
-                    // 更新现有玩家
-                    Object.assign(existing, pData);
-                    if (pData.state !== undefined) {
-                        existing.state = pData.state as PlayerRoomState;
-                        this.callbacks.onPlayerReadyChanged?.(existing.playerId, existing.state === PlayerRoomState.Ready);
-                    }
-                    this.updateSeatPlayer(existing.seatIndex, existing);
-                }
-            }
-        }
-
         return true;
     }
 
-    /** 处理游戏开始事件 */
     protected handleGameStart(data: any): boolean {
         this.currentState = RoomState.Playing;
         this.stopCountdown();
@@ -437,7 +692,6 @@ export class RoomBase extends Component {
         return true;
     }
 
-    /** 处理单局结算事件 */
     protected handleRoundSettlement(data: any): boolean {
         this.currentState = RoomState.RoundSettlement;
         this.stopCountdown();
@@ -447,7 +701,6 @@ export class RoomBase extends Component {
         return true;
     }
 
-    /** 处理总结算事件 */
     protected handleFinalSettlement(data: any): boolean {
         this.currentState = RoomState.FinalSettlement;
         const settlement: FinalSettlementData = data as FinalSettlementData;
