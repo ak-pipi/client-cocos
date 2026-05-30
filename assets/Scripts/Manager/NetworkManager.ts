@@ -1,5 +1,5 @@
 // 网络相关
-import * as msgpack from "msgpack-lite";
+import { encode } from "@msgpack/msgpack/dist.esm/encode.mjs";
 import * as Base64 from 'js-base64';
 import { Client } from "../Game/Client";
 import { GameManager } from "./GameManager";
@@ -301,7 +301,7 @@ export class NetworkManager implements NetMsgHandler  {
                 msg = GameManager.Instance.signatureMessage(msg);
             }
             if (!msg) return;
-            let buf = msgpack.encode(msg);
+            let buf = encode(msg);
             if (!buf) {
                 console.log("Serialize message error");
                 return;
@@ -310,7 +310,7 @@ export class NetworkManager implements NetMsgHandler  {
                 msgType: msgType,
                 msgPack: (Base64 as any).Base64.fromUint8Array(buf)
             };
-            buf = msgpack.encode(data);
+            buf = encode(data);
             this.connection.send(buf);
         }
         catch (err) {

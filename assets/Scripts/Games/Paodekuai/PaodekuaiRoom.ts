@@ -12,8 +12,8 @@
  */
 
 import { _decorator, Component, Node, Label } from 'cc';
-import { PokerRoomBase, PokerCard, CardPlay, PokerAvailableActions, PokerEventCallbacks, PokerPattern } from '../../GameCommon/PokerRoomBase';
-import { RoomInfo, RoundSettlementData, FinalSettlementData } from '../../GameCommon/GameTypes';
+import { PokerRoomBase, PokerCard, CardPlay, PokerAvailableActions, PokerEventCallbacks } from '../../GameCommon/PokerRoomBase';
+import { RoomInfo, RoundSettlementData, FinalSettlementData, PokerPattern } from '../../GameCommon/GameTypes';
 import { NetworkManager } from '../../Manager/NetworkManager';
 
 const { ccclass, property } = _decorator;

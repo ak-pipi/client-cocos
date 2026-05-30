@@ -1,23 +1,6 @@
 // 网络消息管理者
-import * as msgpack from "msgpack-lite";
+import { decode } from "@msgpack/msgpack/dist.esm/decode.mjs";
 import * as Base64 from 'js-base64';
-import { NetworkManager } from './NetworkManager';
-
-async function waitMilliseconds(ms: number) {
-    await new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// 接收缓存生成器
-/*async function* receivedBufferGenerator(): AsyncGenerator<Uint8Array> {
-    while (true) {
-        if (NetworkManager.Instance.ReceivedBufferCount === 0) {
-            await waitMilliseconds(3000);
-            console.log("test Generator");
-        } else {
-            yield NetworkManager.Instance.takeReceivedBuffer();
-        }
-    }
-}*/
 
 export class MsgWrapper {
     public msgType: string = null;
@@ -38,66 +21,8 @@ export class NetMsgManager {
         return NetMsgManager._instance;
     }
 
-    private unpackMessageProcedure() {
-        /*let dataStream = receivedBufferGenerator();
-        for await (const item of decodeMultiStream(dataStream)) {
-            
-        }*/
-        //const items = [ "foo", 10, { name: "bar", }, [1, 2, 3], ];
-        /*const createStream = async function* (): AsyncGenerator<Uint8Array> {
-            for (const item of items) {
-                yield encode(item);
-            }
-        };
-        const result: Array<unknown> = [];
-        for await (const item of decodeMultiStream(createStream())) {
-            console.log(item);
-        }*/
-        /*let encoder = new Encoder();
-        const encodedItems = items.map((item) => encoder.encode(item));
-        const encoded = new Uint8Array(encodedItems.reduce((p, c) => p + c.byteLength, 0));
-        let offset = 0;
-        for (const encodedItem of encodedItems) {
-            encoded.set(encodedItem, offset);
-            offset += encodedItem.byteLength;
-        }
-        let decoder = new Decoder();
-        for (const item of decoder.decodeMulti(encoded)) {
-            console.log(item);
-        }*/
-        var src = [
-            ["foo"],
-            ["bar"],
-            ["baz"]
-        ];
-
-        var encoded = [
-            msgpack.encode(src[0]),
-            msgpack.encode(src[1]),
-            msgpack.encode(src[2])
-        ];
-        console.log(encoded[0]);
-        console.log(encoded[1]);
-        console.log(encoded[2]);
-
-        var decoder = msgpack.createDecodeStream();
-
-        decoder.on("data", onData);
-        decoder.write(encoded[0]);
-        decoder.write(encoded[1]);
-        //decoder.write(encoded[2]);
-        decoder.end();
-
-        function onData(data) {
-            console.log(data);
-        }
-    }
-
     // 初始化标志
     private inited = false;
-
-    // msgpack解码器
-    //private decoder: msgpack.Decoder = null;
 
     // 缓存数据
     private cachedData: Uint8Array = null;
@@ -110,17 +35,11 @@ export class NetMsgManager {
     public init() {
         if (this.inited) return;
         this.inited = true;
-        //this.unpackMessageProcedure();
-        //this.decoder = msgpack.createDecodeStream();
-        //this.decoder.on("data", (data: any) => { this.onDecode(data); });
     }
 
     public receiveData(buf: Uint8Array) {
-        /*if (this.decoder) {
-            this.decoder.write(buf);
-        }*/
         try {
-            let msg: any = msgpack.decode(buf);
+            let msg: any = decode(buf);
             if (!(msg && msg.msgType)) {
                 this.cacheData(buf);
                 return;
@@ -150,7 +69,7 @@ export class NetMsgManager {
         }
         if (test) return;
         try {
-            let msg: any = msgpack.decode(this.cachedData);
+            let msg: any = decode(this.cachedData);
             if (!(msg && msg.msgType)) return;
             this.onDecode(msg);
             console.log("Cached data size: ", this.cachedData.length);
@@ -164,7 +83,7 @@ export class NetMsgManager {
             let buf: Uint8Array = (Base64 as any).Base64.toUint8Array(data.msgPack);
             let mw = new MsgWrapper();
             mw.msgType = data.msgType;
-            mw.msg = msgpack.decode(buf);
+            mw.msg = decode(buf);
             this.pushMessage(mw);
         } catch (err) {
             console.log(data);

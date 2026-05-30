@@ -14,7 +14,7 @@
  */
 
 import { NetworkManager } from '../Manager/NetworkManager';
-import * as msgpack from 'msgpack-lite';
+import { encode } from '@msgpack/msgpack/dist.esm/encode.mjs';
 import * as Base64 from 'js-base64';
 
 // ==================== 事件类型定义 ====================
@@ -188,7 +188,7 @@ export class WsEventRouter {
      */
     private sendRaw(message: any): void {
         try {
-            const buf = msgpack.encode(message);
+            const buf = encode(message);
             if (!buf) return;
 
             // 包装成兼容格式发送
@@ -196,7 +196,7 @@ export class WsEventRouter {
                 msgType: '__event__',
                 msgPack: (Base64 as any).Base64.fromUint8Array(buf),
             };
-            const finalBuf = msgpack.encode(wrappedData);
+            const finalBuf = encode(wrappedData);
 
             // 直接通过底层连接发送
             NetworkManager.Instance.sendRaw(finalBuf);
