@@ -36,7 +36,25 @@ export enum GameType {
     Tractor = 1029,
 
     // 掼蛋
-    GuanDan = 1030
+    GuanDan = 1030,
+
+    // 桃江麻将
+    TaoJiangMahjong = 1031,
+
+    // 红中麻将
+    HongZhongMahjong = 1032,
+
+    // 跑得快
+    PaoDeKuai = 1033,
+
+    // 长沙麻将
+    ChangShaMahjong = 1034,
+
+    // 益阳歪胡子
+    YiYangWaiHuZi = 1035,
+
+    // 沅江千分
+    YuanJiangQianFen = 1036
 };
 
 // 游戏场id
@@ -66,7 +84,61 @@ export enum DistrictId {
     GuanDanAdvanced = 7,
 
     // 掼蛋顶级房
-    GuanDanMaster = 8
+    GuanDanMaster = 8,
+
+    // 桃江麻将初级房
+    TaoJiangBeginner = 9,
+    // 桃江麻将中级房
+    TaoJiangModerate = 10,
+    // 桃江麻将高级房
+    TaoJiangAdvanced = 11,
+    // 桃江麻将顶级房
+    TaoJiangMaster = 12,
+
+    // 红中麻将初级房
+    HongZhongBeginner = 13,
+    // 红中麻将中级房
+    HongZhongModerate = 14,
+    // 红中麻将高级房
+    HongZhongAdvanced = 15,
+    // 红中麻将顶级房
+    HongZhongMaster = 16,
+
+    // 跑得快初级房
+    PaoDeKuaiBeginner = 17,
+    // 跑得快中级房
+    PaoDeKuaiModerate = 18,
+    // 跑得快高级房
+    PaoDeKuaiAdvanced = 19,
+    // 跑得快顶级房
+    PaoDeKuaiMaster = 20,
+
+    // 长沙麻将初级房
+    ChangShaBeginner = 21,
+    // 长沙麻将中级房
+    ChangShaModerate = 22,
+    // 长沙麻将高级房
+    ChangShaAdvanced = 23,
+    // 长沙麻将顶级房
+    ChangShaMaster = 24,
+
+    // 沅江千分初级房
+    YuanJiangQianFenBeginner = 25,
+    // 沅江千分中级房
+    YuanJiangQianFenModerate = 26,
+    // 沅江千分高级房
+    YuanJiangQianFenAdvanced = 27,
+    // 沅江千分顶级房
+    YuanJiangQianFenMaster = 28,
+
+    // 益阳歪胡子初级房
+    YiYangWaiHuZiBeginner = 29,
+    // 益阳歪胡子中级房
+    YiYangWaiHuZiModerate = 30,
+    // 益阳歪胡子高级房
+    YiYangWaiHuZiAdvanced = 31,
+    // 益阳歪胡子顶级房
+    YiYangWaiHuZiMaster = 32
 };
 
 // 网络连接状态
@@ -138,4 +210,35 @@ export enum PlayCardFailed {
 
     // 要不起
     CanNotPlay = 4
+};
+
+// 歪胡子操作类型
+export enum WaiHuZiAction {
+    // 无
+    None = 0,
+    // 吃
+    Chi = 1,
+    // 碰
+    Peng = 2,
+    // 偎
+    Wei = 3,
+    // 跑
+    Pao = 4,
+    // 提
+    Ti = 5,
+    // 胡
+    Hu = 6,
+    // 过
+    Pass = 7,
+    // 出牌
+    Discard = 8
+};
+
+// 歪胡子字牌点数
+export enum WaiHuZiPoint {
+    Invalid = 0,
+    // 小字: 一到十
+    Yi = 1, Er = 2, San = 3, Si = 4, Wu = 5, Liu = 6, Qi = 7, Ba = 8, Jiu = 9, Shi = 10,
+    // 大字: 壹到拾
+    DaYi = 11, DaEr = 12, DaSan = 13, DaSi = 14, DaWu = 15, DaLiu = 16, DaQi = 17, DaBa = 18, DaJiu = 19, DaShi = 20
 };
