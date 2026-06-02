@@ -122,7 +122,7 @@ export class ChangShaMahjongRoom extends MahjongRoomBase {
         if (msgType === "MsgChangShaSettlement") { this.onSettlement(msg); return true; }
         if (msgType === "MsgChangShaQiShouHu") { this.onQiShouHu(msg); return true; }
         if (msgType === "MsgChangShaBird") { this.onBird(msg); return true; }
-        if (msgType === "MsgChangShaDisbandVote") { this.onChangShaDisbandVote(msg); return true; }
+        if (msgType === "ChangSha.DisbandVote") { this.onChangShaDisbandVote(msg); return true; }
         return false;
     }
 
@@ -392,7 +392,20 @@ export class ChangShaMahjongRoom extends MahjongRoomBase {
     // ==================== 解散消息处理 ====================
 
     protected onMsgDisbandVote(msg: any): void {
-        // 使用长沙麻将自定义解散投票消息
+        // 长沙麻将使用 ChangSha.DisbandVote，此处处理通用的 MsgDisbandVote（如果服务端发送）
+        if (this.dlgDisband && msg) {
+            this.dlgDisbanding = true;
+            let names: string[] = new Array(this.playerCount);
+            let choices: number[] = new Array(this.playerCount);
+            for (let i: number = 0; i < this.playerCount; i++) {
+                if (this.playerInfos[i]) {
+                    names[i] = this.playerInfos[i].nickname;
+                }
+                choices[i] = 0;
+            }
+            this.dlgDisband.show(true);
+            this.dlgDisband.onDisbandVote(msg.disbander, msg.elapsed, names, msg.choices || choices, this.seat);
+        }
     }
 
     protected onMsgDisbandChoice(msg: any): void {

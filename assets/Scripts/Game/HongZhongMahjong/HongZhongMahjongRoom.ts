@@ -56,6 +56,7 @@ export class HongZhongMahjongRoom extends MahjongRoomBase {
         if (msgType === "MsgHZStartRound") { this.onHZStartRound(msg); return true; }
         if (msgType === "MsgHZSettlement") { this.onHZSettlement(msg); return true; }
         if (msgType === "MsgHZSitting") { this.onHZSitting(msg); return true; }
+        if (msgType === "MsgHZDisbandVote") { this.onMsgDisbandVote(msg); return true; }
         return false;
     }
 
@@ -272,18 +273,28 @@ export class HongZhongMahjongRoom extends MahjongRoomBase {
         this.dlgDisbanding = true;
         this.dlgDisband.show(true);
         let names: string[] = new Array(this.playerCount);
+        let choices: number[] = new Array(this.playerCount);
         for (let i: number = 0; i < this.playerCount; i++) {
             if (this.playerInfos[i]) {
                 names[i] = this.playerInfos[i].nickname;
             }
+            choices[i] = 0;
         }
-        this.dlgDisband.onDisbandVote(msg, names, this.seat);
+        if (msg.choices) {
+            for (let i: number = 0; i < msg.choices.length; i++) {
+                let c: any = msg.choices[i];
+                if (c.seat !== undefined && c.choice !== undefined) {
+                    choices[c.seat] = c.choice;
+                }
+            }
+        }
+        this.dlgDisband.onDisbandVote(msg.disbander, msg.elapsed, names, choices, this.seat);
     }
 
     protected onMsgDisbandChoice(msg: any): void {
         if (!(msg && this.dlgDisband)) return;
         console.log(msg);
-        this.dlgDisband.onDisbandChoice(msg.seat, this.seat, msg.choice);
+        this.dlgDisband.onDisbandChoice(msg.seat, msg.choice);
     }
 
     protected onMsgDisbandObsolete(): void {

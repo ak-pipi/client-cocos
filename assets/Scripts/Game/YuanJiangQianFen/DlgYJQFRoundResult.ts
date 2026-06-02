@@ -100,8 +100,8 @@ export class DlgYJQFRoundResult extends Component {
         this.show(false);
         if (this.room) this.room.showResult = false;
         // 请求同步沅江千分游戏数据
-        NetworkManager.Instance.sendInnerMessage("MsgQianFenSync");
+        NetworkManager.Instance.sendInnerMessage("QianFen.Sync");
         // 准备就绪
-        NetworkManager.Instance.sendInnerMessage("MsgQianFenReady");
+        NetworkManager.Instance.sendInnerMessage("QianFen.Ready");
     }
 }

@@ -117,17 +117,16 @@ export class YuanJiangQianFenRoom extends PokerRoomBase {
     private lastClockThreshold: number = -1;
 
     protected getSyncMsgType(): string {
-        return "MsgQianFenSync";
+        return "QianFen.Sync";
     }
 
     protected onPokerGameMessage(msgType: string, msg: any): boolean {
-        if (msgType === "MsgQianFenSyncResp") { this.onSyncResp(msg); return true; }
-        if (msgType === "MsgQianFenDeal") { this.onDeal(msg); return true; }
-        if (msgType === "MsgQianFenCallScoreNotify") { this.onCallScoreNotify(msg); return true; }
-        if (msgType === "MsgQianFenPlayNotify") { this.onPlayNotify(msg); return true; }
-        if (msgType === "MsgQianFenPlayFailed") { this.onPlayFailed(msg); return true; }
-        if (msgType === "MsgQianFenRoundResult") { this.onRoundResult(msg); return true; }
-        if (msgType === "MsgQianFenFinalResult") { this.onFinalResult(msg); return true; }
+        if (msgType === "QianFen.SyncResp") { this.onSyncResp(msg); return true; }
+        if (msgType === "QianFen.Deal") { this.onDeal(msg); return true; }
+        if (msgType === "QianFen.CallScoreNotify") { this.onCallScoreNotify(msg); return true; }
+        if (msgType === "QianFen.PlayNotify") { this.onPlayNotify(msg); return true; }
+        if (msgType === "QianFen.RoundResult") { this.onRoundResult(msg); return true; }
+        if (msgType === "QianFen.FinalResult") { this.onFinalResult(msg); return true; }
         if (msgType === "MsgDisbandVote") { this.onDisbandVote(msg); return true; }
         if (msgType === "MsgDisbandChoice") { this.onDisbandChoice(msg); return true; }
         if (msgType === "MsgDisbandObsolete") { this.onDisbandObsolete(); return true; }
@@ -146,7 +145,7 @@ export class YuanJiangQianFenRoom extends PokerRoomBase {
         if (dlgFinalResultComp) dlgFinalResultComp.setRoom(this);
         this.loadPromptPrefabs();
         // 请求同步沅江千分游戏数据
-        NetworkManager.Instance.sendInnerMessage("MsgQianFenSync");
+        NetworkManager.Instance.sendInnerMessage("QianFen.Sync");
     }
 
     update(deltaTime: number) {
@@ -364,11 +363,6 @@ export class YuanJiangQianFenRoom extends PokerRoomBase {
 
         // 显示下一玩家操作UI
         this.showCurrentPlayerUI();
-    }
-
-    private onPlayFailed(msg: any) {
-        if (!msg) return;
-        Client.Instance.showPromptTip(msg.errMsg, 4.0);
     }
 
     private onRoundResult(msg: any) {
@@ -656,7 +650,7 @@ export class YuanJiangQianFenRoom extends PokerRoomBase {
             venueId: GameManager.Instance.VenueId,
             cardIds: cardIds
         };
-        NetworkManager.Instance.sendMessage("MsgQianFenPlay", msg, true);
+        NetworkManager.Instance.sendMessage("QianFen.Play", msg, true);
     }
 
     public onPassClick() {
@@ -664,11 +658,11 @@ export class YuanJiangQianFenRoom extends PokerRoomBase {
             venueId: GameManager.Instance.VenueId,
             cardIds: []
         };
-        NetworkManager.Instance.sendMessage("MsgQianFenPlay", msg, true);
+        NetworkManager.Instance.sendMessage("QianFen.Play", msg, true);
     }
 
     public onReadyClick() {
-        NetworkManager.Instance.sendInnerMessage("MsgQianFenReady");
+        NetworkManager.Instance.sendInnerMessage("QianFen.Ready");
     }
 
     public onCallScoreClick(event: Event, customEventData: any | null) {
@@ -678,7 +672,7 @@ export class YuanJiangQianFenRoom extends PokerRoomBase {
             venueId: GameManager.Instance.VenueId,
             score: score
         };
-        NetworkManager.Instance.sendMessage("MsgQianFenCallScore", msg, true);
+        NetworkManager.Instance.sendMessage("QianFen.CallScore", msg, true);
         // 隐藏叫分按钮
         this.hideCallScoreUI();
     }

@@ -331,6 +331,12 @@ export class WaiHuZiRoom extends BaseRoom {
 
         // 更新当前出牌玩家
         this.currentPlayer = msg.seat;
+
+        // 如果服务端返回了可选操作列表，显示操作按钮
+        if (msg.options && msg.seat === this.seat && msg.options.length > 0) {
+            this.showActionButtons(msg.options);
+        }
+
         this.showCurrentPlayerUI();
     }
 

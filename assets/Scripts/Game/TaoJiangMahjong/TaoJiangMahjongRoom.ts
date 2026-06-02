@@ -91,6 +91,7 @@ export class TaoJiangMahjongRoom extends MahjongRoomBase {
         if (msgType === "MsgTJStartRound") { this.onTJStartRound(msg); return true; }
         if (msgType === "MsgTJSettlement") { this.onTJSettlement(msg); return true; }
         if (msgType === "MsgTJSitting") { this.onSitting(msg); return true; }
+        if (msgType === "MsgTJDisbandVote") { this.onMsgDisbandVote(msg); return true; }
         return false;
     }
 
