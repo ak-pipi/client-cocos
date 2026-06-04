@@ -10,12 +10,12 @@ import { Prefab, instantiate } from 'cc';
 const { ccclass, property } = _decorator;
 
 const GAME_TYPE_MAP: Record<string, number> = {
-    [GameId.TaojiangMahjong]: 2001,
-    [GameId.HongzhongMahjong]: 2002,
-    [GameId.ChangshaMahjong]: 2003,
-    [GameId.Paodekuai]: 2004,
-    [GameId.Waihuzi]: 2005,
-    [GameId.Qianfen]: 2006,
+    [GameId.TaojiangMahjong]: 1031,
+    [GameId.HongzhongMahjong]: 1032,
+    [GameId.Paodekuai]: 1033,
+    [GameId.ChangshaMahjong]: 1034,
+    [GameId.Waihuzi]: 1035,
+    [GameId.Qianfen]: 1036,
 };
 
 @ccclass('NewGameHall')

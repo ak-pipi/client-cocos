@@ -25,22 +25,9 @@ export class Load extends Component {
     update(deltaTime: number) { }
     
     private loadConfig() {
-        let url: string = "https://gzyx.oss-cn-shenzhen.aliyuncs.com/config.json";
-        //let url: string = "http://192.168.6.220:8088/niuma/config.json";
-        fetch(url).then((response: Response) => {
-            return response.json();
-        }).then((value) => {
-            this.onLoadConfig(value);
-        }).catch((err) => {
-            if (this.progress) {
-                this.progress.string = err;
-            }
-        });
-    }
-
-    private onLoadConfig(data) {
-        GameManager.Instance.HttpHost = data.httpHost;
-        console.log("Http host: ", data.httpHost);
+        // 本地开发配置，直接使用本地 web_server
+        GameManager.Instance.HttpHost = "http://127.0.0.1:18080";
+        console.log("Http host: ", GameManager.Instance.HttpHost);
         this.loadResources();
     }
 

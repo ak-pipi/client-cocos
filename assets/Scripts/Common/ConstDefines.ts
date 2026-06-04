@@ -36,7 +36,25 @@ export enum GameType {
     Tractor = 1029,
 
     // 掼蛋
-    GuanDan = 1030
+    GuanDan = 1030,
+
+    // 桃江麻将
+    TaojiangMahjong = 1031,
+
+    // 红中麻将
+    HongzhongMahjong = 1032,
+
+    // 跑得快
+    PaoDeKuai = 1033,
+
+    // 长沙麻将
+    ChangShaMahjong = 1034,
+
+    // 益阳歪胡子
+    YiYangWaiHuZi = 1035,
+
+    // 沅江千分
+    YuanJiangQianFen = 1036
 };
 
 // 游戏场id
