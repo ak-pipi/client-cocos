@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, Color, Graphics, Button, EventHandler, UITransform } from 'cc';
+import { _decorator, Component, Node, Label, Color, Graphics, Button, EventHandler, UITransform, EditBox } from 'cc';
 import { Client } from './Client';
 import { GameFactory } from '../App/GameFactory';
 import { GameId, GameType } from '../App/GameEnums';
@@ -24,6 +24,8 @@ export class NewGameHall extends Component {
     private gameName: string = '';
 
     private titleLabel: Label | null = null;
+    private joinPopup: Node | null = null;
+    private joinEditBox: EditBox | null = null;
 
     public init(gameId: string, gameName: string): void {
         this.gameId = gameId as GameId;
