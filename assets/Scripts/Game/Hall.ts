@@ -3,10 +3,12 @@
 // Email 393817707@qq.com
 // Date 2025.11.03
 
-import { _decorator, Component, Label, Node, Sprite, sys, AudioClip, SpriteFrame, Prefab, instantiate } from 'cc';
+import { _decorator, Component, Label, Node, Sprite, sys, AudioClip, SpriteFrame, Prefab, instantiate, Color, UITransform, Graphics, Button, EventHandler } from 'cc';
 import { ResourceLoader } from '../Manager/ResourceLoader';
 import { GameManager } from '../Manager/GameManager';
 import { Client } from './Client';
+import { DlgPublicRooms } from './Dialogs/DlgPublicRooms';
+import { DlgMahjongRecords } from './Dialogs/DlgMahjongRecords';
 const { ccclass, property } = _decorator;
 
 @ccclass('Hall')
@@ -49,11 +51,16 @@ export class Hall extends Component {
 
     private dlgService: Node = null;
 
+    private dlgPublicRooms: Node = null;
+
+    private dlgMahjongRecords: Node = null;
+
     private playerInfoTime: number = 0;
 
     start() {
         this.playBackgroundMusic();
         this.loadGameList();
+        this.createShortcutButtons();
     }
 
     update(deltaTime: number) {
@@ -174,6 +181,76 @@ export class Hall extends Component {
         ResourceLoader.Instance.loadAsset("Dialog", "DlgService", Prefab, (prefab: Prefab) => {
             this.dlgService = instantiate(prefab);
             this.dlgService.parent = this.popup;
+        });
+    }
+
+    public onPublicRoomsClicked() {
+        this.showPublicRooms();
+    }
+
+    public onMahjongRecordsClicked() {
+        this.showMahjongRecords();
+    }
+
+    private getDialogParent(): Node {
+        return this.popup || this.node;
+    }
+
+    private showPublicRooms() {
+        if (this.dlgPublicRooms) {
+            this.dlgPublicRooms.active = true;
+            return;
+        }
+        this.dlgPublicRooms = new Node('DlgPublicRooms');
+        this.dlgPublicRooms.parent = this.getDialogParent();
+        this.dlgPublicRooms.addComponent(DlgPublicRooms);
+    }
+
+    private showMahjongRecords() {
+        if (this.dlgMahjongRecords) {
+            this.dlgMahjongRecords.active = true;
+            return;
+        }
+        this.dlgMahjongRecords = new Node('DlgMahjongRecords');
+        this.dlgMahjongRecords.parent = this.getDialogParent();
+        this.dlgMahjongRecords.addComponent(DlgMahjongRecords);
+    }
+
+    private createShortcutButtons() {
+        const shortcuts = [
+            { text: '公开房', handler: 'onPublicRoomsClicked', x: -860, color: new Color(58, 130, 190, 230) },
+            { text: '麻将战绩', handler: 'onMahjongRecordsClicked', x: -700, color: new Color(52, 150, 110, 230) },
+        ];
+
+        shortcuts.forEach((item) => {
+            const btnNode = new Node(item.handler);
+            btnNode.parent = this.node;
+            btnNode.setPosition(item.x, -470, 0);
+            btnNode.addComponent(UITransform).setContentSize(140, 44);
+
+            const graphics = btnNode.addComponent(Graphics);
+            graphics.fillColor = item.color;
+            graphics.roundRect(-70, -22, 140, 44, 10);
+            graphics.fill();
+
+            const labelNode = new Node('Label');
+            labelNode.parent = btnNode;
+            const label = labelNode.addComponent(Label);
+            label.string = item.text;
+            label.fontSize = 22;
+            label.color = new Color(255, 255, 255, 255);
+            label.horizontalAlign = Label.HorizontalAlign.CENTER;
+            label.verticalAlign = Label.VerticalAlign.CENTER;
+            labelNode.addComponent(UITransform).setContentSize(130, 40);
+
+            const button = btnNode.addComponent(Button);
+            button.transition = Button.Transition.SCALE;
+            button.zoomScale = 1.05;
+            const evt = new EventHandler();
+            evt.target = this.node;
+            evt.component = 'Hall';
+            evt.handler = item.handler;
+            button.clickEvents.push(evt);
         });
     }
 }

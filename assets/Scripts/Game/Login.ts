@@ -59,6 +59,8 @@ export class Login extends Component {
 
     private sex: number = 1;
 
+    private captchaLoading: boolean = false;
+
     start() {
         let text = sys.localStorage.getItem('userData');
         let userData = null;
@@ -69,8 +71,8 @@ export class Login extends Component {
         if (userData) {
             this.editName.string = userData.username;
             this.editPassword.string = userData.password;
-            GameManager.Instance.Token = userData.token;
-            this.getPlayerInfo();
+            // 先校验 token，通过后再写入 GameManager，避免过期 token 触发心跳弹窗
+            this.getPlayerInfo(userData.token);
         }
         this.getCaptchaCode1();
         this.playBackgroundMusic();
@@ -97,7 +99,13 @@ export class Login extends Component {
     }
 
     private getCaptchaCode(onGetaptchaCode: Function) {
+        if (this.captchaLoading) return;
+        this.captchaLoading = true;
         GameManager.Instance.get('/player/captcha-image').then((dto) => {
+            if (!dto || dto.code === 429) {
+                Client.Instance.showPromptTip(dto?.msg || "请求过于频繁，请稍后再试");
+                return;
+            }
             this.uuidCode = dto.uuid;
             let base64Img = "data:image/jpg;base64," + dto.img;
             let image = new Image();
@@ -110,7 +118,10 @@ export class Login extends Component {
             }
             image.src = base64Img;
         }).catch((err) => {
-            console.log("获取验证码失败");
+            console.log("获取验证码失败: ", err);
+            Client.Instance.showPromptTip("获取验证码失败，请检查网络或稍后重试");
+        }).finally(() => {
+            this.captchaLoading = false;
         });
     }
 
@@ -245,8 +256,8 @@ export class Login extends Component {
         this.sex = 2;
     }
 
-    private getPlayerInfo() {
-        GameManager.Instance.authGet("/player/info").then((dto) => {
+    private getPlayerInfo(token?: string) {
+        GameManager.Instance.authGet("/player/info", token).then((dto) => {
             let errMsg: string = null;
             if (dto) {
                 if (dto.code !== "00000000") {
@@ -260,15 +271,18 @@ export class Login extends Component {
             }
             if (errMsg) {
                 this.getCaptchaCode1();
-                GameManager.Instance.Token = null;
+                sys.localStorage.removeItem('userData');
                 console.log("Get player info error: ", errMsg);
                 return;
+            }
+            if (token) {
+                GameManager.Instance.Token = token;
             }
             GameManager.Instance.setPlayerInfo(dto);
             Client.Instance.onLoginSucceed();
         }).catch((err) => {
             this.getCaptchaCode1();
-            GameManager.Instance.Token = null;
+            sys.localStorage.removeItem('userData');
             console.log("Get player info error: ", err);
         });
     }

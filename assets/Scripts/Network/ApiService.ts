@@ -7,6 +7,7 @@
 
 import { GameManager } from '../Manager/GameManager';
 import { CommonUtils } from '../Utils/CommonUtils';
+import { GameRoomApi } from './GameRoomApi';
 
 /** API 响应通用结构 */
 export interface ApiResponse<T = any> {
@@ -111,14 +112,56 @@ export class ApiService {
         return this.get('/lobby/games', true);
     }
 
-    /** 创建房间 */
+    /** 创建房间（新版 API） */
     async createRoom(data: { gameId: string; ruleConfig: any }) {
         return this.post('/rooms', data, true);
     }
 
-    /** 加入房间 */
+    /** 加入房间（新版 API） */
     async joinRoom(roomNo: string) {
         return this.post(`/rooms/${roomNo}/join`, null, true);
+    }
+
+    // ==================== 游戏房间 API（web-server /player/game/*） ====================
+
+    /** 创建游戏房间 */
+    async createGameRoom(gameType: number, params?: Record<string, any>) {
+        return GameRoomApi.Instance.createRoom(gameType, params);
+    }
+
+    /** 通过房间号加入 */
+    async joinGameRoomByNumber(number: string, gameType: number) {
+        return GameRoomApi.Instance.joinByNumber(number, gameType);
+    }
+
+    /** 通过 venueId 加入 */
+    async joinGameRoomByVenueId(venueId: string, gameType: number) {
+        return GameRoomApi.Instance.joinByVenueId(venueId, gameType);
+    }
+
+    /** 区域匹配进入 */
+    async joinGameRoomByDistrict(districtId: number) {
+        return GameRoomApi.Instance.joinByDistrict(districtId);
+    }
+
+    /** 查询区域玩家数量 */
+    async getDistrictPlayerCount(districtId: number) {
+        return GameRoomApi.Instance.getDistrictPlayerCount(districtId);
+    }
+
+    /** 六安比鸡公开房列表 */
+    async getBiJiPublicRooms() {
+        return GameRoomApi.Instance.getBiJiPublicRooms();
+    }
+
+    /** 百人牛牛公开房列表 */
+    async getNiu100PublicRooms() {
+        return GameRoomApi.Instance.getNiu100PublicRooms();
+    }
+
+    /** 麻将战绩 */
+    async getMahjongRecords(pageNum = 1, pageSize = 10) {
+        return GameRoomApi.Instance.getMahjongRecords(pageNum, pageSize);
     }
 
     /** 战绩查询 */

@@ -130,6 +130,13 @@ export class NetworkManager implements NetMsgHandler  {
 
     private handlers: ConnectionHandler[] = [];
 
+    // 最近一次收到数据的连接 id，用于丢弃废弃连接的消息
+    private receiveConnectionId: number = 0;
+
+    private isCurrentConnectionMessage(): boolean {
+        return this.connection != null && this.receiveConnectionId === this.connection.Id;
+    }
+
     public connect(address: string, reconnect: boolean = false) {
         // 废弃当前连接实例
         this.abandon();
@@ -174,16 +181,18 @@ export class NetworkManager implements NetMsgHandler  {
         this.heartbeatReceived = true;
         Client.Instance.showConnecting(false);
 
-        // 发送连接消息
-        this.sendMessage("MsgPlayerConnect", {}, true);
-
-        GameManager.Instance.onConnected();
+        // 发送连接消息，进入场地需等待 MsgPlayerConnectResp
+        const signingSecret = GameManager.Instance.EnterVenueSigningSecret;
+        this.sendMessage("MsgPlayerConnect", {}, true, signingSecret);
     }
 
     public onReceiveData(con: WebSocketConnection, event: MessageEvent) {
         if (this.isAbandoned(con)) return;
+        this.receiveConnectionId = con.Id;
         if (event.data instanceof ArrayBuffer) {
             NetMsgManager.Instance.receiveData(new Uint8Array(event.data));
+            // 握手消息需立即处理，避免下一帧才发 EnterVenue 导致超时
+            NetMsgManager.Instance.handleMessages();
         }
     }
 
@@ -244,8 +253,7 @@ export class NetworkManager implements NetMsgHandler  {
 
     public isAbandoned(con: WebSocketConnection): boolean {
         if (!con) return false;
-        if (!this.connection) return false;
-        return (this.connection.Id !== con.Id);
+        return !this.connection || this.connection.Id !== con.Id;
     }
 
     public update(deltaTime: number) {
@@ -292,15 +300,18 @@ export class NetworkManager implements NetMsgHandler  {
      * @param msg 消息体
      * @param signature 是否需要签名
      */
-    public sendMessage(msgType: string, msg: any, signature: boolean): void {
+    public sendMessage(msgType: string, msg: any, signature: boolean, signingSecret?: string): void {
         if (!this.isConnected()) return;
         if (!msgType || !msg) return;
         try {
             if (signature) {
                 // 需要做消息签名
-                msg = GameManager.Instance.signatureMessage(msg);
+                msg = GameManager.Instance.signatureMessage(msg, signingSecret);
             }
-            if (!msg) return;
+            if (!msg) {
+                console.error("Send message aborted:", msgType);
+                return;
+            }
             let buf = encode(msg);
             if (!buf) {
                 console.log("Serialize message error");
@@ -380,6 +391,10 @@ export class NetworkManager implements NetMsgHandler  {
             this.onHeartbeatResp(msg);
         }
         else if (msgType === "MsgPlayerSignatureError") {
+            if (!this.isCurrentConnectionMessage()) {
+                console.warn("Ignore stale MsgPlayerSignatureError");
+                return true;
+            }
             GameManager.Instance.onPlayerSignatureError(msg);
         }
         else {
@@ -400,6 +415,14 @@ export class NetworkManager implements NetMsgHandler  {
     }
 
     private onPlayerConnectResp(msg: any) {
+        if (!this.isCurrentConnectionMessage()) {
+            console.warn("Ignore stale MsgPlayerConnectResp, conn:", this.receiveConnectionId, "current:", this.connection?.Id);
+            return;
+        }
+        if (GameManager.Instance.EnterVenueState === EnterVenueState.Entering) {
+            GameManager.Instance.sendEnterVenueMessage();
+            return;
+        }
         if (GameManager.Instance.EnterVenueState != EnterVenueState.Entered) return;
         try {
             for (let handler of this.handlers) {
@@ -411,8 +434,25 @@ export class NetworkManager implements NetMsgHandler  {
         }
     }
 
+    private isEnterVenueSuccess(code: any): boolean {
+        return code === 0 || code === '0';
+    }
+
+    private mapEnterVenueError(serverMsg: string): string {
+        if (!serverMsg) return "未知错误";
+        if (serverMsg.includes("Load venue failed"))
+            return "加载房间失败，请确认数据库已执行 v3_add_rule_config.sql";
+        if (serverMsg.includes("not authorized"))
+            return "未获得进入该房间的授权，请重新创建或加入房间";
+        return serverMsg;
+    }
+
     private onEnterVenueResp(msg: any) {
-        if (msg.code === 0) {
+        if (!this.isCurrentConnectionMessage()) {
+            console.warn("Ignore stale MsgEnterVenueResp");
+            return;
+        }
+        if (this.isEnterVenueSuccess(msg?.code)) {
             // 进入成功
             this.heartbeatElapsed = 0;
             this.heartbeatReceived = true;
@@ -422,8 +462,11 @@ export class NetworkManager implements NetMsgHandler  {
         else {
             // 进入场地失败，断开网络连接
             this.abandon();
-            let errMsg: string = "进入游戏失败: " + msg.errMsg;
-            GameManager.Instance.onEnterFailed(msg.venueId, errMsg);
+            const serverMsg = msg?.errMsg || msg?.msg || "未知错误";
+            const friendlyMsg = this.mapEnterVenueError(serverMsg);
+            const errMsg: string = "进入游戏失败: " + friendlyMsg;
+            console.error("Enter venue failed:", msg);
+            GameManager.Instance.onEnterFailed(msg?.venueId, errMsg);
         }
     }
 

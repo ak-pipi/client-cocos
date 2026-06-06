@@ -22,6 +22,7 @@ import { GameManager } from '../Manager/GameManager';
 import { Client } from '../Game/Client';
 import { CommonUtils } from '../Utils/CommonUtils';
 import { ResourceLoader } from '../Manager/ResourceLoader';
+import { GameRoomApi } from '../Network/GameRoomApi';
 import { RoomState, PlayerRoomState, SeatPosition, RoomPlayerInfo, RoomInfo, RoundSettlementData, FinalSettlementData, CreateRoomOptions } from './GameTypes';
 
 const { ccclass, property } = _decorator;
@@ -581,19 +582,10 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
      * @param extraData 额外参数
      */
     protected createRoomAPI(gameType: number, level: number, extraData?: any): Promise<void> {
-        const data = Object.assign({ level }, extraData || {});
-        const text = JSON.stringify(data);
-        const encoded = CommonUtils.encodeBase64(text);
-        const msg = { gameType, base64: encoded };
-
-        return GameManager.Instance.authPost("/player/game/create", msg).then((dto: any) => {
-            if (dto.code !== "00000000") {
-                Client.Instance.showPromptDialog("创建房间失败: " + dto.msg);
-                return;
-            }
-            GameManager.Instance.enterVenue(dto.wsAddress, dto.venueId, gameType, () => {
-                this.onEnterVenue();
-            });
+        const params = Object.assign({ level }, extraData || {});
+        return GameRoomApi.Instance.createRoom(gameType, params).then((result) => {
+            if (!result) return;
+            GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
         }).catch((err: any) => {
             console.error("Create room error:", err);
         });
@@ -603,15 +595,9 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
      * 通过 districtId 加入场次
      */
     protected enterDistrictAPI(districtId: number, gameType: number): Promise<void> {
-        const url = "/player/game/enter/district?districtId=" + districtId.toString();
-        return GameManager.Instance.authPost(url, null).then((dto: any) => {
-            if (dto.code !== "00000000") {
-                Client.Instance.showPromptDialog("加入房间失败: " + dto.msg);
-                return;
-            }
-            GameManager.Instance.enterVenue(dto.wsAddress, dto.venueId, gameType, () => {
-                this.onEnterVenue();
-            });
+        return GameRoomApi.Instance.joinByDistrict(districtId).then((result) => {
+            if (!result) return;
+            GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
         }).catch((err: any) => {
             console.error("Enter district error:", err);
         });
@@ -621,21 +607,23 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
      * 通过房号加入房间
      */
     protected joinRoomByNumberAPI(number: string, gameType: number): Promise<void> {
-        const data = { number, gameType };
-        return GameManager.Instance.authPost("/player/game/enter/number", data).then((dto: any) => {
-            if (!dto) {
-                Client.Instance.showPromptDialog("加入房间失败，服务器无响应");
-                return;
-            }
-            if (dto.code !== "00000000") {
-                Client.Instance.showPromptDialog("加入房间失败: " + dto.msg);
-                return;
-            }
-            GameManager.Instance.enterVenue(dto.wsAddress, dto.venueId, gameType, () => {
-                this.onEnterVenue();
-            });
+        return GameRoomApi.Instance.joinByNumber(number, gameType).then((result) => {
+            if (!result) return;
+            GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
         }).catch((err: any) => {
             console.error("Join room error:", err);
+        });
+    }
+
+    /**
+     * 通过 venueId 加入房间
+     */
+    protected joinRoomByVenueIdAPI(venueId: string, gameType: number): Promise<void> {
+        return GameRoomApi.Instance.joinByVenueId(venueId, gameType).then((result) => {
+            if (!result) return;
+            GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
+        }).catch((err: any) => {
+            console.error("Join room by venueId error:", err);
         });
     }
 

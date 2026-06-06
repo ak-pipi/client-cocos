@@ -1,0 +1,175 @@
+import { _decorator, Component, Node, Label, UITransform, Color } from 'cc';
+import { GameManager } from '../../Manager/GameManager';
+import { GameRoomApi, MahjongRecordItem } from '../../Network/GameRoomApi';
+import {
+    UI_COLORS, createOverlayRoot, createLabel, createButton,
+    createScrollArea, fillRoundRect, resizeScrollContent,
+} from '../../UI/UiKit';
+
+const { ccclass } = _decorator;
+
+const PAGE_SIZE = 8;
+
+@ccclass('DlgMahjongRecords')
+export class DlgMahjongRecords extends Component {
+    private panel: Node | null = null;
+    private listContent: Node | null = null;
+    private statusLabel: Label | null = null;
+    private pageLabel: Label | null = null;
+
+    private pageNum = 1;
+    private total = 0;
+    private records: MahjongRecordItem[] = [];
+    private loading = false;
+
+    onLoad() {
+        this.buildUI();
+    }
+
+    onEnable() {
+        this.loadPage(this.pageNum || 1);
+    }
+
+    private buildUI(): void {
+        const root = createOverlayRoot(this.node, 'MahjongRecordsRoot');
+        this.panel = root.getChildByName('Panel');
+
+        createLabel(this.panel, '麻将战绩', 34, UI_COLORS.accent, 300, 48)
+            .node.setPosition(0, 270, 0);
+
+        this.statusLabel = createLabel(this.panel, '加载中...', 22, UI_COLORS.subText, 800, 36);
+        this.statusLabel.node.setPosition(0, 220, 0);
+        this.statusLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+
+        const scroll = createScrollArea(this.panel, 860, 430, -20);
+        this.listContent = scroll.content;
+
+        this.pageLabel = createLabel(this.panel, '第 1 页', 22, UI_COLORS.text, 200, 36);
+        this.pageLabel.node.setPosition(0, -285, 0);
+        this.pageLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+
+        createButton(this.panel, '上一页', 110, 40, UI_COLORS.primary, this.node, 'DlgMahjongRecords', 'onPrevPage')
+            .setPosition(-130, -285, 0);
+        createButton(this.panel, '下一页', 110, 40, UI_COLORS.primary, this.node, 'DlgMahjongRecords', 'onNextPage')
+            .setPosition(130, -285, 0);
+        createButton(this.panel, '关闭', 100, 40, new Color(120, 70, 70, 255), this.node, 'DlgMahjongRecords', 'onCloseClicked')
+            .setPosition(380, -285, 0);
+    }
+
+    public onPrevPage(): void {
+        if (this.pageNum <= 1 || this.loading) return;
+        this.loadPage(this.pageNum - 1);
+    }
+
+    public onNextPage(): void {
+        const maxPage = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
+        if (this.pageNum >= maxPage || this.loading) return;
+        this.loadPage(this.pageNum + 1);
+    }
+
+    public onCloseClicked(): void {
+        this.node.active = false;
+    }
+
+    private async loadPage(pageNum: number): Promise<void> {
+        if (this.loading) return;
+        this.loading = true;
+        if (this.statusLabel) this.statusLabel.string = '加载中...';
+        this.clearList();
+
+        try {
+            const result = await GameRoomApi.Instance.getMahjongRecords(pageNum, PAGE_SIZE);
+            if (!result) {
+                if (this.statusLabel) this.statusLabel.string = '加载失败';
+                return;
+            }
+            this.pageNum = result.pageNum || pageNum;
+            this.total = result.total || 0;
+            this.records = result.records || [];
+            this.renderRecords();
+        } catch (err) {
+            console.error('[DlgMahjongRecords] load error:', err);
+            if (this.statusLabel) this.statusLabel.string = '加载失败，请重试';
+        } finally {
+            this.loading = false;
+        }
+    }
+
+    private clearList(): void {
+        if (!this.listContent) return;
+        this.listContent.removeAllChildren();
+    }
+
+    private getMyResult(record: MahjongRecordItem): { score: number; gold: number; nickname: string } {
+        const playerId = GameManager.Instance.PlayerId;
+        const players = record.players || [];
+        const index = players.findIndex((p) => p.playerId === playerId);
+        if (index < 0) {
+            return { score: 0, gold: 0, nickname: GameManager.Instance.NickName || '我' };
+        }
+        return {
+            score: record.scores?.[index] ?? 0,
+            gold: Number(record.winGolds?.[index] ?? 0),
+            nickname: players[index]?.nickname || '我',
+        };
+    }
+
+    private formatPlayers(record: MahjongRecordItem): string {
+        const players = record.players || [];
+        if (players.length === 0) return '暂无玩家信息';
+        return players.map((p) => p.nickname || p.playerId).join(' / ');
+    }
+
+    private renderRecords(): void {
+        if (!this.listContent || !this.statusLabel || !this.pageLabel) return;
+
+        const maxPage = Math.max(1, Math.ceil(this.total / PAGE_SIZE));
+        this.pageLabel.string = `第 ${this.pageNum} / ${maxPage} 页`;
+
+        if (this.records.length === 0) {
+            this.statusLabel.string = this.total === 0 ? '暂无麻将战绩' : '没有更多记录了';
+            resizeScrollContent(this.listContent, 860, 0, 108, 12);
+            return;
+        }
+
+        this.statusLabel.string = `共 ${this.total} 条战绩`;
+        const itemHeight = 108;
+        const gap = 12;
+        const width = 840;
+
+        this.records.forEach((record, index) => {
+            const mine = this.getMyResult(record);
+            const scoreColor = mine.score >= 0 ? UI_COLORS.success : new Color(220, 100, 100, 255);
+            const goldText = mine.gold >= 0 ? `+${mine.gold}` : `${mine.gold}`;
+
+            const card = new Node(`Record_${index}`);
+            card.parent = this.listContent;
+            card.setPosition(0, -(index * (itemHeight + gap) + itemHeight / 2), 0);
+            card.addComponent(UITransform).setContentSize(width, itemHeight);
+            fillRoundRect(card, width, itemHeight, UI_COLORS.card, 12);
+
+            const title = createLabel(card, `房间 ${record.number || '-'}`, 26, UI_COLORS.accent, 220, 34);
+            title.node.setPosition(-300, 28, 0);
+
+            const round = createLabel(card, `第 ${record.roundNo ?? '-'} 局`, 22, UI_COLORS.text, 140, 30);
+            round.node.setPosition(-70, 28, 0);
+
+            const time = createLabel(card, record.time || '', 20, UI_COLORS.subText, 180, 28);
+            time.node.setPosition(300, 28, 0);
+            time.horizontalAlign = Label.HorizontalAlign.RIGHT;
+
+            const players = createLabel(card, this.formatPlayers(record), 20, UI_COLORS.subText, 520, 28);
+            players.node.setPosition(-220, -6, 0);
+
+            const score = createLabel(card, `得分 ${mine.score}`, 24, scoreColor, 140, 32);
+            score.node.setPosition(250, -6, 0);
+            score.horizontalAlign = Label.HorizontalAlign.RIGHT;
+
+            const gold = createLabel(card, `金币 ${goldText}`, 22, scoreColor, 140, 30);
+            gold.node.setPosition(250, -34, 0);
+            gold.horizontalAlign = Label.HorizontalAlign.RIGHT;
+        });
+
+        resizeScrollContent(this.listContent, width, this.records.length, itemHeight, gap);
+    }
+}

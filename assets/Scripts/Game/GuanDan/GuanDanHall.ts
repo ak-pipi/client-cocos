@@ -1,9 +1,8 @@
 import { _decorator, Component, Node, Label, Prefab } from 'cc';
 import { Client } from '../Client';
 import { GameType, DistrictId } from '../../Common/ConstDefines';
-import { GameManager } from '../../Manager/GameManager';
-import { CommonUtils } from '../../Utils/CommonUtils';
 import { ResourceLoader } from '../../Manager/ResourceLoader';
+import { GameRoomApi } from '../../Network/GameRoomApi';
 
 const { ccclass, property } = _decorator;
 
@@ -85,35 +84,18 @@ export class GuanDanHall extends Component {
     }
 
     private createRoom(level: number) {
-        let data = {
-            level: level
-        };
-        let text: string = JSON.stringify(data);
-        text = CommonUtils.encodeBase64(text);
-        console.log(text);
-        let msg = {
-            gameType: GameType.GuanDan,
-            base64: text
-        };
-        GameManager.Instance.authPost("/player/game/create", msg).then((dto) => {
-            if (dto.code !== "00000000") {
-                Client.Instance.showPromptDialog("创建房间失败: " + dto.msg);
-                return;
-            }
-            GameManager.Instance.enterVenue(dto.wsAddress, dto.venueId, GameType.GuanDan, () => { this.onEnterVenue(); });
+        GameRoomApi.Instance.createRoom(GameType.GuanDan, { level }).then((result) => {
+            if (!result) return;
+            GameRoomApi.Instance.enterVenue(result, GameType.GuanDan, () => this.onEnterVenue());
         }).catch((err) => {
             console.log("Create room error: ", err);
         });
     }
 
     private enterDistrict(districtId: number) {
-	    let url: string = "/player/game/enter/district?districtId=" + districtId.toString();
-        GameManager.Instance.authPost(url, null).then((dto) => {
-            if (dto.code !== "00000000") {
-                Client.Instance.showPromptDialog("加入房间失败: " + dto.msg);
-                return;
-            }
-            GameManager.Instance.enterVenue(dto.wsAddress, dto.venueId, GameType.GuanDan, () => { this.onEnterVenue(); });
+        GameRoomApi.Instance.joinByDistrict(districtId).then((result) => {
+            if (!result) return;
+            GameRoomApi.Instance.enterVenue(result, GameType.GuanDan, () => this.onEnterVenue());
         }).catch((err) => {
             console.log("Enter district error: ", err);
         });
@@ -156,21 +138,9 @@ export class GuanDanHall extends Component {
             for (let i: number = 0; i < 6; i++) {
                 number += this.nums[i].toString();
             }
-            let gameType: number = GameType.GuanDan;
-            let data = {
-                number: number,
-                gameType: gameType
-            };
-            GameManager.Instance.authPost("/player/game/enter/number", data).then((dto) => {
-                if (!dto) {
-                    Client.Instance.showPromptDialog("加入房间失败，服务器无响应");
-                    return;
-                }
-                if (dto.code !== "00000000") {
-                    Client.Instance.showPromptDialog("加入房间失败: " + dto.msg);
-                    return;
-                }
-                GameManager.Instance.enterVenue(dto.wsAddress, dto.venueId, GameType.GuanDan, () => { this.onEnterVenue(); });
+            GameRoomApi.Instance.joinByNumber(number, GameType.GuanDan).then((result) => {
+                if (!result) return;
+                GameRoomApi.Instance.enterVenue(result, GameType.GuanDan, () => this.onEnterVenue());
             }).catch((err) => {
                 console.log("Enter room error: ", err);
             });

@@ -112,6 +112,13 @@ export class GameManager {
         this.token = token;
     }
 
+    // 是否已完成登录（拿到有效玩家信息）
+    private loggedIn: boolean = false;
+
+    public get LoggedIn(): boolean {
+        return this.loggedIn;
+    }
+
     // 玩家ID
     private playerId: string = null;
 
@@ -208,7 +215,7 @@ export class GameManager {
 
     public setPlayerInfo(dto: any) {
         this.playerId = dto.playerId;
-        this.secret = dto.secret;
+        this.secret = dto.secret != null ? String(dto.secret).trim() : null;
         this.nickName = dto.nickname;
         this.phone = dto.phone;
         this.sex = dto.sex;
@@ -219,9 +226,13 @@ export class GameManager {
         this.isAgency = dto.isAgency;
         this.agencyId = dto.agencyId;
         this.playerInfoTime = sys.now();
+        this.loggedIn = true;
+        this.lastHeartbeat = sys.now();
     }
 
     private clearPlayerInfo() {
+        this.loggedIn = false;
+        this.lastHeartbeat = sys.now();
         this.token = null;
         this.playerId = null;
         this.secret = null;
@@ -241,7 +252,7 @@ export class GameManager {
     private lastHeartbeat: number = 0;
 
     public heartbeat() {
-        if (CommonUtils.isStringEmpty(this.token)) return;
+        if (!this.loggedIn || CommonUtils.isStringEmpty(this.token)) return;
         let nowTime: number = sys.now();
         let delta: number = nowTime - this.lastHeartbeat;
         if (delta < 30000) return;
@@ -253,18 +264,20 @@ export class GameManager {
             headers: { 'PLAYER-AUTHORIZATION': this.Token }
         }).then((response: Response) => {
             if (response.status === 401) {
-                // token失效，重新登录
-                this.token = null;
-                let logoutFunc: (() => void) = () => {
-                    this.clearPlayerInfo();
-                    Client.Instance.logout();
-                };
-                Client.Instance.showPromptDialog("登录已失效，请重新登录", logoutFunc, logoutFunc);
+                this.handleSessionExpired();
             }
-            //console.log("Heartbeat status: ", response.status);
         }).catch((err) => {
             console.log("Heartbeat error: ", err);
         });
+    }
+
+    private handleSessionExpired() {
+        if (!this.loggedIn) return;
+        this.clearPlayerInfo();
+        let logoutFunc: (() => void) = () => {
+            Client.Instance.logout();
+        };
+        Client.Instance.showPromptDialog("登录已失效，请重新登录", logoutFunc, logoutFunc);
     }
 
     public logout() {
@@ -283,13 +296,26 @@ export class GameManager {
         return url;
     }
 
+    private parseHttpResponse(response: Response): Promise<any> {
+        if (response.status === 429) {
+            return response.json().catch(() => ({
+                code: 429,
+                msg: '请求过于频繁，请稍后再试',
+            }));
+        }
+        if (!response.ok) {
+            return response.text().then((text) => {
+                throw new Error(text || `HTTP ${response.status}`);
+            });
+        }
+        return response.json();
+    }
+
     // 非鉴权Get请求
     public get(path): Promise<any> {
         if (CommonUtils.isStringEmpty(this.HttpHost)) return;
         let url = this.getUrl(path);
-        return fetch(url).then((response: Response) => {
-            return response.json();
-        });
+        return fetch(url).then((response: Response) => this.parseHttpResponse(response));
     }
 
     // 非鉴权Post请求
@@ -300,22 +326,33 @@ export class GameManager {
             method: 'POST',
             headers: { 'Content-Type': 'application/json;charset=utf-8' },
             body: JSON.stringify(data)
-        }).then((response: Response) => {
-            return response.json();
-        });
+        }).then((response: Response) => this.parseHttpResponse(response));
+    }
+
+    private getAuthHeaders(contentType = false): Record<string, string> {
+        const headers: Record<string, string> = {
+            'PLAYER-AUTHORIZATION': this.Token,
+            'Authorization': `Bearer ${this.Token}`,
+        };
+        if (contentType) {
+            headers['Content-Type'] = 'application/json;charset=utf-8';
+        }
+        return headers;
     }
 
     // 鉴权Get请求
-    public authGet(path): Promise<any> {
+    public authGet(path, token?: string): Promise<any> {
         if (CommonUtils.isStringEmpty(this.HttpHost)) return;
-        if (CommonUtils.isStringEmpty(this.Token)) return;
+        const authToken = token || this.Token;
+        if (CommonUtils.isStringEmpty(authToken)) return;
         let url = this.getUrl(path);
+        const headers = this.getAuthHeaders();
+        headers['PLAYER-AUTHORIZATION'] = authToken;
+        headers['Authorization'] = `Bearer ${authToken}`;
         return fetch(url, {
             method: 'GET',
-            headers: { 'PLAYER-AUTHORIZATION': this.Token }
-        }).then((response: Response) => {
-            return response.json();
-        });
+            headers: headers
+        }).then((response: Response) => this.parseHttpResponse(response));
     }
 
     // 鉴权Post请求
@@ -325,14 +362,9 @@ export class GameManager {
         let url = this.getUrl(path);
         return fetch(url, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json;charset=utf-8',
-                'PLAYER-AUTHORIZATION': this.Token
-            },
+            headers: this.getAuthHeaders(true),
             body: data ? JSON.stringify(data) : null
-        }).then((response: Response) => {
-            return response.json();
-        });
+        }).then((response: Response) => this.parseHttpResponse(response));
     }
 
     // 远程图像缓存表，例如头像图片，最多仅缓存10张图像
@@ -417,6 +449,21 @@ export class GameManager {
     // 进入场地成功后的回调函数
     private enterCallback: (() => void) | null = null;
 
+    // 本次进房流程锁定的签名密钥，避免刷新前后 Connect/Enter 不一致
+    private enterVenueSigningSecret: string | null = null;
+
+    public get EnterVenueSigningSecret(): string | null {
+        return this.enterVenueSigningSecret;
+    }
+
+    private beginEnterVenueSigning(): void {
+        this.enterVenueSigningSecret = this.secret;
+    }
+
+    private clearEnterVenueSigning(): void {
+        this.enterVenueSigningSecret = null;
+    }
+
     /**
      * 进入场地
      * @param address 服务器地址
@@ -430,19 +477,57 @@ export class GameManager {
         this.enteringGameType = gameType;
         this.enterCallback = onEnterVenue;
         this.enterVenueState = EnterVenueState.Entering;
-        NetworkManager.Instance.connect(address, false);
+        this.syncMessageSecret().then((ok) => {
+            if (!ok) {
+                this.onEnterFailed(venueId, "进入游戏失败: 获取消息密钥失败，请重新登录");
+                return;
+            }
+            this.beginEnterVenueSigning();
+            console.log("Message secret synced, length: ", this.secret?.length ?? 0);
+            NetworkManager.Instance.connect(address, false);
+        });
     }
 
-    public onConnected() {
-        if (this.enterVenueState === EnterVenueState.Entering) {
-            // 正在进入场地，发送进入场地消息
-            console.log("Enter venue: ", this.enteringVenueId);
-            let msg = {
-                venueId: this.enteringVenueId,
-                gameType: this.enteringGameType
-            };
-            NetworkManager.Instance.sendMessage("MsgEnterVenue", msg, true);
+    /**
+     * 在 MsgPlayerConnectResp 之后发送进入场地消息
+     */
+    public sendEnterVenueMessage(): void {
+        if (this.enterVenueState !== EnterVenueState.Entering) return;
+        if (!this.enteringVenueId) return;
+        const signingSecret = this.enterVenueSigningSecret || this.secret;
+        if (CommonUtils.isStringEmpty(this.playerId) || CommonUtils.isStringEmpty(signingSecret)) {
+            console.error("Enter venue aborted: missing playerId or secret");
+            NetworkManager.Instance.abandon();
+            this.onEnterFailed(this.enteringVenueId, "进入游戏失败: 登录信息不完整，请重新登录");
+            return;
         }
+        console.log("Enter venue: ", this.enteringVenueId, ", playerId: ", this.playerId);
+        const msg = {
+            venueId: this.enteringVenueId,
+            gameType: this.enteringGameType,
+            base64: ""
+        };
+        NetworkManager.Instance.sendMessage("MsgEnterVenue", msg, true, signingSecret);
+    }
+
+    /**
+     * 进房前同步消息签名密钥（与 Redis 一致，不主动轮换）
+     */
+    public syncMessageSecret(): Promise<boolean> {
+        if (!this.loggedIn || CommonUtils.isStringEmpty(this.Token)) {
+            return Promise.resolve(false);
+        }
+        return this.authGet("/player/message/secret").then((dto) => {
+            if (dto?.code === '00000000' && dto?.secret) {
+                this.secret = String(dto.secret).trim();
+                return true;
+            }
+            console.warn("Sync message secret failed:", dto);
+            return false;
+        }).catch((err) => {
+            console.warn("Sync message secret error:", err);
+            return false;
+        });
     }
 
     public onEnterVenue(venueId: string) {
@@ -454,6 +539,7 @@ export class GameManager {
         this.venueId = venueId;
         this.enteringVenueId = null;
         this.enteringGameType = 0;
+        this.clearEnterVenueSigning();
         if (this.enterCallback) {
             this.enterCallback();
             this.enterCallback = null;
@@ -462,12 +548,15 @@ export class GameManager {
 
     public onEnterFailed(venueId: string, errMsg: string) {
         if (this.enterVenueState !== EnterVenueState.Entering) return;
-        if (venueId !== this.enteringVenueId) return;
+        if (venueId && this.enteringVenueId && venueId !== this.enteringVenueId) {
+            console.warn("Enter venue failed with mismatched venueId:", venueId, this.enteringVenueId);
+        }
         this.enterVenueState = EnterVenueState.Leaved;
         this.enteringVenueId = null;
         this.enteringGameType = 0;
         this.enterCallback = null;
-        Client.Instance.showPromptDialog(errMsg);
+        this.clearEnterVenueSigning();
+        Client.Instance.showPromptDialog(errMsg || "进入游戏失败");
     }
 
     public leaveVenue() {
@@ -475,6 +564,7 @@ export class GameManager {
         this.enteringVenueId = null;
         this.enteringGameType = 0;
         this.enterCallback = null;
+        this.clearEnterVenueSigning();
         NetworkManager.Instance.abandon();
         Client.Instance.backToGameHall();
     }
@@ -516,31 +606,35 @@ export class GameManager {
      * @param msg 未签名的消息体
      * @return 签名后的消息体
      */
-    public signatureMessage(msg: any): any {
+    public signatureMessage(msg: any, secretOverride?: string): any {
         if (!msg) return null;
-        if (CommonUtils.isStringEmpty(this.secret)) return null;
-        let timestamp: number = Math.floor(sys.now() / 1000);
+        const secret = secretOverride || this.enterVenueSigningSecret || this.secret;
+        if (CommonUtils.isStringEmpty(secret)) return null;
+        const nowMs = typeof Date !== 'undefined' ? Date.now() : sys.now();
+        let timestamp: number = Math.floor(nowMs / 1000);
         let nonce: string = this.generateNonce(timestamp);
-        let text = this.playerId + '&' + timestamp.toString() + '&' + nonce + '&' + this.secret;
+        let text = this.playerId + '&' + timestamp.toString() + '&' + nonce + '&' + secret;
+        const signature = CommonUtils.encodeMD5(text, false, false);
         let signedMsg = {
             ...msg,
             playerId: this.playerId,
-            timestamp: timestamp.toString(),
+            timestamp: String(timestamp),
             nonce: nonce,
-            signature: CommonUtils.encodeMD5(text, false, false)
+            signature: signature
         };
         return signedMsg;
     }
 
-    // 玩家消息签名失败，重新登录
+    // 玩家消息签名失败
     public onPlayerSignatureError(msg: any) {
-        this.token = null;
-        this.secret = null;
-        let logoutFunc: (() => void) = () => {
-            this.clearPlayerInfo();
-            Client.Instance.logout();
-        };
-        Client.Instance.showPromptDialog("登录已失效，请重新登录", logoutFunc, logoutFunc);
+        const outdate = msg?.outdate === true || msg?.outdate === 1 || msg?.outdate === '1';
+        if (this.enterVenueState === EnterVenueState.Entering) {
+            NetworkManager.Instance.abandon();
+            const hint = outdate ? "签名已过期" : "消息签名验证失败";
+            this.onEnterFailed(this.enteringVenueId, `进入游戏失败: ${hint}，请重新登录后再试`);
+            return;
+        }
+        this.handleSessionExpired();
     }
 
     public getCapital() {
