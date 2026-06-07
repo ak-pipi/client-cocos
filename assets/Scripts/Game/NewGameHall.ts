@@ -3,7 +3,7 @@ import { Client } from './Client';
 import { GameFactory } from '../App/GameFactory';
 import { GameId, GameType } from '../App/GameEnums';
 import { ResourceLoader } from '../Manager/ResourceLoader';
-import { GameRoomApi, getServerGameType } from '../Network/GameRoomApi';
+import { GameRoomApi, EnterVenueResult, getServerGameType } from '../Network/GameRoomApi';
 import { DlgMahjongRecords } from './Dialogs/DlgMahjongRecords';
 
 const { ccclass } = _decorator;
@@ -240,9 +240,9 @@ export class NewGameHall extends Component {
             return;
         }
 
-        GameRoomApi.Instance.createRoom(gameType, { level: 1 }).then((result) => {
+            GameRoomApi.Instance.createRoom(gameType, { level: 1 }).then((result) => {
             if (!result) return;
-            GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
+            GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue(result));
         }).catch((err) => {
             console.error('[NewGameHall] Create room error:', err);
             Client.Instance.showPromptDialog('创建房间失败，请重试');
@@ -282,7 +282,7 @@ export class NewGameHall extends Component {
             if (this.joinPopup) {
                 this.joinPopup.active = false;
             }
-            GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
+            GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue(result));
         }).catch((err) => {
             console.error('[NewGameHall] Join room error:', err);
             Client.Instance.showPromptDialog('加入房间失败，请重试');
@@ -303,14 +303,15 @@ export class NewGameHall extends Component {
         Client.Instance.backToHall();
     }
 
-    private onEnterVenue(): void {
+    private onEnterVenue(result: EnterVenueResult): void {
         ResourceLoader.Instance.loadAsset('GuanDanRoomMain', 'Room', Prefab, (prefab: Prefab) => {
             if (!prefab) {
                 Client.Instance.showPromptDialog('游戏房间加载失败');
                 return;
             }
             Client.Instance.initGameRoom(prefab);
-            GameFactory.Instance.createRoom(this.gameId);
+            const room = GameFactory.Instance.createRoom(this.gameId, undefined, Client.Instance.getGameRoomNode());
+            room.presetRoomNumber(result?.number || null);
         });
     }
 }

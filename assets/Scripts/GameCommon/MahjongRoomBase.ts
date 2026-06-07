@@ -15,8 +15,10 @@
 
 import { _decorator, Component, Node, Label, Prefab, instantiate, Vec3, Tween, tween, UIOpacity, SpriteFrame, AudioClip } from 'cc';
 import { RoomBase, RoomLevel, GameState } from './RoomBase';
-import { GameTypes, RoomState, PlayerRoomState, SeatPosition, MahjongAction, RoundSettlementData, FinalSettlementData } from './GameTypes';
+import { RoomState, PlayerRoomState, SeatPosition, MahjongAction, RoundSettlementData, FinalSettlementData } from './GameTypes';
 import { ResourceLoader } from '../Manager/ResourceLoader';
+import { GameManager } from '../Manager/GameManager';
+import { NetworkManager } from '../Manager/NetworkManager';
 
 const { ccclass, property } = _decorator;
 
@@ -151,7 +153,6 @@ export class MahjongRoomBase extends RoomBase {
 
     start(): void {
         super.start();
-        this.syncMsgPrefix = this.mjMsgPrefix;
     }
 
     // ==================== NetMsgHandler 覆写 (麻将特有消息) ====================
@@ -379,11 +380,12 @@ export class MahjongRoomBase extends RoomBase {
      * 发送出牌到服务端 (通过 InnerMessage 协议)
      */
     protected sendDiscard(tile: MahjongTile): void {
-        NetworkManager.Instance.sendInnerMessage(this.mjMsgPrefix + "Discard", {
+        NetworkManager.Instance.sendMessage(this.mjMsgPrefix + "Discard", {
+            venueId: GameManager.Instance.VenueId,
             tileId: tile.tileId,
             value: tile.value,
             suit: tile.suit,
-        });
+        }, true);
 
         const mySeatIndex = 0; // 自己始终是客户端视角的0号位
         let discards = this.discardRecords.get(mySeatIndex) || [];
@@ -423,7 +425,10 @@ export class MahjongRoomBase extends RoomBase {
         this.hideActionPanel();
         this.integrateDrawnTile();
         this.mjCallbacks.onMahjongAction?.(MahjongAction.Chi, _tiles);
-        NetworkManager.Instance.sendInnerMessage(this.mjMsgPrefix + "Chi", { tiles: _tiles });
+        NetworkManager.Instance.sendMessage(this.mjMsgPrefix + "Chi", {
+            venueId: GameManager.Instance.VenueId,
+            tiles: _tiles
+        }, true);
         this.stopCountdown();
     }
 
@@ -431,7 +436,9 @@ export class MahjongRoomBase extends RoomBase {
         this.hideActionPanel();
         this.integrateDrawnTile();
         this.mjCallbacks.onMahjongAction?.(MahjongAction.Peng);
-        NetworkManager.Instance.sendInnerMessage(this.mjMsgPrefix + "Peng", {});
+        NetworkManager.Instance.sendMessage(this.mjMsgPrefix + "Peng", {
+            venueId: GameManager.Instance.VenueId
+        }, true);
         this.stopCountdown();
     }
 
@@ -439,7 +446,10 @@ export class MahjongRoomBase extends RoomBase {
         this.hideActionPanel();
         this.integrateDrawnTile();
         this.mjCallbacks.onMahjongAction?.(MahjongAction.Gang, _tile ? [_tile] : undefined);
-        NetworkManager.Instance.sendInnerMessage(this.mjMsgPrefix + "Gang", { tileId: _tile?.tileId });
+        NetworkManager.Instance.sendMessage(this.mjMsgPrefix + "Gang", {
+            venueId: GameManager.Instance.VenueId,
+            tileId: _tile?.tileId
+        }, true);
         this.stopCountdown();
     }
 
@@ -447,7 +457,9 @@ export class MahjongRoomBase extends RoomBase {
         this.hideActionPanel();
         this.integrateDrawnTile();
         this.mjCallbacks.onMahjongAction?.(MahjongAction.Hu);
-        NetworkManager.Instance.sendInnerMessage(this.mjMsgPrefix + "Hu", {});
+        NetworkManager.Instance.sendMessage(this.mjMsgPrefix + "Hu", {
+            venueId: GameManager.Instance.VenueId
+        }, true);
         this.stopCountdown();
         this.playHuSound(true); // 自己胡
     }
@@ -458,7 +470,9 @@ export class MahjongRoomBase extends RoomBase {
             this.integrateDrawnTile();
             this.isMyTurn = true;
         }
-        NetworkManager.Instance.sendInnerMessage(this.mjMsgPrefix + "Pass", {});
+        NetworkManager.Instance.sendMessage(this.mjMsgPrefix + "Pass", {
+            venueId: GameManager.Instance.VenueId
+        }, true);
         this.stopCountdown();
     }
 
@@ -466,7 +480,9 @@ export class MahjongRoomBase extends RoomBase {
         this.hideActionPanel();
         this.isTing = true;
         this.mjCallbacks.onTingStateChanged?.(true);
-        NetworkManager.Instance.sendInnerMessage(this.mjMsgPrefix + "Ting", {});
+        NetworkManager.Instance.sendMessage(this.mjMsgPrefix + "Ting", {
+            venueId: GameManager.Instance.VenueId
+        }, true);
     }
 
     // ==================== 弃牌区更新 ====================
@@ -616,6 +632,16 @@ export class MahjongRoomBase extends RoomBase {
     }
 
     private initDiscardRecords(): void {
+        if (!this.discardRecords) {
+            this.discardRecords = new Map<number, MahjongTile[]>();
+        } else {
+            this.discardRecords.clear();
+        }
+        if (!this.meldRecords) {
+            this.meldRecords = new Map<number, MahjongTile[][]>();
+        } else {
+            this.meldRecords.clear();
+        }
         const seatCount = this.getSeatCount();
         for (let i = 0; i < seatCount; i++) {
             this.discardRecords.set(i, []);

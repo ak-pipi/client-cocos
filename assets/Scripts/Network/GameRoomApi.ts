@@ -14,6 +14,7 @@ export interface EnterVenueResult {
     address?: string;
     wsAddress: string;
     venueId: string;
+    number?: string;
 }
 
 /** GameId → 服务端 gameType */
@@ -45,6 +46,7 @@ export function parseEnterVenueResponse(dto: any): EnterVenueResult | null {
         address: payload.address,
         wsAddress: payload.wsAddress,
         venueId: payload.venueId,
+        number: payload.number != null ? String(payload.number) : undefined,
     };
 }
 

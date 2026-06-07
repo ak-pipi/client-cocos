@@ -448,6 +448,11 @@ export class GameManager {
 
     // 进入场地成功后的回调函数
     private enterCallback: (() => void) | null = null;
+    /** 进场响应的完整数据（可能包含房间快照），供房间组件读取 */
+    private enterVenueData: any = null;
+
+    public get EnterVenueData(): any { return this.enterVenueData; }
+    public set EnterVenueData(v: any) { this.enterVenueData = v; }
 
     // 本次进房流程锁定的签名密钥，避免刷新前后 Connect/Enter 不一致
     private enterVenueSigningSecret: string | null = null;
@@ -530,7 +535,7 @@ export class GameManager {
         });
     }
 
-    public onEnterVenue(venueId: string) {
+    public onEnterVenue(venueId: string, data?: any) {
         if (this.enterVenueState !== EnterVenueState.Entering) return;
         if (venueId !== this.enteringVenueId) return;
 
@@ -539,6 +544,7 @@ export class GameManager {
         this.venueId = venueId;
         this.enteringVenueId = null;
         this.enteringGameType = 0;
+        this.enterVenueData = data || null;
         this.clearEnterVenueSigning();
         if (this.enterCallback) {
             this.enterCallback();
@@ -555,6 +561,7 @@ export class GameManager {
         this.enteringVenueId = null;
         this.enteringGameType = 0;
         this.enterCallback = null;
+        this.enterVenueData = null;
         this.clearEnterVenueSigning();
         Client.Instance.showPromptDialog(errMsg || "进入游戏失败");
     }
@@ -564,6 +571,7 @@ export class GameManager {
         this.enteringVenueId = null;
         this.enteringGameType = 0;
         this.enterCallback = null;
+        this.enterVenueData = null;
         this.clearEnterVenueSigning();
         NetworkManager.Instance.abandon();
         Client.Instance.backToGameHall();

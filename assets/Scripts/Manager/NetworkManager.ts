@@ -456,7 +456,7 @@ export class NetworkManager implements NetMsgHandler  {
             // 进入成功
             this.heartbeatElapsed = 0;
             this.heartbeatReceived = true;
-            GameManager.Instance.onEnterVenue(msg.venueId);
+            GameManager.Instance.onEnterVenue(msg.venueId, msg);
             console.log("Enter venue(id: ", msg.venueId, ") success");
         }
         else {

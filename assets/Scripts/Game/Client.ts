@@ -65,6 +65,10 @@ export class Client extends Component {
 
     private gameRoomNode: Node = null;
 
+    public getGameRoomNode(): Node | null {
+        return this.gameRoomNode;
+    }
+
     private static _instance: Client = null;
 
     public static get Instance(): Client {

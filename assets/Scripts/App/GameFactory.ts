@@ -13,11 +13,13 @@
  * Author: AI Assistant
  */
 
-import { Node, js } from 'cc';
+import { Node, Button, js } from 'cc';
 import { RoomBase } from '../GameCommon/RoomBase';
 import { MahjongRoomBase } from '../GameCommon/MahjongRoomBase';
 import { PokerRoomBase } from '../GameCommon/PokerRoomBase';
 import { ZipaiRoomBase } from '../GameCommon/ZipaiRoomBase';
+import { NetMsgManager } from '../Manager/NetMsgManager';
+import { NetworkManager } from '../Manager/NetworkManager';
 
 import { GameId, GameType, GameMetaInfo } from './GameEnums';
 
@@ -43,7 +45,7 @@ const GAME_REGISTRY: Map<GameId, GameMetaInfo> = new Map([
         id: GameId.TaojiangMahjong,
         name: '桃江麻将',
         type: GameType.Mahjong,
-        playerCount: 4,
+        playerCount: 2,
         priority: 0,
     }],
     [GameId.HongzhongMahjong, {
@@ -148,25 +150,82 @@ export class GameFactory {
      * 创建游戏房间
      * @param gameId 游戏ID
      * @param parentNode 父节点(挂载到场景中)
+     * @param prefabNode 已实例化的 GuanDan Room.prefab 节点（可选，复用其 UI）
      * @returns 房间实例
      */
-    public createRoom(gameId: GameId, parentNode?: Node): RoomBase {
+    public createRoom(gameId: GameId, parentNode?: Node, prefabNode?: Node): RoomBase {
         // 先销毁已有房间
         this.destroyCurrentRoom();
 
         // 通过 cc.js.getClassByName 获取房间组件类
         const RoomCtor = GameFactory.getRoomClass(gameId);
 
-        const nodeName = GAME_REGISTRY.get(gameId)?.name || String(gameId);
-        const roomNode = new Node(`${nodeName}Room`);
-        if (parentNode) roomNode.parent = parentNode;
-        const room = roomNode.addComponent(RoomCtor);
+        let roomNode: Node;
+        if (prefabNode) {
+            // 复用已有 prefab 节点：禁用所有已有的 NetMsgHandler 组件避免消息冲突
+            roomNode = prefabNode;
+            // 遍历节点上所有组件，找到实现了 onMessage 的（即 NetMsgHandler）并禁用
+            const comps = roomNode.components;
+            for (let i = 0; i < comps.length; i++) {
+                const comp = comps[i] as any;
+                if (comp && typeof comp.onMessage === 'function') {
+                    NetMsgManager.Instance.unregisterHandler(comp);
+                    NetworkManager.Instance.unregisterHandler(comp);
+                    comp.enabled = false;
+                    console.log('[GameFactory] Disabled existing handler:', comp.constructor?.name || comp.name);
+                }
+            }
+        } else {
+            // 无 prefab 时创建空节点（兼容旧路径）
+            const nodeName = GAME_REGISTRY.get(gameId)?.name || String(gameId);
+            roomNode = new Node(`${nodeName}Room`);
+            if (parentNode) roomNode.parent = parentNode;
+        }
+
+        const room = roomNode.addComponent(RoomCtor) as RoomBase;
+
+        // 触发 prefab UI 节点绑定
+        if (prefabNode) {
+            (room as any).bindPrefabNodes?.();
+            this.rebindPrefabButtonHandlers(roomNode, room);
+        }
 
         this.currentRoom = room;
         this.currentGameId = gameId;
         console.log(`[GameFactory] Created room for ${GAME_REGISTRY.get(gameId)?.name || gameId}`);
 
         return room;
+    }
+
+    /**
+     * 复用旧 prefab 时，将可兼容的按钮事件转发到新房间组件。
+     * 只重绑新组件中确实存在的方法，避免误改旧房间专属按钮。
+     */
+    private rebindPrefabButtonHandlers(root: Node, room: RoomBase): void {
+        const componentName = js.getClassName(room);
+        if (!componentName) return;
+
+        let reboundCount = 0;
+        const queue: Node[] = [root];
+        while (queue.length > 0) {
+            const node = queue.shift()!;
+            const button = node.getComponent(Button);
+            if (button?.clickEvents?.length) {
+                for (const evt of button.clickEvents) {
+                    if (!evt || evt.target !== root) continue;
+                    if (!evt.handler || typeof (room as any)[evt.handler] !== 'function') continue;
+                    evt.target = root;
+                    evt.component = componentName;
+                    (evt as any)._componentId = '';
+                    reboundCount++;
+                }
+            }
+            queue.push(...node.children);
+        }
+
+        if (reboundCount > 0) {
+            console.log(`[GameFactory] Rebound ${reboundCount} prefab button events to ${componentName}`);
+        }
     }
 
     /**
@@ -198,8 +257,9 @@ export class GameFactory {
     public destroyCurrentRoom(): void {
         if (this.currentRoom) {
             (this.currentRoom as any).cleanup?.();
+            // 移除游戏组件但不销毁节点（Client 拥有 prefab 节点生命周期）
             if (this.currentRoom.node) {
-                this.currentRoom.node.destroy();
+                this.currentRoom.node.removeComponent(this.currentRoom.constructor as any);
             }
             this.currentRoom = null;
             this.currentGameId = null;
