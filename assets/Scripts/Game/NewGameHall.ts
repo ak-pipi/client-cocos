@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, Color, Graphics, Button, EventHandler, UITransform, EditBox, Prefab } from 'cc';
+import { _decorator, Component, Node, Label, Color, Graphics, Button, EventHandler, UITransform, EditBox, Prefab, sys } from 'cc';
 import { Client } from './Client';
 import { GameFactory } from '../App/GameFactory';
 import { GameId, GameType } from '../App/GameEnums';
@@ -7,6 +7,18 @@ import { GameRoomApi, EnterVenueResult, getServerGameType } from '../Network/Gam
 import { DlgMahjongRecords } from './Dialogs/DlgMahjongRecords';
 
 const { ccclass } = _decorator;
+
+// 桃江麻将默认规则配置
+const TAOJIANG_DEFAULT_RULES = {
+    base_score: 1,
+    max_score: 0,
+    round_count: 8,
+    allow_chi: false,
+    allow_peng: true,
+    allow_gang: true,
+    allow_zimo: true,
+    allow_dianpao: true,
+};
 
 @ccclass('NewGameHall')
 export class NewGameHall extends Component {
@@ -17,6 +29,8 @@ export class NewGameHall extends Component {
     private joinPopup: Node | null = null;
     private joinEditBox: EditBox | null = null;
     private dlgMahjongRecords: Node | null = null;
+    private createConfigPopup: Node | null = null;
+    private createRules: Record<string, any> = {};
 
     public init(gameId: string, gameName: string): void {
         this.gameId = gameId as GameId;
@@ -34,6 +48,7 @@ export class NewGameHall extends Component {
         this.createTitle();
         this.createButtons();
         this.createJoinPopup();
+        this.createMahjongConfigPopup();
     }
 
     private createBackground(): void {
@@ -234,13 +249,245 @@ export class NewGameHall extends Component {
     }
 
     public onCreateRoom(_event: Event, _customEventData: any | null) {
+        const meta = GameFactory.getGameMeta(this.gameId);
+        if (meta?.type === GameType.Mahjong) {
+            // 麻将游戏显示规则配置弹窗
+            if (this.createConfigPopup) {
+                this.resetCreateRules();
+                this.createConfigPopup.active = true;
+            }
+        } else {
+            // 非麻将游戏直接创建
+            this.doCreateRoom({});
+        }
+    }
+
+    private resetCreateRules(): void {
+        this.createRules = { ...TAOJIANG_DEFAULT_RULES };
+    }
+
+    /** 创建麻将规则配置弹窗 */
+    private createMahjongConfigPopup(): void {
+        const popup = new Node('CreateConfigPopup');
+        popup.parent = this.node;
+        popup.active = false;
+        this.createConfigPopup = popup;
+
+        // 遮罩
+        const mask = new Node('Mask');
+        mask.parent = popup;
+        mask.addComponent(UITransform).setContentSize(1920, 1080);
+        const mg = mask.addComponent(Graphics);
+        mg.fillColor = new Color(0, 0, 0, 160);
+        mg.roundRect(-960, -540, 1920, 1080, 0);
+        mg.fill();
+        mask.on(Node.EventType.TOUCH_END, () => { /* 点击遮罩不关闭 */ });
+
+        // 面板
+        const panel = new Node('Panel');
+        panel.parent = popup;
+        const pw = 550, ph = 520;
+        panel.addComponent(UITransform).setContentSize(pw, ph);
+        const pg = panel.addComponent(Graphics);
+        pg.fillColor = new Color(30, 55, 85, 255);
+        pg.roundRect(-pw / 2, -ph / 2, pw, ph, 12);
+        pg.fill();
+
+        // 标题
+        this.addLabel(panel, '创建房间 - 规则设置', 24, new Color(255, 220, 100, 255), 0, ph / 2 - 35);
+
+        let y = ph / 2 - 80;
+        // 底注选项
+        y = this.addOptionRow(panel, '底注', y, [
+            { text: '1', value: 1 },
+            { text: '2', value: 2 },
+            { text: '5', value: 5 },
+            { text: '10', value: 10 },
+        ], 'base_score');
+
+        // 封顶分选项
+        y = this.addOptionRow(panel, '封顶', y, [
+            { text: '不限', value: 0 },
+            { text: '100', value: 100 },
+            { text: '200', value: 200 },
+            { text: '500', value: 500 },
+        ], 'max_score');
+
+        // 局数选项
+        y = this.addOptionRow(panel, '局数', y, [
+            { text: '4局', value: 4 },
+            { text: '8局', value: 8 },
+            { text: '16局', value: 16 },
+        ], 'round_count');
+
+        y -= 15;
+        // 分割线
+        const sep = new Node('Sep');
+        sep.parent = panel;
+        sep.addComponent(UITransform).setContentSize(pw - 40, 2);
+        sep.setPosition(0, y, 0);
+        const sg = sep.addComponent(Graphics);
+        sg.fillColor = new Color(80, 110, 140, 200);
+        sg.rect(-(pw - 40) / 2, -1, pw - 40, 2);
+        sg.fill();
+        y -= 25;
+
+        // 开关选项标签
+        this.addLabel(panel, '玩法选项', 20, new Color(200, 200, 200, 255), -pw / 2 + 50, y);
+        y -= 30;
+
+        // 开关选项
+        y = this.addToggleRow(panel, '允许吃牌', y, 'allow_chi');
+        y = this.addToggleRow(panel, '允许碰牌', y, 'allow_peng');
+        y = this.addToggleRow(panel, '允许杠牌', y, 'allow_gang');
+        y = this.addToggleRow(panel, '允许自摸', y, 'allow_zimo');
+        y = this.addToggleRow(panel, '允许点炮', y, 'allow_dianpao');
+
+        // 按钮
+        y = -ph / 2 + 40;
+        this.createPopupButton(panel, '创建', y, new Color(46, 139, 87, 255), 'onCreateConfirm', -100);
+        this.createPopupButton(panel, '取消', y, new Color(160, 82, 45, 255), 'onCreateCancel', 100);
+    }
+
+    /** 添加选项行（单选按钮组） */
+    private addOptionRow(parent: Node, labelText: string, y: number, options: Array<{text: string, value: number}>, ruleKey: string): number {
+        // 标签
+        const labelNode = new Node(`Label_${ruleKey}`);
+        labelNode.parent = parent;
+        labelNode.addComponent(UITransform).setContentSize(120, 30);
+        labelNode.setPosition(-180, y, 0);
+        const label = labelNode.addComponent(Label);
+        label.string = labelText;
+        label.fontSize = 20;
+        label.color = new Color(200, 200, 200, 255);
+        label.horizontalAlign = 0;
+
+        const startX = -80;
+        const gap = 110;
+        const defaultVal = this.createRules[ruleKey] ?? options[0].value;
+
+        options.forEach((opt, idx) => {
+            const isSelected = (opt.value === defaultVal);
+            const btnNode = new Node(`Opt_${ruleKey}_${idx}`);
+            btnNode.parent = parent;
+            btnNode.addComponent(UITransform).setContentSize(100, 32);
+            btnNode.setPosition(startX + idx * gap, y, 0);
+
+            const g = btnNode.addComponent(Graphics);
+            g.fillColor = isSelected ? new Color(70, 150, 220, 255) : new Color(60, 80, 100, 255);
+            g.roundRect(-50, -16, 100, 32, 6);
+            g.fill();
+
+            const l = new Node('L');
+            l.parent = btnNode;
+            l.addComponent(UITransform).setContentSize(90, 28);
+            const lc = l.addComponent(Label);
+            lc.string = opt.text;
+            lc.fontSize = 18;
+            lc.color = isSelected ? new Color(255, 255, 255, 255) : new Color(160, 160, 160, 255);
+            lc.horizontalAlign = 1;
+            lc.verticalAlign = 1;
+
+            btnNode.on(Node.EventType.TOUCH_END, () => {
+                this.createRules[ruleKey] = opt.value;
+                this.refreshOptionRow(parent, ruleKey, options);
+            });
+        });
+
+        return y - 42;
+    }
+
+    /** 刷新选项行显示 */
+    private refreshOptionRow(parent: Node, ruleKey: string, options: Array<{text: string, value: number}>): void {
+        options.forEach((opt, idx) => {
+            const btnNode = parent.getChildByName(`Opt_${ruleKey}_${idx}`);
+            if (!btnNode) return;
+            const isSelected = (opt.value === this.createRules[ruleKey]);
+            const g = btnNode.getComponent(Graphics);
+            if (g) g.fillColor = isSelected ? new Color(70, 150, 220, 255) : new Color(60, 80, 100, 255);
+            const l = btnNode.getChildByName('L');
+            if (l) {
+                const lc = l.getComponent(Label);
+                if (lc) lc.color = isSelected ? new Color(255, 255, 255, 255) : new Color(160, 160, 160, 255);
+            }
+        });
+    }
+
+    /** 添加开关行 */
+    private addToggleRow(parent: Node, labelText: string, y: number, ruleKey: string): number {
+        const defaultVal = this.createRules[ruleKey] ?? true;
+
+        const labelNode = new Node(`ToggleLabel_${ruleKey}`);
+        labelNode.parent = parent;
+        labelNode.addComponent(UITransform).setContentSize(160, 28);
+        labelNode.setPosition(-100, y, 0);
+        const label = labelNode.addComponent(Label);
+        label.string = labelText;
+        label.fontSize = 20;
+        label.color = new Color(200, 200, 200, 255);
+        label.horizontalAlign = 0;
+
+        const btnNode = new Node(`Toggle_${ruleKey}`);
+        btnNode.parent = parent;
+        btnNode.addComponent(UITransform).setContentSize(80, 30);
+        btnNode.setPosition(60, y, 0);
+
+        const g = btnNode.addComponent(Graphics);
+        g.fillColor = defaultVal ? new Color(46, 180, 80, 255) : new Color(120, 50, 50, 255);
+        g.roundRect(-40, -15, 80, 30, 6);
+        g.fill();
+
+        const statusLabel = new Node('Status');
+        statusLabel.parent = btnNode;
+        statusLabel.addComponent(UITransform).setContentSize(70, 26);
+        const sl = statusLabel.addComponent(Label);
+        sl.string = defaultVal ? '开' : '关';
+        sl.fontSize = 18;
+        sl.color = new Color(255, 255, 255, 255);
+        sl.horizontalAlign = 1;
+        sl.verticalAlign = 1;
+
+        btnNode.on(Node.EventType.TOUCH_END, () => {
+            this.createRules[ruleKey] = !this.createRules[ruleKey];
+            const isOn = this.createRules[ruleKey];
+            g.fillColor = isOn ? new Color(46, 180, 80, 255) : new Color(120, 50, 50, 255);
+            sl.string = isOn ? '开' : '关';
+        });
+
+        return y - 35;
+    }
+
+    private addLabel(parent: Node, text: string, fontSize: number, color: Color, x: number, y: number): void {
+        const node = new Node('Lbl');
+        node.parent = parent;
+        node.addComponent(UITransform).setContentSize(400, 30);
+        node.setPosition(x, y, 0);
+        const l = node.addComponent(Label);
+        l.string = text;
+        l.fontSize = fontSize;
+        l.color = color;
+        l.horizontalAlign = 0;
+        l.verticalAlign = 1;
+    }
+
+    public onCreateConfirm(_event: Event, _customEventData: any | null) {
+        if (this.createConfigPopup) this.createConfigPopup.active = false;
+        this.doCreateRoom(this.createRules);
+    }
+
+    public onCreateCancel(_event: Event, _customEventData: any | null) {
+        if (this.createConfigPopup) this.createConfigPopup.active = false;
+    }
+
+    private doCreateRoom(rules: Record<string, any>): void {
         const gameType = getServerGameType(this.gameId);
         if (!gameType) {
             Client.Instance.showPromptDialog('不支持的游戏类型');
             return;
         }
 
-            GameRoomApi.Instance.createRoom(gameType, { level: 1 }).then((result) => {
+        const params: Record<string, any> = { level: 1, ...rules };
+        GameRoomApi.Instance.createRoom(gameType, params).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue(result));
         }).catch((err) => {

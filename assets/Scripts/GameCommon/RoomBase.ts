@@ -15,7 +15,7 @@
  * Author: AI Assistant
  */
 
-import { _decorator, Component, Node, Label, Prefab, instantiate, director, Sprite, SpriteFrame, Event } from 'cc';
+import { _decorator, Component, Node, Label, Prefab, instantiate, director, Sprite, SpriteFrame, Event, Button, EventHandler, js } from 'cc';
 import { NetMsgHandler, NetMsgManager } from '../Manager/NetMsgManager';
 import { ConnectionHandler, NetworkManager } from '../Manager/NetworkManager';
 import { GameManager } from '../Manager/GameManager';
@@ -359,6 +359,16 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
             this.onAddAvatar({ avatars: msg.avatars });
         }
 
+        // Waiting 阶段：确保 readyFlags 从同步数据中恢复
+        if (this.gameState === GameState.Waiting) {
+            const seatCount = this.getSeatCount();
+            for (let i = 0; i < seatCount; i++) {
+                if (this.readyFlags[i] && this.playerInfos[i]) {
+                    this.readyFlags[i].active = !!this.playerInfos[i].ready;
+                }
+            }
+        }
+
         this.updateReadyButtonState();
 
         console.log(`[RoomBase] Sync: level=${this.level} room=${this.roomNumber} seat=${this.seat} state=${this.gameState}`);
@@ -510,7 +520,13 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     protected onPlayerReady(msg: any): void {
         if (!msg) return;
         if (this.playerInfos[msg.seat]) {
-            this.playerInfos[msg.seat].ready = (msg.ready !== undefined) ? !!msg.ready : !this.playerInfos[msg.seat].ready;
+            // C++ server MsgPlayerReadyResp only has {playerId, seat}, no ready field.
+            // Server only sends this after successfully setting ready=true.
+            if (msg.ready !== undefined) {
+                this.playerInfos[msg.seat].ready = !!msg.ready;
+            } else {
+                this.playerInfos[msg.seat].ready = true;
+            }
         }
         this.onPlayerReadyUIUpdate(msg.seat);
     }
@@ -692,17 +708,25 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
         // 6. 倒计时标签
         this.countdownLabel = this.findChildComponent<Label>(uiParent, 'Second', Label);
 
-        // 7. 按钮
-        this.btnReady = this.findChildByName(root, 'BtnReady');
+        // 7. 按钮（可能不在 root 直接子节点，需要递归搜索）
+        this.readyGroup = this.findChildRecursive(root, 'ReadyGroup');
+        this.autoGroup = this.findChildRecursive(root, 'AutoGroup');
+        // BtnReady 优先取 ReadyGroup 内的（游戏阶段可见），其次取全局的
+        this.btnReady = this.readyGroup ? this.findChildByName(this.readyGroup, 'BtnReady') : null;
+        if (!this.btnReady) this.btnReady = this.findChildRecursive(root, 'BtnReady');
         this.btnReadyLabel = this.findChildComponent<Label>(this.btnReady || root, 'Label', Label);
-        this.readyGroup = this.findChildByName(root, 'ReadyGroup');
-        this.autoGroup = this.findChildByName(root, 'AutoGroup');
-        this.btnStartGame = this.findChildByName(root, 'BtnStartGame');
+        this.btnStartGame = this.findChildRecursive(root, 'BtnStartGame');
+
+        // 编程式绑定按钮点击事件（不依赖 rebind，确保可靠）
+        this.bindButtonEvent(this.btnReady, 'onReadyClick');
+        this.bindButtonEvent(this.btnStartGame, 'onStartGameClick');
+        this.bindButtonEvent(this.findChildRecursive(root, 'BtnBack'), 'onBackClick');
+        this.bindButtonEvent(this.findChildRecursive(root, 'BtnChangeSeat'), 'onChangeSeatClick');
 
         // 8. 隐藏多余的座位面板和玩家节点（适配少于4人的游戏）
         this.hideExtraSeats();
 
-        console.log(`[RoomBase] bindPrefabNodes: labelLevel=${!!this.labelLevel}, seatPanels=${this.seatPanels.filter(Boolean).length}, players=${this.guanDanPlayers.filter(Boolean).length}`);
+        console.log(`[RoomBase] bindPrefabNodes: labelLevel=${!!this.labelLevel}, seatPanels=${this.seatPanels.filter(Boolean).length}, players=${this.guanDanPlayers.filter(Boolean).length}, btnReady=${!!this.btnReady}, readyGroup=${!!this.readyGroup}, btnStartGame=${!!this.btnStartGame}`);
     }
 
     /** 隐藏超出 getSeatCount() 的座位面板和桌面玩家节点 */
@@ -728,6 +752,51 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
             if (parent.children[i].name === name) return parent.children[i];
         }
         return null;
+    }
+
+    /** 按名称递归查找所有层级的子节点 */
+    protected findChildRecursive(parent: Node, name: string): Node | null {
+        if (!parent) return null;
+        const queue: Node[] = [parent];
+        while (queue.length > 0) {
+            const node = queue.shift()!;
+            for (let i = 0; i < node.children.length; i++) {
+                const child = node.children[i];
+                if (child.name === name) return child;
+                queue.push(child);
+            }
+        }
+        return null;
+    }
+
+    /** 编程式绑定按钮点击事件到当前组件 */
+    protected bindButtonEvent(node: Node | null, handler: string): void {
+        if (!node) return;
+        // 优先通过 Button 组件的 EventHandler 绑定
+        const button = node.getComponent(Button);
+        if (button) {
+            const componentName = js.getClassName(this);
+            if (componentName && typeof (this as any)[handler] === 'function') {
+                button.clickEvents.length = 0;
+                const evt = new EventHandler();
+                evt.target = this.node;
+                evt.component = componentName;
+                evt.handler = handler;
+                button.clickEvents.push(evt);
+                console.log(`[RoomBase] Bound button event: ${handler} on '${node.name}' via Button component`);
+                return;
+            }
+        }
+        // 回退：直接监听节点触摸事件
+        const handlerFn = (this as any)[handler];
+        if (typeof handlerFn === 'function') {
+            node.on(Node.EventType.TOUCH_END, () => {
+                handlerFn.call(this);
+            }, this);
+            console.log(`[RoomBase] Bound button event: ${handler} on '${node.name}' via TOUCH_END`);
+        } else {
+            console.warn(`[RoomBase] Cannot bind handler '${handler}' on '${node.name}'`);
+        }
     }
 
     /** 遍历节点所有组件，按方法名查找（避免跨 chunk 类名查找失败） */
@@ -775,7 +844,12 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
             if (playerInfo) {
                 this.guanDanPlayers[i].show(true);
                 this.guanDanPlayers[i].setPlayerInfo(playerInfo);
-                if (isWaiting) this.guanDanPlayers[i].setReady(playerInfo.ready);
+                if (isWaiting) {
+                    this.guanDanPlayers[i].setReady(playerInfo.ready);
+                    if (this.readyFlags[i]) {
+                        this.readyFlags[i].active = !!playerInfo.ready;
+                    }
+                }
             } else {
                 this.guanDanPlayers[i].clear();
                 this.guanDanPlayers[i].show(false);
@@ -788,6 +862,12 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
         if (this.guanDanPlayers[clientSeat]) {
             this.guanDanPlayers[clientSeat].show(true);
             this.guanDanPlayers[clientSeat].setPlayerInfo(playerInfo);
+            if (this.gameState === GameState.Waiting) {
+                this.guanDanPlayers[clientSeat].setReady(playerInfo.ready);
+            }
+        }
+        if (this.gameState === GameState.Waiting && this.readyFlags[clientSeat]) {
+            this.readyFlags[clientSeat].active = !!playerInfo.ready;
         }
         if (clientSeat === 0 && this.autoGroup) {
             this.autoGroup.active = !!playerInfo.authorize;
@@ -972,6 +1052,7 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
 
     /** 点击准备按钮 */
     public onReadyClick(): void {
+        console.log('[RoomBase] onReadyClick, seat:', this.seat);
         if (this.seat === -1) return;
         NetworkManager.Instance.sendInnerMessage("MsgPlayerReady");
     }
