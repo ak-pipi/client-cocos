@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "30f64244-e7a1-4ec7-a516-e23dd3455aff",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "B_bamboo_5": {
+      "ver": "1.0.3",
+      "uuid": "e52aa553-af72-440b-b7a5-fc46ce134e8b",
+      "rawTextureUuid": "30f64244-e7a1-4ec7-a516-e23dd3455aff",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 55,
+      "height": 84,
+      "rawWidth": 55,
+      "rawHeight": 84,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "30f64244-e7a1-4ec7-a516-e23dd3455aff@6c48a",
+      "displayName": "B_bamboo_5",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "30f64244-e7a1-4ec7-a516-e23dd3455aff",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "30f64244-e7a1-4ec7-a516-e23dd3455aff@6c48a"
+  }
+}

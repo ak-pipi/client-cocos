@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "ea2cac6b-362a-4742-87fc-f5fe97f7fb04",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "Z_zhunbeizhuangt": {
+      "ver": "1.0.3",
+      "uuid": "8988418a-46a0-461d-959b-07af93600051",
+      "rawTextureUuid": "ea2cac6b-362a-4742-87fc-f5fe97f7fb04",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 88,
+      "height": 39,
+      "rawWidth": 88,
+      "rawHeight": 39,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "ea2cac6b-362a-4742-87fc-f5fe97f7fb04@6c48a",
+      "displayName": "Z_zhunbeizhuangt",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "ea2cac6b-362a-4742-87fc-f5fe97f7fb04",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "ea2cac6b-362a-4742-87fc-f5fe97f7fb04@6c48a"
+  }
+}

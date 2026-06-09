@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "c133eeb7-b095-4b0d-b52a-f6e62e25b8c6",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "Z_bg_lAr": {
+      "ver": "1.0.3",
+      "uuid": "73e9da26-3bde-42ef-9905-9b080302bf85",
+      "rawTextureUuid": "c133eeb7-b095-4b0d-b52a-f6e62e25b8c6",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0.5,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 17,
+      "height": 550,
+      "rawWidth": 17,
+      "rawHeight": 551,
+      "borderTop": 50,
+      "borderBottom": 50,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "c133eeb7-b095-4b0d-b52a-f6e62e25b8c6@6c48a",
+      "displayName": "Z_bg_lAr",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "c133eeb7-b095-4b0d-b52a-f6e62e25b8c6",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "c133eeb7-b095-4b0d-b52a-f6e62e25b8c6@6c48a"
+  }
+}

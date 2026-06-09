@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "32edec6d-10ab-4b19-b78c-b07af6a8d309",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "GameEnd1": {
+      "ver": "1.0.3",
+      "uuid": "58c53b75-bfa3-4b1a-b430-9eda7a788ee7",
+      "rawTextureUuid": "32edec6d-10ab-4b19-b78c-b07af6a8d309",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 78,
+      "height": 31,
+      "rawWidth": 78,
+      "rawHeight": 31,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "32edec6d-10ab-4b19-b78c-b07af6a8d309@6c48a",
+      "displayName": "GameEnd1",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "32edec6d-10ab-4b19-b78c-b07af6a8d309",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "32edec6d-10ab-4b19-b78c-b07af6a8d309@6c48a"
+  }
+}

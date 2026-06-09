@@ -187,7 +187,7 @@ export class NewGameHall extends Component {
         titleTransform.setContentSize(460, 40);
         titleNode.setPosition(0, 90, 0);
         const titleLabel = titleNode.addComponent(Label);
-        titleLabel.string = '输入6位房间号';
+        titleLabel.string = '输入房间号';
         titleLabel.fontSize = 28;
         titleLabel.horizontalAlign = 1;
         titleLabel.color = new Color(255, 255, 255, 255);
@@ -197,15 +197,20 @@ export class NewGameHall extends Component {
         const inputTransform = inputNode.addComponent(UITransform);
         inputTransform.setContentSize(360, 50);
         inputNode.setPosition(0, 20, 0);
-        const inputGraphics = inputNode.addComponent(Graphics);
+
+        const inputBgNode = new Node('InputBg');
+        inputBgNode.parent = inputNode;
+        const inputBgTransform = inputBgNode.addComponent(UITransform);
+        inputBgTransform.setContentSize(360, 50);
+        const inputGraphics = inputBgNode.addComponent(Graphics);
         inputGraphics.fillColor = new Color(255, 255, 255, 255);
         inputGraphics.roundRect(-180, -25, 360, 50, 8);
         inputGraphics.fill();
 
         const editBox = inputNode.addComponent(EditBox);
-        editBox.maxLength = 6;
-        editBox.inputMode = EditBox.InputMode.NUMERIC;
-        editBox.placeholder = '请输入房间号';
+        editBox.maxLength = 32;
+        editBox.inputMode = EditBox.InputMode.SINGLE_LINE;
+        editBox.placeholder = '请输入房间号，如 G66N5i1e2R';
         editBox.string = '';
         this.joinEditBox = editBox;
 
@@ -512,9 +517,13 @@ export class NewGameHall extends Component {
     }
 
     public onJoinConfirm(_event: Event, _customEventData: any | null) {
-        const roomNumber = this.joinEditBox?.string?.trim() || '';
-        if (!/^\d{6}$/.test(roomNumber)) {
-            Client.Instance.showPromptTip('请输入6位数字房间号');
+        const input = this.joinEditBox?.string?.trim() || '';
+        if (!input) {
+            Client.Instance.showPromptTip('请输入房间号或ID');
+            return;
+        }
+        if (!/^[A-Za-z0-9]+$/.test(input)) {
+            Client.Instance.showPromptTip('仅支持字母和数字');
             return;
         }
 
@@ -524,7 +533,11 @@ export class NewGameHall extends Component {
             return;
         }
 
-        GameRoomApi.Instance.joinByNumber(roomNumber, gameType).then((result) => {
+        const joinPromise = /^\d{6}$/.test(input)
+            ? GameRoomApi.Instance.joinByNumber(input, gameType)
+            : GameRoomApi.Instance.joinByVenueId(input, gameType);
+
+        joinPromise.then((result) => {
             if (!result) return;
             if (this.joinPopup) {
                 this.joinPopup.active = false;
@@ -551,6 +564,14 @@ export class NewGameHall extends Component {
     }
 
     private onEnterVenue(result: EnterVenueResult): void {
+        const meta = GameFactory.getGameMeta(this.gameId);
+        if (meta?.type === GameType.Mahjong) {
+            Client.Instance.initGameRoom(null);
+            const room = GameFactory.Instance.createRoom(this.gameId, Client.Instance.getGameRoomNode() || undefined, undefined);
+            room.presetRoomNumber(result?.number || null);
+            return;
+        }
+
         ResourceLoader.Instance.loadAsset('GuanDanRoomMain', 'Room', Prefab, (prefab: Prefab) => {
             if (!prefab) {
                 Client.Instance.showPromptDialog('游戏房间加载失败');

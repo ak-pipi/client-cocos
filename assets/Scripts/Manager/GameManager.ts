@@ -3,11 +3,14 @@
 // Email 393817707@qq.com
 // Date 2025.10.22
 
-import { sys, assetManager, ImageAsset, Texture2D, SpriteFrame } from "cc";
+import { sys, assetManager, ImageAsset, Texture2D, SpriteFrame, Prefab } from "cc";
 import { CommonUtils } from "../Utils/CommonUtils";
-import { EnterVenueState } from "../Common/ConstDefines";
+import { EnterVenueState, GameType as ServerGameType } from "../Common/ConstDefines";
 import { NetworkManager } from "./NetworkManager";
 import { Client } from "../Game/Client";
+import { ResourceLoader } from "./ResourceLoader";
+import { GameFactory } from "../App/GameFactory";
+import { GameId, GameType } from "../App/GameEnums";
 
 export class GameManager {
     private static _instance: GameManager = null;
@@ -250,6 +253,8 @@ export class GameManager {
 
     // 上次心跳时间，时间戳，单位毫秒
     private lastHeartbeat: number = 0;
+    private lastAutoReenterTry: number = 0;
+    private autoReentering: boolean = false;
 
     public heartbeat() {
         if (!this.loggedIn || CommonUtils.isStringEmpty(this.token)) return;
@@ -265,10 +270,85 @@ export class GameManager {
         }).then((response: Response) => {
             if (response.status === 401) {
                 this.handleSessionExpired();
+                return null;
             }
+            return response.json().catch(() => null);
+        }).then((dto: any) => {
+            if (!dto) return;
+            this.tryAutoReenterFromHeartbeat(dto);
         }).catch((err) => {
             console.log("Heartbeat error: ", err);
         });
+    }
+
+    public requestHeartbeatAndAutoReenter(): void {
+        if (!this.loggedIn || CommonUtils.isStringEmpty(this.token)) return;
+        const now = sys.now();
+        if (now - this.lastAutoReenterTry < 3000) return;
+        this.lastAutoReenterTry = now;
+        this.authGet("/player/heartbeat").then((dto) => {
+            if (!dto) return;
+            this.tryAutoReenterFromHeartbeat(dto);
+        }).catch(() => {});
+    }
+
+    private tryAutoReenterFromHeartbeat(dto: any): void {
+        const payload = dto?.data && typeof dto.data === 'object' ? dto.data : dto;
+        const inRoom = !!payload?.inRoom;
+        const venueId = payload?.venueId ? String(payload.venueId) : '';
+        const wsAddress = payload?.wsAddress ? String(payload.wsAddress) : '';
+        const gameType = typeof payload?.gameType === 'number' ? payload.gameType : Number(payload?.gameType);
+        const number = payload?.number != null ? String(payload.number) : null;
+
+        if (!inRoom || CommonUtils.isStringEmpty(venueId) || CommonUtils.isStringEmpty(wsAddress) || !gameType) return;
+        if (this.EnterVenueState !== EnterVenueState.Leaved) return;
+        if (this.autoReentering) return;
+
+        const now = sys.now();
+        if (now - this.lastAutoReenterTry < 8000) return;
+        this.lastAutoReenterTry = now;
+        this.autoReentering = true;
+
+        const gameId = this.mapServerGameTypeToGameId(gameType);
+        if (!gameId) {
+            this.autoReentering = false;
+            return;
+        }
+
+        this.enterVenue(wsAddress, venueId, gameType, () => {
+            const meta = GameFactory.getGameMeta(gameId);
+            if (meta?.type === GameType.Mahjong) {
+                Client.Instance.initGameRoom(null);
+                const room = GameFactory.Instance.createRoom(gameId, Client.Instance.getGameRoomNode() || undefined, undefined);
+                room.presetRoomNumber(number);
+                this.autoReentering = false;
+                return;
+            }
+
+            ResourceLoader.Instance.loadAsset('GuanDanRoomMain', 'Room', Prefab, (prefab: Prefab) => {
+                if (!prefab) {
+                    this.autoReentering = false;
+                    Client.Instance.showPromptDialog('游戏房间加载失败');
+                    return;
+                }
+                Client.Instance.initGameRoom(prefab);
+                const room = GameFactory.Instance.createRoom(gameId, undefined, Client.Instance.getGameRoomNode());
+                room.presetRoomNumber(number);
+                this.autoReentering = false;
+            });
+        });
+    }
+
+    private mapServerGameTypeToGameId(gameType: number): GameId | null {
+        switch (gameType) {
+            case ServerGameType.TaojiangMahjong: return GameId.TaojiangMahjong;
+            case ServerGameType.HongzhongMahjong: return GameId.HongzhongMahjong;
+            case ServerGameType.ChangShaMahjong: return GameId.ChangshaMahjong;
+            case ServerGameType.PaoDeKuai: return GameId.Paodekuai;
+            case ServerGameType.YiYangWaiHuZi: return GameId.Waihuzi;
+            case ServerGameType.YuanJiangQianFen: return GameId.Qianfen;
+            default: return null;
+        }
     }
 
     private handleSessionExpired() {
@@ -304,9 +384,16 @@ export class GameManager {
             }));
         }
         if (!response.ok) {
-            return response.text().then((text) => {
-                throw new Error(text || `HTTP ${response.status}`);
-            });
+            return response.json()
+                .catch(() => null)
+                .then((json) => {
+                    if (json && typeof json === 'object') {
+                        return json;
+                    }
+                    return response.text().then((text) => {
+                        throw new Error(text || `HTTP ${response.status}`);
+                    });
+                });
         }
         return response.json();
     }

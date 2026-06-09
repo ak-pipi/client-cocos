@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "d9fdfb5f-1f60-4026-bc3a-980e1659e417",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "dialog_loading_bg.9": {
+      "ver": "1.0.3",
+      "uuid": "f16c2d61-6d80-4487-a008-2735ef49c00b",
+      "rawTextureUuid": "d9fdfb5f-1f60-4026-bc3a-980e1659e417",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 32,
+      "height": 32,
+      "rawWidth": 32,
+      "rawHeight": 32,
+      "borderTop": 10,
+      "borderBottom": 10,
+      "borderLeft": 10,
+      "borderRight": 10,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "d9fdfb5f-1f60-4026-bc3a-980e1659e417@6c48a",
+      "displayName": "dialog_loading_bg.9",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "d9fdfb5f-1f60-4026-bc3a-980e1659e417",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "d9fdfb5f-1f60-4026-bc3a-980e1659e417@6c48a"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "75b22bef-022a-48b7-8c28-5a6c6d00016e",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "chat_emoji": {
+      "ver": "1.0.3",
+      "uuid": "c7289abd-1844-47d5-87b2-aabd502393c7",
+      "rawTextureUuid": "75b22bef-022a-48b7-8c28-5a6c6d00016e",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 419,
+      "height": 52,
+      "rawWidth": 419,
+      "rawHeight": 52,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "75b22bef-022a-48b7-8c28-5a6c6d00016e@6c48a",
+      "displayName": "chat_emoji",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "75b22bef-022a-48b7-8c28-5a6c6d00016e",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "75b22bef-022a-48b7-8c28-5a6c6d00016e@6c48a"
+  }
+}

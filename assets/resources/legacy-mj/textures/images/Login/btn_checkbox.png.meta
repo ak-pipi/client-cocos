@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "1aa1eae2-22a6-4a46-985a-071d51439651",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "btn_checkbox": {
+      "ver": "1.0.3",
+      "uuid": "f2fd3b02-16b0-4352-90fd-894cb73eb272",
+      "rawTextureUuid": "1aa1eae2-22a6-4a46-985a-071d51439651",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 47,
+      "height": 48,
+      "rawWidth": 47,
+      "rawHeight": 48,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "1aa1eae2-22a6-4a46-985a-071d51439651@6c48a",
+      "displayName": "btn_checkbox",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "1aa1eae2-22a6-4a46-985a-071d51439651",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "1aa1eae2-22a6-4a46-985a-071d51439651@6c48a"
+  }
+}

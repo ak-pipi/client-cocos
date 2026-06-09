@@ -190,11 +190,6 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     /** 玩家信息列表 */
     protected playerInfos: any[] = [];
 
-    /** 默认资源 Bundle 名 (用于加载 GuanDan 共享资源) */
-    protected static readonly DEFAULT_BUNDLE_MAIN = 'GuanDanRoomMain';
-    protected static readonly DEFAULT_BUNDLE_AUDIO = 'GuanDanAudio';
-    protected static readonly DEFAULT_BUNDLE_BG = 'GuanDanRoomBackground';
-
     // ==================== 生命周期 ====================
 
     onLoad(): void {
@@ -208,11 +203,10 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     }
 
     start(): void {
-        // 加载通用提示弹窗预制体
-        ResourceLoader.Instance.loadAsset(RoomBase.DEFAULT_BUNDLE_MAIN, "PromptDialog", Prefab, (prefab: Prefab) => {
+        ResourceLoader.Instance.loadAsset("Prompt", "PromptDialog", Prefab, (prefab: Prefab) => {
             if (prefab) Client.Instance.setPromptDialogPrefab(prefab);
         });
-        ResourceLoader.Instance.loadAsset(RoomBase.DEFAULT_BUNDLE_MAIN, "PromptTip", Prefab, (prefab: Prefab) => {
+        ResourceLoader.Instance.loadAsset("Prompt", "PromptTip", Prefab, (prefab: Prefab) => {
             if (prefab) Client.Instance.setPromptTipPrefab(prefab);
         });
 
@@ -1212,13 +1206,7 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
      * 进入场地后加载房间场景（子类覆写以指定预制体名）
      */
     protected onEnterVenue(): void {
-        ResourceLoader.Instance.loadAsset(RoomBase.DEFAULT_BUNDLE_MAIN, "Room", Prefab, (prefab: Prefab) => {
-            if (!prefab) {
-                Client.Instance.showPromptDialog("游戏加载失败");
-                return;
-            }
-            Client.Instance.initGameRoom(prefab);
-        });
+        Client.Instance.initGameRoom(null);
     }
 
     // ==================== 退出房间 ====================

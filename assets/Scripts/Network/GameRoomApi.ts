@@ -237,7 +237,16 @@ export class GameRoomApi {
         if (result) {
             return result;
         }
-        const errMsg = dto.msg || defaultError;
+        const errCode = dto.code != null ? String(dto.code) : '';
+        let errMsg = dto.msg || defaultError;
+        if (errCode === '00110003') {
+            Client.Instance.showPromptTip('检测到你仍在游戏中，正在尝试重连', 2.0);
+            GameManager.Instance.requestHeartbeatAndAutoReenter();
+            return null;
+        }
+        if (errCode === '00120001' || errMsg === 'Venue not exist') {
+            errMsg = '房间不存在或已解散';
+        }
         Client.Instance.showPromptDialog(`${defaultError}: ${errMsg}`);
         return null;
     }

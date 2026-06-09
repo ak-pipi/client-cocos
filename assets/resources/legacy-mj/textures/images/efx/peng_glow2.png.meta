@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "47fbfae0-fa36-477f-877a-99af225cf9fb",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "peng_glow2": {
+      "ver": "1.0.3",
+      "uuid": "fb70909f-8fd7-45c3-9a8a-409e63c6d6e5",
+      "rawTextureUuid": "47fbfae0-fa36-477f-877a-99af225cf9fb",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 3.5,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 256,
+      "height": 249,
+      "rawWidth": 256,
+      "rawHeight": 256,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "47fbfae0-fa36-477f-877a-99af225cf9fb@6c48a",
+      "displayName": "peng_glow2",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "47fbfae0-fa36-477f-877a-99af225cf9fb",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "47fbfae0-fa36-477f-877a-99af225cf9fb@6c48a"
+  }
+}

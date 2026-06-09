@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "06d0634d-85bc-4c3a-a92f-980420d06dbb",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "sichuan_room_huatong_002": {
+      "ver": "1.0.3",
+      "uuid": "410d62af-0c20-4e18-ba68-17cc2c1f798d",
+      "rawTextureUuid": "06d0634d-85bc-4c3a-a92f-980420d06dbb",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 54,
+      "height": 55,
+      "rawWidth": 54,
+      "rawHeight": 55,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "06d0634d-85bc-4c3a-a92f-980420d06dbb@6c48a",
+      "displayName": "sichuan_room_huatong_002",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "06d0634d-85bc-4c3a-a92f-980420d06dbb",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "06d0634d-85bc-4c3a-a92f-980420d06dbb@6c48a"
+  }
+}

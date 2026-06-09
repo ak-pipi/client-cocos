@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "e7180329-ad86-43c4-871e-6d337895df56",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "Z_chat_bottom_1": {
+      "ver": "1.0.3",
+      "uuid": "bce1c001-43f5-4e94-b2ca-8460d5a1960c",
+      "rawTextureUuid": "e7180329-ad86-43c4-871e-6d337895df56",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": -0.5,
+      "trimX": 0,
+      "trimY": 1,
+      "width": 77,
+      "height": 78,
+      "rawWidth": 77,
+      "rawHeight": 79,
+      "borderTop": 20,
+      "borderBottom": 20,
+      "borderLeft": 20,
+      "borderRight": 20,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "e7180329-ad86-43c4-871e-6d337895df56@6c48a",
+      "displayName": "Z_chat_bottom_1",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "e7180329-ad86-43c4-871e-6d337895df56",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "e7180329-ad86-43c4-871e-6d337895df56@6c48a"
+  }
+}

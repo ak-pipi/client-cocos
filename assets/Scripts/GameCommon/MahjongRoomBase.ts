@@ -13,12 +13,12 @@
  * Author: AI Assistant
  */
 
-import { _decorator, Component, Node, Label, Prefab, instantiate, Vec3, Tween, tween, UIOpacity, SpriteFrame, AudioClip, Graphics, Color, Button, EventHandler, UITransform, Event, js } from 'cc';
-import { RoomBase, RoomLevel, GameState } from './RoomBase';
-import { RoomState, PlayerRoomState, SeatPosition, MahjongAction, RoundSettlementData, FinalSettlementData } from './GameTypes';
-import { ResourceLoader } from '../Manager/ResourceLoader';
-import { GameManager } from '../Manager/GameManager';
+import { _decorator, Node, Label, Prefab, instantiate, Vec3, SpriteFrame, Graphics, Color, Button, UITransform, Sprite, SpriteAtlas, resources, view } from 'cc';
+import { RoomBase, GameState } from './RoomBase';
+import { RoomState, MahjongAction } from './GameTypes';
 import { NetworkManager } from '../Manager/NetworkManager';
+import { GameManager } from '../Manager/GameManager';
+import { AudioChannel, AudioManager } from '../App/AudioManager';
 
 const { ccclass, property } = _decorator;
 
@@ -37,7 +37,26 @@ export interface MahjongTile {
 
 // ==================== 麻将牌辅助函数 ====================
 
-const PATTERN_NAMES: Record<number, string> = { 1: '筒', 2: '条', 3: '万' };
+const PATTERN_NAMES: Record<number, string> = {
+    1: '筒',
+    2: '条',
+    3: '万',
+    4: '东',
+    5: '南',
+    6: '西',
+    7: '北',
+    8: '中',
+    9: '发',
+    10: '白',
+    11: '春',
+    12: '夏',
+    13: '秋',
+    14: '冬',
+    15: '梅',
+    16: '兰',
+    17: '菊',
+    18: '竹',
+};
 const NUMBER_NAMES: Record<number, string> = { 0: '', 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '七', 8: '八', 9: '九' };
 
 export function tilePatternName(pattern: number): string {
@@ -50,7 +69,20 @@ export function tileNumberStr(number: number): string {
 
 export function tileDisplayText(tile: MahjongTile): string {
     if (!tile || !tile.tile) return '?';
-    return tileNumberStr(tile.tile.number) + tilePatternName(tile.tile.pattern);
+    const pattern = Number(tile.tile.pattern) || 0;
+    const number = Number(tile.tile.number) || 0;
+
+    if (pattern >= 1 && pattern <= 3) {
+        return tileNumberStr(number) + tilePatternName(pattern);
+    }
+    if (pattern >= 4 && pattern <= 7) {
+        return tilePatternName(pattern) + '风';
+    }
+    if (pattern === 8) return '红中';
+    if (pattern === 9) return '发财';
+    if (pattern === 10) return '白板';
+
+    return tilePatternName(pattern);
 }
 
 export function tileCompare(a: MahjongTile, b: MahjongTile): number {
@@ -107,6 +139,30 @@ export interface MahjongEventCallbacks {
     onTingStateChanged?: (isTing: boolean, tingInfo?: any) => void;
     onDrawTile?: (tile: MahjongTile) => void;
     onConcealedGang?: (tile: MahjongTile) => void;
+}
+
+type LegacyAtlasKey = 'my' | 'bottom' | 'left' | 'right' | 'empty';
+
+type LegacySpriteKey =
+    | 'tableBg'
+    | 'actionBg'
+    | 'seatBg'
+    | 'roundBg'
+    | 'moneyFrame';
+
+type MahjongEffectKey =
+    | 'peng'
+    | 'gang'
+    | 'guafeng'
+    | 'xiayu'
+    | 'hu'
+    | 'zimo';
+
+interface MahjongPlayerInfoCard {
+    root: Node;
+    nameLabel: Label;
+    goldLabel: Label;
+    stateLabel: Label;
 }
 
 @ccclass('MahjongRoomBase')
@@ -190,6 +246,43 @@ export class MahjongRoomBase extends RoomBase {
     /** 选中的手牌索引 */
     protected selectedTileIndex: number = -1;
 
+    /** 选中的手牌 ID（用于重绘后保持高亮） */
+    protected selectedTileId: number = -1;
+
+    /** 最近一次本地发起的出牌 tileId（用于避免服务端回包时重复播放音效等） */
+    protected lastLocalDiscardTileId: number | null = null;
+
+    /** 对手手牌数量缓存 */
+    protected opponentHandCounts: Map<number, number> = new Map();
+
+    /** 副露区域 */
+    protected myMeldArea: Node = null;
+    protected leftMeldArea: Node = null;
+    protected rightMeldArea: Node = null;
+    protected topMeldArea: Node = null;
+
+    /** HUD 与资源 */
+    protected tableBackgroundNode: Node = null;
+    protected roomInfoLabel: Label = null;
+    protected roundInfoLabel: Label = null;
+    protected actionHintLabel: Label = null;
+    protected legacyAtlases: Map<LegacyAtlasKey, SpriteAtlas> = new Map();
+    protected legacySprites: Map<LegacySpriteKey, SpriteFrame> = new Map();
+    protected legacyThemeReady: boolean = false;
+    protected effectLayer: Node = null;
+    protected ruleHintLabel: Label = null;
+    protected cachedEffectFrames: Map<string, SpriteFrame> = new Map();
+    protected fallbackBackButton: Node = null;
+    protected controlBarNode: Node = null;
+    protected customReadyButton: Node = null;
+    protected customReadyLabel: Label = null;
+    protected customStartButton: Node = null;
+    protected customStartLabel: Label = null;
+    protected customSeatButton: Node = null;
+    protected customSeatLabel: Label = null;
+    protected playerInfoRoot: Node = null;
+    protected playerInfoCards: Array<MahjongPlayerInfoCard | null> = [null, null, null, null];
+
     // ==================== 消息前缀 (子类覆写) ====================
 
     /** 麻将消息前缀，子类可覆写为 "MsgTaojiangMahjong" 等 */
@@ -202,11 +295,56 @@ export class MahjongRoomBase extends RoomBase {
     onLoad(): void {
         super.onLoad();
         this.initDiscardRecords();
+        this.initOpponentHandCounts();
     }
 
     start(): void {
         super.start();
         this.buildMahjongUI();
+        this.preloadLegacyMahjongAssets();
+        this.updateHudInfo();
+        this.ensureBackButtonVisible();
+        this.refreshMahjongOverlayUI();
+    }
+
+    protected onSyncGameUIUpdate(isSitting: boolean): void {
+        super.onSyncGameUIUpdate(isSitting);
+        this.refreshMahjongOverlayUI();
+    }
+
+    protected onPlayerAdded(seatIndex: number, playerInfo: any): void {
+        super.onPlayerAdded(seatIndex, playerInfo);
+        this.refreshMahjongOverlayUI();
+    }
+
+    protected onPlayerRemoved(seatIndex: number): void {
+        super.onPlayerRemoved(seatIndex);
+        this.refreshMahjongOverlayUI();
+    }
+
+    protected onPlayerOfflineChanged(seatIndex: number, offline: boolean): void {
+        super.onPlayerOfflineChanged(seatIndex, offline);
+        this.refreshMahjongOverlayUI();
+    }
+
+    protected onPlayerReadyUIUpdate(seatIndex: number): void {
+        super.onPlayerReadyUIUpdate(seatIndex);
+        this.refreshMahjongOverlayUI();
+    }
+
+    protected onPlayerAuthorizeUIUpdate(seatIndex: number, authorize: boolean): void {
+        super.onPlayerAuthorizeUIUpdate(seatIndex, authorize);
+        this.refreshMahjongOverlayUI();
+    }
+
+    protected onOwnerSeat(msg: any): void {
+        super.onOwnerSeat(msg);
+        this.refreshMahjongOverlayUI();
+    }
+
+    protected clearRoom(): void {
+        super.clearRoom();
+        this.refreshMahjongOverlayUI();
     }
 
     // ==================== NetMsgHandler 覆写 (麻将特有消息) ====================
@@ -303,6 +441,7 @@ export class MahjongRoomBase extends RoomBase {
         const huSeat = this.server2ClientSeat(msg.seatIndex);
         console.log(`[MahjongRoom] Player hu at seat ${huSeat}`);
         this.stopCountdown();
+        this.playMahjongActionEffect(huSeat, huSeat === 0 ? 'zimo' : 'hu');
         this.playHuSound(huSeat !== 0); // 别人胡
     }
 
@@ -352,7 +491,12 @@ export class MahjongRoomBase extends RoomBase {
     public dealTiles(tiles: MahjongTile[]): void {
         this.myHandTiles = [...tiles];
         this.sortHandTiles();
+        this.selectedTileIndex = -1;
+        this.selectedTileId = -1;
+        this.seedOpponentHands();
         this.renderMyHand();
+        this.renderAllOpponentHands();
+        this.updateHudInfo();
         console.log(`[MahjongRoom] Dealt ${tiles.length} tiles`);
     }
 
@@ -360,6 +504,8 @@ export class MahjongRoomBase extends RoomBase {
         this.drawnTile = tile;
         this.showDrawnTile(tile);
         this.isMyTurn = true;
+        this.selectedTileIndex = -1;
+        this.selectedTileId = -1;
         this.mjCallbacks.onDrawTile?.(tile);
         console.log(`[MahjongRoom] Drew tile: ${tileDisplayText(tile)}`);
     }
@@ -372,18 +518,19 @@ export class MahjongRoomBase extends RoomBase {
         if (!this.myHandArea) return;
         this.myHandArea.removeAllChildren();
 
-        const tw = MahjongRoomBase.TILE_W, gap = MahjongRoomBase.TILE_GAP;
+        const tw = 72;
+        const gap = this.myHandTiles.length >= 14 ? 2 : 6;
         const totalW = this.myHandTiles.length * (tw + gap) - gap;
         let startX = -totalW / 2 + tw / 2;
 
         for (let i = 0; i < this.myHandTiles.length; i++) {
-            const tileNode = this.createTileNode(this.myHandTiles[i], true);
+            const tile = this.myHandTiles[i];
+            const tileNode = this.createTileNodeForSeat(tile, 0, true);
             tileNode.name = `tile_${i}`;
-            if (this.myHandArea) {
-                tileNode.parent = this.myHandArea;
-                tileNode.setPosition(startX, 0, 0);
-            }
-            tileNode['_tileIndex'] = i;
+            tileNode.parent = this.myHandArea;
+            tileNode.setPosition(startX, this.selectedTileId === tile.id ? 24 : 0, 0);
+            tileNode.setScale(this.selectedTileId === tile.id ? new Vec3(1.04, 1.04, 1) : Vec3.ONE);
+            (tileNode as any)._tileIndex = i;
             startX += tw + gap;
         }
     }
@@ -391,10 +538,10 @@ export class MahjongRoomBase extends RoomBase {
     protected showDrawnTile(tile: MahjongTile): void {
         if (!this.drawnTileNode) return;
         this.drawnTileNode.removeAllChildren();
-        const tileNode = this.createTileNode(tile, true);
-        if (this.drawnTileNode) {
-            tileNode.parent = this.drawnTileNode;
-        }
+        const tileNode = this.createTileNodeForSeat(tile, 0, true);
+        tileNode.parent = this.drawnTileNode;
+        tileNode.setPosition(0, this.selectedTileId === tile.id ? 24 : 0, 0);
+        tileNode.setScale(this.selectedTileId === tile.id ? new Vec3(1.04, 1.04, 1) : Vec3.ONE);
     }
 
     private integrateDrawnTile(): void {
@@ -405,6 +552,7 @@ export class MahjongRoomBase extends RoomBase {
             if (this.drawnTileNode) {
                 this.drawnTileNode.removeAllChildren();
             }
+            this.selectedTileId = -1;
         }
     }
 
@@ -432,7 +580,9 @@ export class MahjongRoomBase extends RoomBase {
         // 发送到服务端
         this.hideActionPanel();
         this.stopCountdown();
+        this.lastLocalDiscardTileId = tile.id;
         NetworkManager.Instance.sendMessage("MsgDoActionOption", {
+            venueId: GameManager.Instance.VenueId,
             actionId: playActionId,
             tileId: tile.id,
         }, true);
@@ -440,6 +590,7 @@ export class MahjongRoomBase extends RoomBase {
         // 更新本地显示
         this.renderMyHand();
         this.selectedTileIndex = -1;
+        this.selectedTileId = -1;
         this.isMyTurn = false;
 
         const myClientSeat = 0;
@@ -462,6 +613,8 @@ export class MahjongRoomBase extends RoomBase {
         this.integrateDrawnTile();
         this.myHandTiles.splice(tileIndex, 1);
         this.renderMyHand();
+        this.selectedTileIndex = -1;
+        this.selectedTileId = -1;
         this.sendDiscard(tile);
         this.isMyTurn = false;
         this.stopCountdown();
@@ -485,7 +638,9 @@ export class MahjongRoomBase extends RoomBase {
         if (playOpt) {
             this.hideActionPanel();
             this.stopCountdown();
+            this.lastLocalDiscardTileId = tile.id;
             NetworkManager.Instance.sendMessage("MsgDoActionOption", {
+                venueId: GameManager.Instance.VenueId,
                 actionId: playOpt.id,
                 tileId: tile.id,
             }, true);
@@ -539,7 +694,7 @@ export class MahjongRoomBase extends RoomBase {
     public doActionById(actionId: number, tileId?: number): void {
         this.hideActionPanel();
         this.stopCountdown();
-        const msg: any = { actionId: actionId };
+        const msg: any = { venueId: GameManager.Instance.VenueId, actionId: actionId };
         if (tileId !== undefined) msg.tileId = tileId;
         NetworkManager.Instance.sendMessage("MsgDoActionOption", msg, true);
         console.log(`[MahjongRoom] doActionById: id=${actionId}, tileId=${tileId}`);
@@ -558,18 +713,28 @@ export class MahjongRoomBase extends RoomBase {
     // ==================== 弃牌区更新 ====================
 
     protected addDiscardToDisplay(seatIndex: number, tile: MahjongTile): void {
-        const discardArea = this.getDiscardAreaBySeat(seatIndex);
-        if (!discardArea) return;
-        const tileNode = this.createTileNode(tile, false);
-        tileNode.parent = discardArea;
-        tileNode.setScale(new Vec3(0.6, 0.6, 1));
+        const discards = this.discardRecords.get(seatIndex) || [];
+        const exists = discards.some(item => item.id === tile.id);
+        if (!exists) {
+            discards.push(tile);
+            this.discardRecords.set(seatIndex, discards);
+        }
+        if (seatIndex > 0) {
+            const current = this.opponentHandCounts.get(seatIndex) || 0;
+            this.opponentHandCounts.set(seatIndex, Math.max(0, current - 1));
+            this.renderOpponentHandBySeat(seatIndex, this.opponentHandCounts.get(seatIndex) || 0);
+        }
+        this.renderDiscardArea(seatIndex);
     }
 
     public onOtherPlayerDiscard(seatIndex: number, tile: MahjongTile): void {
         let discards = this.discardRecords.get(seatIndex) || [];
         discards.push(tile);
         this.discardRecords.set(seatIndex, discards);
-        this.addDiscardToDisplay(seatIndex, tile);
+        this.renderDiscardArea(seatIndex);
+        const current = this.opponentHandCounts.get(seatIndex) || 0;
+        this.opponentHandCounts.set(seatIndex, Math.max(0, current - 1));
+        this.renderOpponentHandBySeat(seatIndex, this.opponentHandCounts.get(seatIndex) || 0);
     }
 
     // ==================== 碰杠展示 ====================
@@ -578,6 +743,8 @@ export class MahjongRoomBase extends RoomBase {
         let melds = this.meldRecords.get(seatIndex) || [];
         melds.push(tiles);
         this.meldRecords.set(seatIndex, melds);
+        this.renderMeldArea(seatIndex);
+        this.playMahjongActionEffect(seatIndex, 'peng');
         console.log(`[MahjongRoom] Seat ${seatIndex} peng`);
     }
 
@@ -585,6 +752,8 @@ export class MahjongRoomBase extends RoomBase {
         let melds = this.meldRecords.get(seatIndex) || [];
         melds.push(tiles);
         this.meldRecords.set(seatIndex, melds);
+        this.renderMeldArea(seatIndex);
+        this.playMahjongActionEffect(seatIndex, isConcealed ? 'gang' : 'guafeng');
         console.log(`[MahjongRoom] Seat ${seatIndex} gang (${isConcealed ? 'concealed' : 'revealed'})`);
     }
 
@@ -592,9 +761,7 @@ export class MahjongRoomBase extends RoomBase {
 
     public updateRemainingCount(count: number): void {
         this.remainingTiles = count;
-        if (this.remainCountLabel) {
-            this.remainCountLabel.string = String(count);
-        }
+        this.updateHudInfo();
     }
 
     protected resetRoundState(): void {
@@ -604,10 +771,15 @@ export class MahjongRoomBase extends RoomBase {
         this.isTing = false;
         this.availableActions = null;
         this.selectedTileIndex = -1;
+        this.selectedTileId = -1;
+        this.initOpponentHandCounts();
         this.initDiscardRecords();
         this.hideActionPanel();
 
         [this.myHandArea, this.leftHandArea, this.rightHandArea, this.topHandArea].forEach(area => {
+            if (area) area.removeAllChildren();
+        });
+        [this.myMeldArea, this.leftMeldArea, this.rightMeldArea, this.topMeldArea].forEach(area => {
             if (area) area.removeAllChildren();
         });
         [this.myDiscardArea, this.leftDiscardArea, this.rightDiscardArea, this.topDiscardArea].forEach(area => {
@@ -616,24 +788,38 @@ export class MahjongRoomBase extends RoomBase {
         if (this.drawnTileNode) {
             this.drawnTileNode.removeAllChildren();
         }
+        if (this.effectLayer) {
+            this.effectLayer.removeAllChildren();
+        }
+        this.updateHudInfo();
     }
 
     // ==================== 音效接口 (子类覆写或由 AudioControl 处理) ====================
 
     /** 出牌音效 */
-    protected playDiscardSound(): void {}
+    protected playDiscardSound(): void {
+        AudioManager.Instance.play('legacy-mj/sounds/select', AudioChannel.SFX, { volume: 0.45 });
+    }
 
     /** 胡牌音效 */
-    protected playHuSound(_isSelf: boolean): void {}
+    protected playHuSound(_isSelf: boolean): void {
+        AudioManager.Instance.play('legacy-mj/sounds/nv/hu', AudioChannel.StrongFeedback, { volume: 0.75 });
+    }
 
     /** 碰牌音效 */
-    protected playPengSound(): void {}
+    protected playPengSound(): void {
+        AudioManager.Instance.play('legacy-mj/sounds/nv/peng', AudioChannel.SFX, { volume: 0.7 });
+    }
 
     /** 杠牌音效 */
-    protected playGangSound(): void {}
+    protected playGangSound(): void {
+        AudioManager.Instance.play('legacy-mj/sounds/nv/gang', AudioChannel.StrongFeedback, { volume: 0.75 });
+    }
 
     /** 错误/失败音效 */
-    protected playErrorSound(): void {}
+    protected playErrorSound(): void {
+        AudioManager.Instance.play('legacy-mj/sounds/give', AudioChannel.SFX, { volume: 0.35 });
+    }
 
     // ==================== 麻将 UI 布局常量 ====================
 
@@ -643,119 +829,490 @@ export class MahjongRoomBase extends RoomBase {
 
     // ==================== 工具方法 ====================
 
-    protected createTileNode(tile: MahjongTile, interactive: boolean): Node {
-        if (this.tilePrefab) {
-            const node = instantiate(this.tilePrefab);
-            return node;
+    protected initOpponentHandCounts(): void {
+        this.opponentHandCounts.clear();
+        for (let i = 1; i < this.getSeatCount(); i++) {
+            this.opponentHandCounts.set(i, 0);
         }
-        const tw = MahjongRoomBase.TILE_W, th = MahjongRoomBase.TILE_H;
-        const node = new Node(`tile_${tile.id || 0}_${tile.tile?.pattern || 0}_${tile.tile?.number || 0}`);
-        node['_tileData'] = tile;
+    }
 
-        const transform = node.addComponent(UITransform);
+    protected seedOpponentHands(defaultCount: number = 13): void {
+        for (let i = 1; i < this.getSeatCount(); i++) {
+            if ((this.opponentHandCounts.get(i) || 0) <= 0) {
+                this.opponentHandCounts.set(i, defaultCount);
+            }
+        }
+    }
+
+    protected preloadLegacyMahjongAssets(): void {
+        const atlasPaths: Array<[LegacyAtlasKey, string]> = [
+            ['my', 'legacy-mj/textures/MJ/my/Z_my'],
+            ['bottom', 'legacy-mj/textures/MJ/bottom/Z_bottom'],
+            ['left', 'legacy-mj/textures/MJ/left/Z_left'],
+            ['right', 'legacy-mj/textures/MJ/right/Z_right'],
+            ['empty', 'legacy-mj/textures/MJ/mjEmpty'],
+        ];
+        for (const [key, path] of atlasPaths) {
+            resources.load(path, SpriteAtlas, (err, atlas) => {
+                if (!err && atlas) {
+                    this.legacyAtlases.set(key, atlas);
+                    this.onLegacyThemeLoaded();
+                }
+            });
+        }
+
+        const spritePaths: Array<[LegacySpriteKey, string]> = [
+            ['tableBg', 'legacy-mj/textures/images/mahjong_table/spriteFrame'],
+            ['actionBg', 'legacy-mj/textures/ops/penggang_bottom/spriteFrame'],
+            ['seatBg', 'legacy-mj/textures/png/fangkaxiaobeijing/spriteFrame'],
+            ['roundBg', 'legacy-mj/textures/MJRoom/roundnumbg/spriteFrame'],
+            ['moneyFrame', 'legacy-mj/textures/png/money_frame/spriteFrame'],
+        ];
+        for (const [key, path] of spritePaths) {
+            resources.load(path, SpriteFrame, (err, frame) => {
+                if (!err && frame) {
+                    this.legacySprites.set(key, frame);
+                    this.onLegacyThemeLoaded();
+                }
+            });
+        }
+
+        const effectFrameNames = [
+            'peng_glow',
+            'peng_glow2',
+            'gang_glow',
+            'gang_glow2',
+            'guafeng1',
+            'guafeng2',
+            'guafeng3',
+            'guafeng4',
+            'guafeng5',
+            'guafeng6',
+            'guafeng7',
+            'rain1',
+            'rain2',
+            'rain3',
+            'rain4',
+            'rain5',
+            'rain6',
+            'hu_glow',
+            'hu_glow3',
+            'hu_glow4',
+            'zimo_glow2',
+        ];
+        for (const name of effectFrameNames) {
+            resources.load(`legacy-mj/textures/images/efx/${name}/spriteFrame`, SpriteFrame, (err, frame) => {
+                if (!err && frame) {
+                    this.cachedEffectFrames.set(name, frame);
+                }
+            });
+        }
+    }
+
+    protected onLegacyThemeLoaded(): void {
+        this.legacyThemeReady = this.legacyAtlases.size >= 4;
+        this.applyLegacyTheme();
+        this.renderMyHand();
+        if (this.drawnTile) this.showDrawnTile(this.drawnTile);
+        this.renderAllOpponentHands();
+        this.renderAllDiscardAreas();
+        this.renderAllMeldAreas();
+    }
+
+    protected updateHudInfo(): void {
+        if (this.roomInfoLabel) {
+            const roomText = this.roomNumber ? `房号 ${this.roomNumber}` : '麻将房间';
+            this.roomInfoLabel.string = roomText;
+        }
+        if (this.roundInfoLabel) {
+            const stateText = this.gameState === GameState.Playing ? '对局中' : (this.gameState === GameState.Dealing ? '发牌中' : '等待开始');
+            this.roundInfoLabel.string = `${stateText}  剩余 ${this.remainingTiles}`;
+        }
+        if (this.remainCountLabel) {
+            this.remainCountLabel.string = `剩余 ${this.remainingTiles} 张`;
+        }
+        if (this.ruleHintLabel) {
+            this.ruleHintLabel.string = this.getRuleHintText();
+        }
+    }
+
+    protected getRuleHintText(): string {
+        return '';
+    }
+
+    protected applyLegacyTheme(): void {
+        if (!this.tableBackgroundNode) return;
+        const tableBg = this.legacySprites.get('tableBg');
+        const sprite = this.tableBackgroundNode.getComponent(Sprite);
+        if (tableBg && sprite) {
+            sprite.spriteFrame = tableBg;
+            sprite.color = Color.WHITE;
+        }
+    }
+
+    protected getLegacyTileSpriteName(tile: MahjongTile): string | null {
+        if (!tile?.tile) return null;
+        const pattern = Number(tile.tile.pattern) || 0;
+        const number = Number(tile.tile.number) || 0;
+
+        if (pattern === 1) return `dot_${number}`;
+        if (pattern === 2) return `bamboo_${number}`;
+        if (pattern === 3) return `character_${number}`;
+
+        const patternMap: Record<number, string> = {
+            4: 'wind_east',
+            5: 'wind_south',
+            6: 'wind_west',
+            7: 'wind_north',
+            8: 'red',
+            9: 'green',
+            10: 'white',
+            11: 'spring',
+            12: 'summer',
+            13: 'autumn',
+            14: 'winter',
+            15: 'plum',
+            16: 'orchid',
+            17: 'chrysanthemum',
+            18: 'bamboo',
+        };
+        return patternMap[pattern] || null;
+    }
+
+    protected getAtlasForSeat(seatIndex: number, interactive: boolean): SpriteAtlas | null {
+        if (seatIndex === 0 && interactive) return this.legacyAtlases.get('my') || null;
+        if (seatIndex === 1) return this.legacyAtlases.get('left') || null;
+        if (seatIndex === 2) return this.legacyAtlases.get('right') || null;
+        return this.legacyAtlases.get('bottom') || null;
+    }
+
+    protected getEmptyFrameNameForSeat(seatIndex: number): string | null {
+        if (seatIndex === 1) return 'e_mj_left';
+        if (seatIndex === 2) return 'e_mj_right';
+        if (seatIndex === 3) return 'e_mj_up';
+        return 'e_mj_b_bottom';
+    }
+
+    protected createTileNode(tile: MahjongTile, interactive: boolean): Node {
+        return this.createTileNodeForSeat(tile, 0, interactive);
+    }
+
+    protected createTileNodeForSeat(tile: MahjongTile, seatIndex: number, interactive: boolean): Node {
+        if (this.tilePrefab && seatIndex === 0 && interactive) {
+            return instantiate(this.tilePrefab);
+        }
+
+        const tw = seatIndex === 0 && interactive ? 72 : 48;
+        const th = seatIndex === 0 && interactive ? 100 : 66;
+        const node = new Node(`tile_${tile.id || 0}_${tile.tile?.pattern || 0}_${tile.tile?.number || 0}`);
+        (node as any)._tileData = tile;
+
+        const transform = node.getComponent(UITransform) || node.addComponent(UITransform);
         transform.setContentSize(tw, th);
 
-        const g = node.addComponent(Graphics);
-        g.fillColor = new Color(255, 250, 240, 255);
-        g.roundRect(-tw / 2, -th / 2, tw, th, 6);
-        g.fill();
-        g.strokeColor = new Color(180, 170, 160, 255);
-        g.lineWidth = 1;
-        g.roundRect(-tw / 2, -th / 2, tw, th, 6);
-        g.stroke();
+        const atlas = this.getAtlasForSeat(seatIndex, interactive);
+        const spriteName = this.getLegacyTileSpriteName(tile);
+        let frame: SpriteFrame | null = null;
+        if (atlas && spriteName) {
+            const prefix = seatIndex === 0 && interactive ? 'M_' : (seatIndex === 1 ? 'L_' : (seatIndex === 2 ? 'R_' : 'B_'));
+            frame = atlas.getSpriteFrame(prefix + spriteName);
+        }
 
-        const labelNode = new Node('TileLabel');
-        labelNode.parent = node;
-        const lt = labelNode.addComponent(UITransform);
-        lt.setContentSize(tw - 8, th - 8);
-        const lc = labelNode.addComponent(Label);
-        lc.string = tileDisplayText(tile);
-        lc.fontSize = 22;
-        lc.lineHeight = 28;
-        lc.overflow = 2; // SHRINK
-        lc.horizontalAlign = 1; // CENTER
-        lc.verticalAlign = 1; // CENTER
+        if (frame) {
+            const sprite = node.addComponent(Sprite);
+            sprite.spriteFrame = frame;
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            sprite.color = Color.WHITE;
+            transform.setContentSize(tw, th);
+        } else {
+            const g = node.addComponent(Graphics);
+            g.fillColor = new Color(255, 250, 240, 255);
+            g.roundRect(-tw / 2, -th / 2, tw, th, 8);
+            g.fill();
+            g.strokeColor = new Color(180, 170, 160, 255);
+            g.lineWidth = 1.5;
+            g.roundRect(-tw / 2, -th / 2, tw, th, 8);
+            g.stroke();
 
-        // 颜色区分花色
-        if (tile.tile) {
-            if (tile.tile.pattern === 1) lc.color = new Color(0, 100, 200, 255);      // 筒=蓝
-            else if (tile.tile.pattern === 2) lc.color = new Color(0, 150, 50, 255);  // 条=绿
-            else if (tile.tile.pattern === 3) lc.color = new Color(200, 50, 50, 255); // 万=红
-            else lc.color = new Color(100, 100, 100, 255); // 风箭花=灰
+            const labelNode = new Node('TileLabel');
+            labelNode.parent = node;
+            (labelNode.getComponent(UITransform) || labelNode.addComponent(UITransform)).setContentSize(tw - 10, th - 10);
+            const label = labelNode.addComponent(Label);
+            label.string = tileDisplayText(tile);
+            label.fontSize = seatIndex === 0 ? 20 : 15;
+            label.lineHeight = seatIndex === 0 ? 24 : 18;
+            label.horizontalAlign = 1;
+            label.verticalAlign = 1;
+            label.overflow = 2;
+            label.color = tile.tile?.pattern === 3 ? new Color(200, 50, 50, 255) : new Color(60, 60, 60, 255);
         }
 
         if (interactive) {
-            node.on(Node.EventType.TOUCH_END, () => {
+            node.on(Node.EventType.TOUCH_START, () => {
+                (node as any)._dragLift = 24;
                 this.onTileTapped(tile, node);
             }, this);
+            node.on(Node.EventType.TOUCH_MOVE, (event: any) => {
+                if (!this.isMyTurn || !this.canDiscardDirectly()) return;
+                const delta = event?.getUIDelta ? event.getUIDelta() : null;
+                const dy = delta?.y ?? event?.getDeltaY?.() ?? 0;
+                const dragLift = Math.max(24, Math.min(120, ((node as any)._dragLift || 24) + dy));
+                (node as any)._dragLift = dragLift;
+                const pos = node.getPosition();
+                pos.y = dragLift;
+                node.setPosition(pos);
+            }, this);
+            const finalizeTouch = () => {
+                const dragLift = (node as any)._dragLift || 0;
+                if (dragLift >= 90 && this.canDiscardDirectly()) {
+                    const tileIndex = this.myHandTiles.findIndex(item => item.id === tile.id);
+                    if (tileIndex >= 0) {
+                        this.selectedTileIndex = tileIndex;
+                        this.selectedTileId = tile.id;
+                        this.selectAndDiscard(tileIndex);
+                        return;
+                    }
+                }
+                this.highlightTile(node);
+            };
+            node.on(Node.EventType.TOUCH_END, finalizeTouch, this);
+            node.on(Node.EventType.TOUCH_CANCEL, finalizeTouch, this);
         }
 
         return node;
     }
 
     protected createTileBackNode(): Node {
-        if (this.tileBackPrefab) {
+        return this.createTileBackNodeForSeat(3);
+    }
+
+    protected createTileBackNodeForSeat(seatIndex: number): Node {
+        if (this.tileBackPrefab && seatIndex === 3) {
             return instantiate(this.tileBackPrefab);
         }
-        const tw = MahjongRoomBase.TILE_W, th = MahjongRoomBase.TILE_H;
-        const node = new Node('tile_back');
+
+        const node = new Node(`tile_back_${seatIndex}`);
         const transform = node.addComponent(UITransform);
+        const tw = seatIndex === 3 ? 42 : 36;
+        const th = seatIndex === 3 ? 58 : 52;
         transform.setContentSize(tw, th);
 
-        const g = node.addComponent(Graphics);
-        g.fillColor = new Color(60, 120, 180, 255);
-        g.roundRect(-tw / 2, -th / 2, tw, th, 6);
-        g.fill();
-        g.strokeColor = new Color(40, 80, 140, 255);
-        g.lineWidth = 1;
-        g.roundRect(-tw / 2, -th / 2, tw, th, 6);
-        g.stroke();
-
-        const labelNode = new Node('BackLabel');
-        labelNode.parent = node;
-        const lt = labelNode.addComponent(UITransform);
-        lt.setContentSize(tw - 10, th - 10);
-        const lc = labelNode.addComponent(Label);
-        lc.string = '牛';
-        lc.fontSize = 28;
-        lc.lineHeight = 32;
-        lc.overflow = 2;
-        lc.horizontalAlign = 1;
-        lc.verticalAlign = 1;
-        lc.color = new Color(200, 180, 100, 255);
-
+        const atlas = this.legacyAtlases.get('empty');
+        const frameName = this.getEmptyFrameNameForSeat(seatIndex);
+        const frame = atlas && frameName ? atlas.getSpriteFrame(frameName) : null;
+        if (frame) {
+            const sprite = node.addComponent(Sprite);
+            sprite.spriteFrame = frame;
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            sprite.color = Color.WHITE;
+        } else {
+            const g = node.addComponent(Graphics);
+            g.fillColor = new Color(90, 125, 170, 255);
+            g.roundRect(-tw / 2, -th / 2, tw, th, 6);
+            g.fill();
+        }
         return node;
+    }
+
+    protected getEffectAnchor(seatIndex: number): Vec3 {
+        switch (seatIndex) {
+            case 0: return new Vec3(0, -120, 0);
+            case 1: return new Vec3(-420, 10, 0);
+            case 2: return new Vec3(420, 10, 0);
+            case 3: return new Vec3(0, 190, 0);
+            default: return Vec3.ZERO;
+        }
+    }
+
+    protected getEffectFrameSequence(effect: MahjongEffectKey): string[] {
+        switch (effect) {
+            case 'peng': return ['peng_glow', 'peng_glow2'];
+            case 'gang': return ['gang_glow', 'gang_glow2'];
+            case 'guafeng': return ['guafeng1', 'guafeng2', 'guafeng3', 'guafeng4', 'guafeng5', 'guafeng6', 'guafeng7'];
+            case 'xiayu': return ['rain1', 'rain2', 'rain3', 'rain4', 'rain5', 'rain6'];
+            case 'zimo': return ['zimo_glow2', 'hu_glow3'];
+            case 'hu':
+            default:
+                return ['hu_glow', 'hu_glow3', 'hu_glow4'];
+        }
+    }
+
+    protected playMahjongActionEffect(seatIndex: number, effect: MahjongEffectKey, text?: string): void {
+        if (!this.effectLayer) return;
+        const anchor = this.getEffectAnchor(seatIndex);
+        const frames = this.getEffectFrameSequence(effect)
+            .map(name => this.cachedEffectFrames.get(name))
+            .filter((frame): frame is SpriteFrame => !!frame);
+
+        const effectNode = this.createUIChild(this.effectLayer, `Efx_${effect}_${Date.now()}`, 260, 180, anchor.x, anchor.y, 1);
+        effectNode.setScale(new Vec3(0.85, 0.85, 1));
+
+        if (frames.length > 0) {
+            const sprite = effectNode.addComponent(Sprite);
+            sprite.spriteFrame = frames[0];
+            sprite.sizeMode = Sprite.SizeMode.CUSTOM;
+            sprite.color = new Color(255, 255, 255, 235);
+            for (let index = 1; index < frames.length; index++) {
+                this.scheduleOnce(() => {
+                    if (!effectNode.isValid) return;
+                    sprite.spriteFrame = frames[index];
+                    effectNode.setScale(new Vec3(0.85 + index * 0.06, 0.85 + index * 0.06, 1));
+                }, 0.08 * index);
+            }
+            this.scheduleOnce(() => effectNode.isValid && effectNode.destroy(), 0.8);
+        } else {
+            this.paintRect(effectNode, 220, 92, new Color(255, 215, 80, 180), new Color(255, 240, 180, 255), 18);
+        }
+
+        const labelNode = this.createUIChild(effectNode, 'Label', 220, 60, 0, 0, 1);
+        const label = labelNode.addComponent(Label);
+        label.string = text || this.getEffectDisplayText(effect);
+        label.fontSize = 36;
+        label.lineHeight = 40;
+        label.horizontalAlign = 1;
+        label.verticalAlign = 1;
+        label.color = new Color(255, 245, 214, 255);
+    }
+
+    protected getEffectDisplayText(effect: MahjongEffectKey): string {
+        switch (effect) {
+            case 'peng': return '碰';
+            case 'gang': return '杠';
+            case 'guafeng': return '刮风';
+            case 'xiayu': return '下雨';
+            case 'zimo': return '自摸';
+            case 'hu':
+            default:
+                return '胡';
+        }
+    }
+
+    protected renderAllOpponentHands(): void {
+        for (let seatIndex = 1; seatIndex < this.getSeatCount(); seatIndex++) {
+            this.renderOpponentHandBySeat(seatIndex, this.opponentHandCounts.get(seatIndex) || 0);
+        }
+    }
+
+    protected renderOpponentHandBySeat(seatIndex: number, count: number): void {
+        const area = this.getHandAreaBySeat(seatIndex);
+        if (!area) return;
+        area.removeAllChildren();
+        if (count <= 0) return;
+
+        const gap = seatIndex === 3 ? 4 : 2;
+        const vertical = seatIndex === 1 || seatIndex === 2;
+        const total = count * (vertical ? 18 : 34);
+        let start = -total / 2;
+        for (let i = 0; i < count; i++) {
+            const back = this.createTileBackNodeForSeat(seatIndex);
+            back.parent = area;
+            if (vertical) {
+                back.setPosition(0, start + i * 18, 0);
+            } else {
+                back.setPosition(start + i * (34 + gap), 0, 0);
+            }
+        }
+    }
+
+    protected renderAllDiscardAreas(): void {
+        for (let seatIndex = 0; seatIndex < this.getSeatCount(); seatIndex++) {
+            this.renderDiscardArea(seatIndex);
+        }
+    }
+
+    protected renderDiscardArea(seatIndex: number): void {
+        const discardArea = this.getDiscardAreaBySeat(seatIndex);
+        if (!discardArea) return;
+        discardArea.removeAllChildren();
+        const discards = this.discardRecords.get(seatIndex) || [];
+        const columns = seatIndex === 1 || seatIndex === 2 ? 4 : 8;
+        const tileGapY = 8;
+        for (let i = 0; i < discards.length; i++) {
+            const row = Math.floor(i / columns);
+            const col = i % columns;
+            const tileNode = this.createTileNodeForSeat(discards[i], seatIndex, false);
+            tileNode.parent = discardArea;
+            if (seatIndex === 1 || seatIndex === 2) {
+                tileNode.setPosition((seatIndex === 1 ? -1 : 1) * row * 42, 56 - col * 44, 0);
+            } else {
+                tileNode.setPosition(col * 44 - ((columns - 1) * 22), -row * (42 + tileGapY), 0);
+            }
+        }
+    }
+
+    protected getMeldAreaBySeat(seatIndex: number): Node | null {
+        switch (seatIndex) {
+            case 0: return this.myMeldArea;
+            case 1: return this.leftMeldArea;
+            case 2: return this.rightMeldArea;
+            case 3: return this.topMeldArea;
+            default: return null;
+        }
+    }
+
+    protected renderAllMeldAreas(): void {
+        for (let seatIndex = 0; seatIndex < this.getSeatCount(); seatIndex++) {
+            this.renderMeldArea(seatIndex);
+        }
+    }
+
+    protected renderMeldArea(seatIndex: number): void {
+        const area = this.getMeldAreaBySeat(seatIndex);
+        if (!area) return;
+        area.removeAllChildren();
+        const melds = this.meldRecords.get(seatIndex) || [];
+        for (let groupIndex = 0; groupIndex < melds.length; groupIndex++) {
+            const meld = melds[groupIndex];
+            const group = new Node(`Meld_${groupIndex}`);
+            group.parent = area;
+            (group.getComponent(UITransform) || group.addComponent(UITransform)).setContentSize(180, 72);
+            group.setPosition((seatIndex === 0 || seatIndex === 3 ? groupIndex * 160 : 0), (seatIndex === 1 ? -groupIndex * 72 : seatIndex === 2 ? groupIndex * 72 : 0), 0);
+            for (let i = 0; i < meld.length; i++) {
+                const tileNode = this.createTileNodeForSeat(meld[i], seatIndex, false);
+                tileNode.parent = group;
+                if (seatIndex === 1 || seatIndex === 2) {
+                    tileNode.setPosition(0, i * 38 - 38, 0);
+                } else {
+                    tileNode.setPosition(i * 42 - 42, 0, 0);
+                }
+            }
+        }
     }
 
     /** 点击手牌回调 — 仅选中，不直接出牌 */
     protected onTileTapped(tile: MahjongTile, node: Node): void {
         if (!this.isMyTurn) return;
-        // 高亮选中
+        this.selectedTileIndex = this.myHandTiles.findIndex(item => item.id === tile.id);
+        this.selectedTileId = tile.id;
         this.highlightTile(node);
-        this.selectedTileIndex = this.myHandTiles.indexOf(tile);
+        AudioManager.Instance.play('legacy-mj/sounds/select', AudioChannel.SFX, { volume: 0.3 });
     }
 
     /** 高亮选中的牌 */
     protected highlightTile(node: Node): void {
-        // 取消之前的高亮
         if (this.myHandArea) {
             for (const child of this.myHandArea.children) {
-                const g = child.getComponent(Graphics);
-                if (g) {
-                    g.fillColor = new Color(255, 250, 240, 255);
-                }
+                const tileData = (child as any)._tileData as MahjongTile | undefined;
+                const baseY = tileData && tileData.id === this.selectedTileId ? 24 : 0;
                 const pos = child.getPosition();
-                pos.y = 0;
+                pos.y = baseY;
                 child.setPosition(pos);
+                child.setScale(tileData && tileData.id === this.selectedTileId ? new Vec3(1.04, 1.04, 1) : Vec3.ONE);
             }
         }
-        // 高亮当前牌
+        if (this.drawnTileNode && this.drawnTileNode.children.length > 0) {
+            const child = this.drawnTileNode.children[0];
+            const tileData = (child as any)._tileData as MahjongTile | undefined;
+            const pos = child.getPosition();
+            pos.y = tileData && tileData.id === this.selectedTileId ? 24 : 0;
+            child.setPosition(pos);
+            child.setScale(tileData && tileData.id === this.selectedTileId ? new Vec3(1.04, 1.04, 1) : Vec3.ONE);
+        }
         if (node) {
-            const g = node.getComponent(Graphics);
-            if (g) g.fillColor = new Color(255, 255, 180, 255);
             const pos = node.getPosition();
-            pos.y = 10;
+            pos.y = Math.max(pos.y, 24);
             node.setPosition(pos);
+            node.setScale(new Vec3(1.04, 1.04, 1));
         }
     }
 
@@ -773,41 +1330,88 @@ export class MahjongRoomBase extends RoomBase {
 
         const zOrder = 100; // 在 GuanDan prefab UI 之上
 
-        // 1. 麻将桌面背景（不创建全屏背景，复用 prefab 已有的桌面）
+        this.tableBackgroundNode = this.createUIChild(parent, 'TableBackground', 1680, 920, 0, 0, zOrder);
+        const tableSprite = this.tableBackgroundNode.addComponent(Sprite);
+        tableSprite.color = new Color(42, 96, 74, 255);
+        const tableBackgroundFallback = this.createUIChild(this.tableBackgroundNode, 'FallbackBg', 1680, 920, 0, 0, 0);
+        this.paintRect(tableBackgroundFallback, 1680, 920, new Color(42, 96, 74, 255), new Color(18, 50, 38, 255), 18);
 
-        // 2. 手牌区
-        this.myHandArea = this.createUIChild(parent, 'MyHandArea', 1200, 100, 0, -480, zOrder + 1);
-        this.topHandArea = this.createUIChild(parent, 'TopHandArea', 800, 80, 0, 460, zOrder + 1);
+        const topHud = this.createUIChild(parent, 'TopHud', 1240, 74, 0, 470, zOrder + 4);
+        this.paintRect(topHud, 1240, 74, new Color(14, 31, 44, 210), new Color(214, 182, 116, 255), 18);
 
-        // 3. 出牌区
-        this.myDiscardArea = this.createUIChild(parent, 'MyDiscardArea', 400, 300, 500, -150, zOrder + 1);
-        this.topDiscardArea = this.createUIChild(parent, 'TopDiscardArea', 400, 300, -500, 150, zOrder + 1);
-        this.leftDiscardArea = this.createUIChild(parent, 'LeftDiscardArea', 300, 200, -500, -150, zOrder + 1);
-        this.rightDiscardArea = this.createUIChild(parent, 'RightDiscardArea', 300, 200, 500, 150, zOrder + 1);
+        const roomNode = this.createUIChild(topHud, 'RoomInfo', 320, 40, -360, 0, 1);
+        this.roomInfoLabel = roomNode.addComponent(Label);
+        this.roomInfoLabel.fontSize = 28;
+        this.roomInfoLabel.lineHeight = 34;
+        this.roomInfoLabel.color = new Color(255, 240, 202, 255);
 
-        // 4. 操作面板
-        this.actionPanel = this.createUIChild(parent, 'ActionPanel', 800, 60, 0, -340, zOrder + 10);
+        const roundNode = this.createUIChild(topHud, 'RoundInfo', 340, 40, 0, 0, 1);
+        this.roundInfoLabel = roundNode.addComponent(Label);
+        this.roundInfoLabel.fontSize = 26;
+        this.roundInfoLabel.lineHeight = 32;
+        this.roundInfoLabel.horizontalAlign = 1;
+        this.roundInfoLabel.color = new Color(255, 255, 255, 255);
+
+        const remainNode = this.createUIChild(topHud, 'RemainCount', 260, 40, 360, 0, 1);
+        this.remainCountLabel = remainNode.addComponent(Label);
+        this.remainCountLabel.fontSize = 26;
+        this.remainCountLabel.lineHeight = 32;
+        this.remainCountLabel.horizontalAlign = 2;
+        this.remainCountLabel.color = new Color(255, 229, 143, 255);
+
+        const ruleNode = this.createUIChild(parent, 'RuleHint', 520, 40, 0, 420, zOrder + 3);
+        this.ruleHintLabel = ruleNode.addComponent(Label);
+        this.ruleHintLabel.fontSize = 22;
+        this.ruleHintLabel.lineHeight = 26;
+        this.ruleHintLabel.horizontalAlign = 1;
+        this.ruleHintLabel.color = new Color(255, 237, 186, 255);
+
+        if (!this.countdownLabel) {
+            const timerNode = this.createUIChild(parent, 'MahjongCountdown', 120, 60, 0, 200, zOrder + 4);
+            this.paintRect(timerNode, 120, 60, new Color(20, 24, 36, 220), new Color(255, 219, 140, 255), 14);
+            this.countdownLabel = timerNode.addComponent(Label);
+            this.countdownLabel.fontSize = 34;
+            this.countdownLabel.lineHeight = 40;
+            this.countdownLabel.horizontalAlign = 1;
+            this.countdownLabel.verticalAlign = 1;
+            this.countdownLabel.color = new Color(255, 255, 255, 255);
+            this.countdownLabel.string = '0';
+        }
+
+        this.topHandArea = this.createUIChild(parent, 'TopHandArea', 940, 80, 0, 330, zOrder + 2);
+        this.topMeldArea = this.createUIChild(parent, 'TopMeldArea', 640, 80, 0, 255, zOrder + 2);
+        this.topDiscardArea = this.createUIChild(parent, 'TopDiscardArea', 420, 180, 0, 120, zOrder + 2);
+
+        this.leftHandArea = this.createUIChild(parent, 'LeftHandArea', 100, 560, -690, -10, zOrder + 2);
+        this.leftMeldArea = this.createUIChild(parent, 'LeftMeldArea', 110, 320, -560, -50, zOrder + 2);
+        this.leftDiscardArea = this.createUIChild(parent, 'LeftDiscardArea', 220, 240, -360, -10, zOrder + 2);
+
+        this.rightHandArea = this.createUIChild(parent, 'RightHandArea', 100, 560, 690, -10, zOrder + 2);
+        this.rightMeldArea = this.createUIChild(parent, 'RightMeldArea', 110, 320, 560, -50, zOrder + 2);
+        this.rightDiscardArea = this.createUIChild(parent, 'RightDiscardArea', 220, 240, 360, -10, zOrder + 2);
+
+        this.myDiscardArea = this.createUIChild(parent, 'MyDiscardArea', 460, 180, 0, -70, zOrder + 2);
+        this.myMeldArea = this.createUIChild(parent, 'MyMeldArea', 640, 80, -180, -240, zOrder + 2);
+        this.myHandArea = this.createUIChild(parent, 'MyHandArea', 1260, 120, 0, -408, zOrder + 3);
+        this.drawnTileNode = this.createUIChild(parent, 'DrawnTileNode', 90, 120, 600, -404, zOrder + 4);
+
+        this.actionPanel = this.createUIChild(parent, 'ActionPanel', 860, 120, 0, -286, zOrder + 6);
+        this.paintRect(this.actionPanel, 860, 120, new Color(16, 20, 30, 215), new Color(255, 210, 112, 255), 18);
+        const actionHint = this.createUIChild(this.actionPanel, 'ActionHint', 220, 30, 0, 34, 1);
+        this.actionHintLabel = actionHint.addComponent(Label);
+        this.actionHintLabel.string = '请选择操作';
+        this.actionHintLabel.fontSize = 20;
+        this.actionHintLabel.lineHeight = 24;
+        this.actionHintLabel.horizontalAlign = 1;
+        this.actionHintLabel.color = new Color(255, 228, 166, 255);
         this.actionPanel.active = false;
 
-        // 5. 摸到的牌
-        this.drawnTileNode = this.createUIChild(parent, 'DrawnTileNode', 70, 90, 660, -480, zOrder + 2);
+        this.effectLayer = this.createUIChild(parent, 'MahjongEffectLayer', 1680, 920, 0, 0, zOrder + 8);
+        this.buildMahjongControls(parent, zOrder + 9);
+        this.buildMahjongPlayerInfo(parent, zOrder + 5);
+        this.ensureBackButtonVisible();
 
-        // 6. 剩余牌数
-        const remainNode = this.createUIChild(parent, 'RemainCount', 200, 40, -820, 480, zOrder + 1);
-        this.remainCountLabel = remainNode.addComponent(Label);
-        this.remainCountLabel.string = '剩余: 0';
-        this.remainCountLabel.fontSize = 24;
-        this.remainCountLabel.lineHeight = 30;
-        this.remainCountLabel.color = new Color(255, 255, 255, 255);
-        this.remainCountLabel.horizontalAlign = 1;
-        this.remainCountLabel.verticalAlign = 1;
-        this.remainCountLabel.overflow = 2;
-
-        // 7. 副露区
-        this.leftHandArea = this.createUIChild(parent, 'MeldLeft', 200, 120, -400, 0, zOrder + 1);
-        this.rightHandArea = this.createUIChild(parent, 'MeldRight', 200, 120, 400, 0, zOrder + 1);
-
-        console.log('[MahjongRoom] Mahjong UI built (code-generated)');
+        console.log('[MahjongRoom] Mahjong UI built (legacy-inspired)');
     }
 
     /** 隐藏 GuanDan prefab 中与麻将 UI 冲突的桌面背景节点 */
@@ -867,11 +1471,217 @@ export class MahjongRoomBase extends RoomBase {
         const node = new Node(name);
         node.parent = parent;
         node.layer = 1 << 25; // UI_2D layer
-        const transform = node.addComponent(UITransform);
+        const transform = node.getComponent(UITransform) || node.addComponent(UITransform);
         transform.setContentSize(w, h);
         node.setPosition(x, y, 0);
         node.setSiblingIndex(z);
         return node;
+    }
+
+    protected buildMahjongControls(parent: Node, zOrder: number): void {
+        if (this.controlBarNode) return;
+        const visibleWidth = view.getVisibleSize().width || 1280;
+        const controlX = Math.max(240, visibleWidth / 2 - 240);
+        this.controlBarNode = this.createUIChild(parent, 'MahjongControlBar', 432, 56, controlX, 470, zOrder);
+
+        this.customReadyButton = this.createActionButton(this.controlBarNode, 'ReadyBtn', '准备', 0, 0, 120, new Color(46, 128, 88, 255), new Color(133, 231, 174, 255), 'onReadyClick');
+        this.customReadyLabel = this.findChildComponent<Label>(this.customReadyButton, 'Label', Label);
+
+        this.customStartButton = this.createActionButton(this.controlBarNode, 'StartBtn', '开始', 136, 0, 120, new Color(191, 122, 36, 255), new Color(255, 214, 138, 255), 'onStartGameClick');
+        this.customStartLabel = this.findChildComponent<Label>(this.customStartButton, 'Label', Label);
+
+        this.customSeatButton = this.createActionButton(this.controlBarNode, 'SeatBtn', '旁观', 272, 0, 120, new Color(63, 93, 134, 255), new Color(147, 201, 255, 255), 'onChangeSeatClick');
+        this.customSeatLabel = this.findChildComponent<Label>(this.customSeatButton, 'Label', Label);
+    }
+
+    protected buildMahjongPlayerInfo(parent: Node, zOrder: number): void {
+        if (this.playerInfoRoot) return;
+        this.playerInfoRoot = this.createUIChild(parent, 'MahjongPlayerInfoRoot', 1680, 920, 0, 0, zOrder);
+        this.playerInfoCards[0] = this.createPlayerInfoCard(this.playerInfoRoot, 'SelfInfo', -610, -304, 292, 92);
+        this.playerInfoCards[1] = this.createPlayerInfoCard(this.playerInfoRoot, 'LeftInfo', -690, 118, 188, 84);
+        this.playerInfoCards[2] = this.createPlayerInfoCard(this.playerInfoRoot, 'TopInfo', 0, 372, 292, 84);
+        this.playerInfoCards[3] = this.createPlayerInfoCard(this.playerInfoRoot, 'RightInfo', 690, 118, 188, 84);
+    }
+
+    protected createPlayerInfoCard(parent: Node, name: string, x: number, y: number, w: number, h: number): MahjongPlayerInfoCard {
+        const root = this.createUIChild(parent, name, w, h, x, y, 1);
+        this.paintRect(root, w, h, new Color(18, 26, 38, 220), new Color(214, 182, 116, 255), 16);
+
+        const nameNode = this.createUIChild(root, 'Name', w - 24, 26, 0, 22, 1);
+        const nameLabel = nameNode.addComponent(Label);
+        nameLabel.string = '';
+        nameLabel.fontSize = 22;
+        nameLabel.lineHeight = 26;
+        nameLabel.horizontalAlign = 1;
+        nameLabel.color = new Color(255, 238, 201, 255);
+
+        const goldNode = this.createUIChild(root, 'Gold', w - 24, 22, 0, -4, 1);
+        const goldLabel = goldNode.addComponent(Label);
+        goldLabel.string = '';
+        goldLabel.fontSize = 18;
+        goldLabel.lineHeight = 22;
+        goldLabel.horizontalAlign = 1;
+        goldLabel.color = new Color(213, 232, 255, 255);
+
+        const stateNode = this.createUIChild(root, 'State', w - 24, 22, 0, -28, 1);
+        const stateLabel = stateNode.addComponent(Label);
+        stateLabel.string = '';
+        stateLabel.fontSize = 18;
+        stateLabel.lineHeight = 22;
+        stateLabel.horizontalAlign = 1;
+        stateLabel.color = new Color(255, 220, 146, 255);
+
+        return { root, nameLabel, goldLabel, stateLabel };
+    }
+
+    protected createActionButton(parent: Node, name: string, text: string, x: number, y: number, width: number, fillColor: Color, strokeColor: Color, handler: string): Node {
+        const buttonNode = this.createUIChild(parent, name, width, 48, x, y, 1);
+        this.paintRect(buttonNode, width, 48, fillColor, strokeColor, 14);
+        const labelNode = this.createUIChild(buttonNode, 'Label', width - 12, 28, 0, 0, 1);
+        const label = labelNode.addComponent(Label);
+        label.string = text;
+        label.fontSize = 22;
+        label.lineHeight = 26;
+        label.horizontalAlign = 1;
+        label.verticalAlign = 1;
+        label.color = new Color(255, 244, 220, 255);
+
+        buttonNode.addComponent(Button);
+        buttonNode.on(Node.EventType.TOUCH_END, () => {
+            const fn = (this as any)[handler];
+            if (typeof fn === 'function') {
+                fn.call(this);
+            }
+        }, this);
+        return buttonNode;
+    }
+
+    protected refreshMahjongOverlayUI(): void {
+        this.refreshMahjongControls();
+        this.refreshMahjongPlayerInfo();
+        this.ensureBackButtonVisible();
+    }
+
+    protected refreshMahjongControls(): void {
+        const canReady = this.seat !== -1 && this.gameState === GameState.Waiting;
+        const selfInfo = this.seat !== -1 ? this.playerInfos[this.seat] : null;
+        const isOwner = this.seat !== -1 && this.seat === this.ownerSeat;
+
+        if (this.customReadyButton) this.customReadyButton.active = canReady;
+        if (this.customReadyLabel) this.customReadyLabel.string = selfInfo?.ready ? '已准备' : '准备';
+
+        if (this.customStartButton) this.customStartButton.active = !!(canReady && isOwner);
+        if (this.customStartLabel) this.customStartLabel.string = '开始';
+
+        if (this.customSeatButton) this.customSeatButton.active = this.seat !== -1;
+        if (this.customSeatLabel) this.customSeatLabel.string = '旁观';
+    }
+
+    protected getPlayerCardIndexByClientSeat(clientSeat: number): number {
+        if (this.getSeatCount() === 2) {
+            if (clientSeat === 0) return 0;
+            if (clientSeat === 1) return 2;
+            return -1;
+        }
+        return clientSeat >= 0 && clientSeat < 4 ? clientSeat : -1;
+    }
+
+    protected refreshMahjongPlayerInfo(): void {
+        for (let i = 0; i < this.playerInfoCards.length; i++) {
+            if (this.playerInfoCards[i]) {
+                this.playerInfoCards[i]!.root.active = false;
+            }
+        }
+
+        for (let serverSeat = 0; serverSeat < this.getSeatCount(); serverSeat++) {
+            const clientSeat = this.server2ClientSeat(serverSeat);
+            const cardIndex = this.getPlayerCardIndexByClientSeat(clientSeat);
+            if (cardIndex < 0 || !this.playerInfoCards[cardIndex]) continue;
+            const card = this.playerInfoCards[cardIndex]!;
+            const info = this.playerInfos[serverSeat];
+            card.root.active = !!info;
+            if (!info) continue;
+
+            const tags: string[] = [];
+            if (serverSeat === this.ownerSeat) tags.push('房主');
+            if (serverSeat === this.seat) tags.push('我');
+            card.nameLabel.string = `${info.nickname || `玩家${serverSeat + 1}`}${tags.length > 0 ? ` · ${tags.join('/')}` : ''}`;
+            card.goldLabel.string = `金币 ${info.gold ?? 0}`;
+            card.stateLabel.string = this.getPlayerStateText(info);
+        }
+    }
+
+    protected getPlayerStateText(info: any): string {
+        const states: string[] = [];
+        if (info.offline) states.push('离线');
+        if (info.authorize) states.push('托管');
+        if (info.ready) states.push('已准备');
+        if (states.length === 0) states.push(this.gameState === GameState.Waiting ? '等待中' : '游戏中');
+        return states.join(' · ');
+    }
+
+    protected ensureBackButtonVisible(): void {
+        const root = this.node;
+        const visibleWidth = view.getVisibleSize().width || 1280;
+        const backX = -visibleWidth / 2 + 86;
+        const btnBack = this.findChildRecursive(root, 'BtnBack');
+        if (btnBack) {
+            btnBack.active = true;
+            btnBack.setPosition(backX, 470, 0);
+            if (btnBack.parent) {
+                btnBack.parent.active = true;
+                btnBack.setSiblingIndex(btnBack.parent.children.length - 1);
+            }
+            return;
+        }
+
+        if (this.fallbackBackButton && this.fallbackBackButton.isValid) {
+            this.fallbackBackButton.active = true;
+            this.fallbackBackButton.setPosition(backX, 470, 0);
+            this.fallbackBackButton.setSiblingIndex(this.node.children.length - 1);
+            return;
+        }
+
+        const buttonNode = this.createUIChild(root, 'MahjongFallbackBack', 132, 52, backX, 470, 999);
+        this.paintRect(buttonNode, 132, 52, new Color(16, 20, 30, 228), new Color(255, 210, 112, 255), 14);
+        const labelNode = this.createUIChild(buttonNode, 'Label', 100, 28, 0, 0, 1);
+        const label = labelNode.addComponent(Label);
+        label.string = '退出房间';
+        label.fontSize = 22;
+        label.lineHeight = 26;
+        label.horizontalAlign = 1;
+        label.verticalAlign = 1;
+        label.color = new Color(255, 241, 210, 255);
+
+        buttonNode.addComponent(Button);
+        buttonNode.on(Node.EventType.TOUCH_END, () => this.onBackClick(), this);
+        this.fallbackBackButton = buttonNode;
+    }
+
+    protected paintRect(node: Node, w: number, h: number, fillColor: Color, strokeColor?: Color, radius: number = 12): void {
+        const bgName = '__paint_rect_bg__';
+        let bgNode = node.getChildByName(bgName);
+        if (!bgNode) {
+            bgNode = new Node(bgName);
+            bgNode.parent = node;
+            bgNode.layer = node.layer;
+        }
+        const transform = bgNode.getComponent(UITransform) || bgNode.addComponent(UITransform);
+        transform.setContentSize(w, h);
+        bgNode.setPosition(0, 0, 0);
+        bgNode.setSiblingIndex(0);
+
+        const graphics = bgNode.getComponent(Graphics) || bgNode.addComponent(Graphics);
+        graphics.clear();
+        graphics.fillColor = fillColor;
+        graphics.roundRect(-w / 2, -h / 2, w, h, radius);
+        graphics.fill();
+        if (strokeColor) {
+            graphics.strokeColor = strokeColor;
+            graphics.lineWidth = 2;
+            graphics.roundRect(-w / 2, -h / 2, w, h, radius);
+            graphics.stroke();
+        }
     }
 
     /**
@@ -881,6 +1691,14 @@ export class MahjongRoomBase extends RoomBase {
     protected renderActionButtonsFromOptions(options: MahjongActionOption[]): void {
         if (!this.actionPanel) return;
         this.actionPanel.removeAllChildren();
+        const hintNode = this.createUIChild(this.actionPanel, 'ActionHint', 220, 30, 0, 34, 1);
+        const hint = hintNode.addComponent(Label);
+        this.actionHintLabel = hint;
+        hint.string = '请选择操作';
+        hint.fontSize = 20;
+        hint.lineHeight = 24;
+        hint.horizontalAlign = 1;
+        hint.color = new Color(255, 228, 166, 255);
 
         const buttons: Array<{text: string, actionId: number, tileId?: number, color: Color}> = [];
 
@@ -912,7 +1730,7 @@ export class MahjongRoomBase extends RoomBase {
         for (const btnInfo of buttons) {
             const btnNode = new Node(btnInfo.text);
             btnNode.parent = this.actionPanel;
-            const bt = btnNode.addComponent(UITransform);
+            const bt = btnNode.getComponent(UITransform) || btnNode.addComponent(UITransform);
             bt.setContentSize(btnW, btnH);
             btnNode.setPosition(startX, 0, 0);
             startX += btnW + gap;
@@ -924,7 +1742,7 @@ export class MahjongRoomBase extends RoomBase {
 
             const labelNode = new Node('Label');
             labelNode.parent = btnNode;
-            labelNode.addComponent(UITransform).setContentSize(btnW - 8, btnH - 8);
+            (labelNode.getComponent(UITransform) || labelNode.addComponent(UITransform)).setContentSize(btnW - 8, btnH - 8);
             const lc = labelNode.addComponent(Label);
             lc.string = btnInfo.text;
             lc.fontSize = 24;

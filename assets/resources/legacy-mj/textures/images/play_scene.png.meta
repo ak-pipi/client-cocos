@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "a8cce54f-961c-49b5-b3e1-4d293547f05b",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "play_scene": {
+      "ver": "1.0.3",
+      "uuid": "ae66c8ea-bf8d-4490-805d-e9d07577e36b",
+      "rawTextureUuid": "a8cce54f-961c-49b5-b3e1-4d293547f05b",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 2,
+      "trimY": 2,
+      "width": 1706,
+      "height": 252,
+      "rawWidth": 1710,
+      "rawHeight": 256,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "a8cce54f-961c-49b5-b3e1-4d293547f05b@6c48a",
+      "displayName": "play_scene",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "a8cce54f-961c-49b5-b3e1-4d293547f05b",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "a8cce54f-961c-49b5-b3e1-4d293547f05b@6c48a"
+  }
+}

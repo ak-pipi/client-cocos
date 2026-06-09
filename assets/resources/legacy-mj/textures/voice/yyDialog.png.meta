@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "7b06d436-bd43-425d-9e01-87153cb302e3",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "yyDialog": {
+      "ver": "1.0.3",
+      "uuid": "c190547d-93bf-45fa-8e7f-43847fc0ad26",
+      "rawTextureUuid": "7b06d436-bd43-425d-9e01-87153cb302e3",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 113,
+      "height": 58,
+      "rawWidth": 113,
+      "rawHeight": 58,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "7b06d436-bd43-425d-9e01-87153cb302e3@6c48a",
+      "displayName": "yyDialog",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "7b06d436-bd43-425d-9e01-87153cb302e3",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "7b06d436-bd43-425d-9e01-87153cb302e3@6c48a"
+  }
+}

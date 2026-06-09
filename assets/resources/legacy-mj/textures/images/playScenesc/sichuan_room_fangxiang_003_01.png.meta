@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "dd853401-f06b-4c5f-a68b-3b5e58978189",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "sichuan_room_fangxiang_003_01": {
+      "ver": "1.0.3",
+      "uuid": "e1714551-b433-4d23-8991-52e100dde094",
+      "rawTextureUuid": "dd853401-f06b-4c5f-a68b-3b5e58978189",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 93,
+      "height": 21,
+      "rawWidth": 93,
+      "rawHeight": 21,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "dd853401-f06b-4c5f-a68b-3b5e58978189@6c48a",
+      "displayName": "sichuan_room_fangxiang_003_01",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "dd853401-f06b-4c5f-a68b-3b5e58978189",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "dd853401-f06b-4c5f-a68b-3b5e58978189@6c48a"
+  }
+}

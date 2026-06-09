@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "370dee27-9ee0-4af9-9c2e-1166320faf77",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "dian2": {
+      "ver": "1.0.3",
+      "uuid": "9deb94a9-3861-4d48-b17c-2dc048d22da8",
+      "rawTextureUuid": "370dee27-9ee0-4af9-9c2e-1166320faf77",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": -38.5,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 40,
+      "height": 18,
+      "rawWidth": 117,
+      "rawHeight": 18,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "370dee27-9ee0-4af9-9c2e-1166320faf77@6c48a",
+      "displayName": "dian2",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "370dee27-9ee0-4af9-9c2e-1166320faf77",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "370dee27-9ee0-4af9-9c2e-1166320faf77@6c48a"
+  }
+}

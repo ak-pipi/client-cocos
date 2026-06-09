@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "cb301ca5-df49-484a-9cfb-6192288b56ef",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "creatroom13": {
+      "ver": "1.0.3",
+      "uuid": "12e8bd3b-0771-43fb-a746-193612cbd975",
+      "rawTextureUuid": "cb301ca5-df49-484a-9cfb-6192288b56ef",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0.5,
+      "offsetY": 0,
+      "trimX": 1,
+      "trimY": 0,
+      "width": 164,
+      "height": 46,
+      "rawWidth": 165,
+      "rawHeight": 46,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "cb301ca5-df49-484a-9cfb-6192288b56ef@6c48a",
+      "displayName": "creatroom13",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "cb301ca5-df49-484a-9cfb-6192288b56ef",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "cb301ca5-df49-484a-9cfb-6192288b56ef@6c48a"
+  }
+}

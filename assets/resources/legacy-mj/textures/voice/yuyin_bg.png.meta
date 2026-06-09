@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "3e741280-da5f-4c3d-b5d8-cb90e474c4a2",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "yuyin_bg": {
+      "ver": "1.0.3",
+      "uuid": "faf9e5db-6959-4d2b-9a87-461a837d130f",
+      "rawTextureUuid": "3e741280-da5f-4c3d-b5d8-cb90e474c4a2",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 110,
+      "height": 110,
+      "rawWidth": 110,
+      "rawHeight": 110,
+      "borderTop": 50,
+      "borderBottom": 50,
+      "borderLeft": 50,
+      "borderRight": 50,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "3e741280-da5f-4c3d-b5d8-cb90e474c4a2@6c48a",
+      "displayName": "yuyin_bg",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "3e741280-da5f-4c3d-b5d8-cb90e474c4a2",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "3e741280-da5f-4c3d-b5d8-cb90e474c4a2@6c48a"
+  }
+}

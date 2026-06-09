@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "fa744098-e9fa-426a-81b6-1ee710a2ba9c",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "LOGO": {
+      "ver": "1.0.3",
+      "uuid": "9fde12b5-e35e-4de7-8014-b96690ef1ff0",
+      "rawTextureUuid": "fa744098-e9fa-426a-81b6-1ee710a2ba9c",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": -1,
+      "offsetY": 18,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 821,
+      "height": 267,
+      "rawWidth": 823,
+      "rawHeight": 303,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "fa744098-e9fa-426a-81b6-1ee710a2ba9c@6c48a",
+      "displayName": "LOGO",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "fa744098-e9fa-426a-81b6-1ee710a2ba9c",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "fa744098-e9fa-426a-81b6-1ee710a2ba9c@6c48a"
+  }
+}

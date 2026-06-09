@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "757141a1-2d34-4805-9151-2799f99b6ba8",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "chatbg_ld": {
+      "ver": "1.0.3",
+      "uuid": "10b2f590-dd13-4057-9ea3-ac53c1487106",
+      "rawTextureUuid": "757141a1-2d34-4805-9151-2799f99b6ba8",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 120,
+      "height": 66,
+      "rawWidth": 120,
+      "rawHeight": 66,
+      "borderTop": 15,
+      "borderBottom": 30,
+      "borderLeft": 45,
+      "borderRight": 15,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "757141a1-2d34-4805-9151-2799f99b6ba8@6c48a",
+      "displayName": "chatbg_ld",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "757141a1-2d34-4805-9151-2799f99b6ba8",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "757141a1-2d34-4805-9151-2799f99b6ba8@6c48a"
+  }
+}

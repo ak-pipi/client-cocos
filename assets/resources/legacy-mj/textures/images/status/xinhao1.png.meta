@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "01d505bd-ed51-458f-b352-5c13e7024818",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "xinhao1": {
+      "ver": "1.0.3",
+      "uuid": "f7c3a7c5-24ca-4aec-8c63-63999772365c",
+      "rawTextureUuid": "01d505bd-ed51-458f-b352-5c13e7024818",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 48,
+      "height": 42,
+      "rawWidth": 48,
+      "rawHeight": 42,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "01d505bd-ed51-458f-b352-5c13e7024818@6c48a",
+      "displayName": "xinhao1",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "01d505bd-ed51-458f-b352-5c13e7024818",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "01d505bd-ed51-458f-b352-5c13e7024818@6c48a"
+  }
+}

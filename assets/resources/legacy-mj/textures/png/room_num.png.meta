@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "0b76b4ec-bbc9-4aeb-a1de-cbe665509f05",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "room_num": {
+      "ver": "1.0.3",
+      "uuid": "cc419b28-eb9a-4386-b836-1af7dac0d184",
+      "rawTextureUuid": "0b76b4ec-bbc9-4aeb-a1de-cbe665509f05",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": -0.5,
+      "offsetY": 0,
+      "trimX": 1,
+      "trimY": 0,
+      "width": 247,
+      "height": 26,
+      "rawWidth": 250,
+      "rawHeight": 26,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "0b76b4ec-bbc9-4aeb-a1de-cbe665509f05@6c48a",
+      "displayName": "room_num",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "0b76b4ec-bbc9-4aeb-a1de-cbe665509f05",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "0b76b4ec-bbc9-4aeb-a1de-cbe665509f05@6c48a"
+  }
+}

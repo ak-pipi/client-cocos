@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "86bebce9-f6f9-465f-a3d1-392c4d8e7d7e",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "PopupScene20": {
+      "ver": "1.0.3",
+      "uuid": "5a8d2b0a-d4c0-4c42-8892-2fc3cb163b17",
+      "rawTextureUuid": "86bebce9-f6f9-465f-a3d1-392c4d8e7d7e",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 227,
+      "height": 56,
+      "rawWidth": 227,
+      "rawHeight": 56,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "86bebce9-f6f9-465f-a3d1-392c4d8e7d7e@6c48a",
+      "displayName": "PopupScene20",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "86bebce9-f6f9-465f-a3d1-392c4d8e7d7e",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "86bebce9-f6f9-465f-a3d1-392c4d8e7d7e@6c48a"
+  }
+}

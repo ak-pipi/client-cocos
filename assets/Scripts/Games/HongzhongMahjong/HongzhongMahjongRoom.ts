@@ -10,12 +10,11 @@
  * Author: AI Assistant
  */
 
-import { _decorator, Component, Node, Label } from 'cc';
-import { MahjongRoomBase, MahjongTile, AvailableActions } from '../../GameCommon/MahjongRoomBase';
+import { _decorator, Node, Label, Color } from 'cc';
+import { MahjongRoomBase, MahjongTile } from '../../GameCommon/MahjongRoomBase';
 import { RoomInfo, RoundSettlementData, FinalSettlementData } from '../../GameCommon/GameTypes';
-import { NetworkManager } from '../../Manager/NetworkManager';
 
-const { ccclass, property } = _decorator;
+const { ccclass } = _decorator;
 
 // ==================== 红中麻将特有类型 ====================
 
@@ -33,25 +32,16 @@ export interface HongzhongRoundSettlement extends RoundSettlementData {
 
 @ccclass('HongzhongMahjongRoom')
 export class HongzhongMahjongRoom extends MahjongRoomBase {
-    // ==================== UI 引用 ====================
-
-    @property({ type: Node })
-    protected hongzhongIndicator: Node = null;
-
-    @property({ type: Label })
-    protected hzCountLabel: Label = null;
-
-    @property({ type: Label })
-    public scoreLabel: Label = null;
-
     // ==================== 内部状态 ====================
 
+    protected hzHudRoot: Node = null;
+    protected hongzhongIndicator: Node = null;
+    protected hzCountLabel: Label = null;
+    protected scoreLabel: Label = null;
+    protected hzRuleLabel: Label = null;
     protected myHongzhongs: MahjongTile[] = [];
     protected myScore: number = 0;
     protected hongzhongIsJoker: boolean = true;
-
-    static readonly HONGZHONG_VALUE = 10;
-    static readonly HONGZHONG_SUIT = 3;
 
     // ==================== 消息前缀 ====================
 
@@ -62,6 +52,8 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     start(): void {
         super.start();
         this.gameId = 'hongzhong_mahjong';
+        this.buildHongzhongHud();
+        this.refreshHongzhongHud();
     }
 
     protected getSeatCount(): number { return 4; }
@@ -69,14 +61,14 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     init(roomInfo: RoomInfo): void {
         super.init(roomInfo);
         this.hongzhongIsJoker = roomInfo.ruleConfig?.hongzhongAsJoker !== false;
+        this.updateHudInfo();
         console.log(`[HongzhongRoom] Init, joker mode: ${this.hongzhongIsJoker}`);
     }
 
     // ==================== 红中管理 ====================
 
     static isHongzhong(tile: MahjongTile): boolean {
-        return tile.suit === HongzhongMahjongRoom.HONGZHONG_SUIT &&
-               tile.value === HongzhongMahjongRoom.HONGZHONG_VALUE;
+        return !!tile?.tile && tile.tile.pattern >= 4 && tile.tile.number === 5;
     }
 
     protected countHongzhongs(): number {
@@ -87,6 +79,10 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         const count = this.countHongzhongs();
         if (this.hzCountLabel) this.hzCountLabel.string = `红中: ${count}`;
         if (this.hongzhongIndicator) this.hongzhongIndicator.active = count > 0;
+        if (this.scoreLabel) this.scoreLabel.string = `本局积分 ${this.myScore >= 0 ? '+' : ''}${this.myScore}`;
+        if (this.hongzhongIndicator) {
+            this.paintRect(this.hongzhongIndicator, 112, 44, count > 0 ? new Color(149, 36, 42, 220) : new Color(48, 62, 74, 220), new Color(255, 214, 168, 255), 14);
+        }
     }
 
     // ==================== 手牌管理覆写 ====================
@@ -128,7 +124,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
 
     public updateScore(delta: number): void {
         this.myScore += delta;
-        if (this.scoreLabel) this.scoreLabel.string = String(this.myScore);
+        if (this.scoreLabel) this.scoreLabel.string = `本局积分 ${this.myScore >= 0 ? '+' : ''}${this.myScore}`;
     }
 
     public showRoundSettlement(data: HongzhongRoundSettlement): void {
@@ -148,6 +144,54 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     protected resetRoundState(): void {
         super.resetRoundState();
         this.myHongzhongs = [];
+        this.updateHzCountDisplay();
+    }
+
+    protected getRuleHintText(): string {
+        return this.hongzhongIsJoker ? '红中麻将 · 红中癞子 · 红中不可吃' : '红中麻将 · 红中常规牌';
+    }
+
+    protected buildHongzhongHud(): void {
+        if (this.hzHudRoot) return;
+        this.hzHudRoot = this.createUIChild(this.node, 'HongzhongHud', 330, 154, 560, 356, 120);
+        this.paintRect(this.hzHudRoot, 330, 154, new Color(36, 27, 30, 212), new Color(255, 198, 146, 255), 18);
+
+        const title = this.createUIChild(this.hzHudRoot, 'Title', 260, 30, 0, 50, 1);
+        const titleLabel = title.addComponent(Label);
+        titleLabel.string = '红中麻将';
+        titleLabel.fontSize = 26;
+        titleLabel.lineHeight = 30;
+        titleLabel.horizontalAlign = 1;
+        titleLabel.color = new Color(255, 232, 205, 255);
+
+        const scoreNode = this.createUIChild(this.hzHudRoot, 'Score', 260, 26, 0, 14, 1);
+        this.scoreLabel = scoreNode.addComponent(Label);
+        this.scoreLabel.fontSize = 22;
+        this.scoreLabel.lineHeight = 26;
+        this.scoreLabel.horizontalAlign = 1;
+        this.scoreLabel.color = new Color(255, 255, 255, 255);
+
+        const ruleNode = this.createUIChild(this.hzHudRoot, 'Rule', 280, 24, 0, -16, 1);
+        this.hzRuleLabel = ruleNode.addComponent(Label);
+        this.hzRuleLabel.fontSize = 18;
+        this.hzRuleLabel.lineHeight = 22;
+        this.hzRuleLabel.horizontalAlign = 1;
+        this.hzRuleLabel.color = new Color(255, 220, 182, 255);
+
+        this.hongzhongIndicator = this.createUIChild(this.hzHudRoot, 'HzIndicator', 112, 44, 0, -52, 1);
+        this.paintRect(this.hongzhongIndicator, 112, 44, new Color(149, 36, 42, 220), new Color(255, 214, 168, 255), 14);
+        this.hzCountLabel = this.hongzhongIndicator.addComponent(Label);
+        this.hzCountLabel.fontSize = 22;
+        this.hzCountLabel.lineHeight = 24;
+        this.hzCountLabel.horizontalAlign = 1;
+        this.hzCountLabel.verticalAlign = 1;
+        this.hzCountLabel.color = new Color(255, 245, 224, 255);
+    }
+
+    protected refreshHongzhongHud(): void {
+        if (this.hzRuleLabel) {
+            this.hzRuleLabel.string = this.hongzhongIsJoker ? '红中作为癞子' : '红中为常规牌';
+        }
         this.updateHzCountDisplay();
     }
 }

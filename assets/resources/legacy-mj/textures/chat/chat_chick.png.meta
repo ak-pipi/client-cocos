@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "ba0c28cf-ca39-44a5-bccc-e27c418e829c",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "chat_chick": {
+      "ver": "1.0.3",
+      "uuid": "9ea541bf-5c7d-4910-8330-31e7f474c8b0",
+      "rawTextureUuid": "ba0c28cf-ca39-44a5-bccc-e27c418e829c",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 399,
+      "height": 55,
+      "rawWidth": 399,
+      "rawHeight": 55,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "ba0c28cf-ca39-44a5-bccc-e27c418e829c@6c48a",
+      "displayName": "chat_chick",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "ba0c28cf-ca39-44a5-bccc-e27c418e829c",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "ba0c28cf-ca39-44a5-bccc-e27c418e829c@6c48a"
+  }
+}

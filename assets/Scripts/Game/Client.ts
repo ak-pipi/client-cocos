@@ -238,8 +238,16 @@ export class Client extends Component {
         this.gameHallNode = hallNode;
     }
 
-    public initGameRoom(prefab: Prefab) {
-        this.gameRoomNode = instantiate(prefab);
+    public initGameRoom(prefab?: Prefab | null) {
+        if (this.gameRoomNode) {
+            this.gameRoomNode.destroy();
+            this.gameRoomNode = null;
+        }
+        if (prefab) {
+            this.gameRoomNode = instantiate(prefab);
+        } else {
+            this.gameRoomNode = new Node('GameRoomRoot');
+        }
         this.gameRoomNode.parent = this.gameRoom;
     }
 

@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "9b266e8b-c0ce-4fb6-af3a-e38758e00c66",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "rain4": {
+      "ver": "1.0.3",
+      "uuid": "38d62777-d02a-4b17-a3f0-493cc47d334e",
+      "rawTextureUuid": "9b266e8b-c0ce-4fb6-af3a-e38758e00c66",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 2,
+      "offsetY": 21,
+      "trimX": 22,
+      "trimY": 24,
+      "width": 170,
+      "height": 160,
+      "rawWidth": 210,
+      "rawHeight": 250,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "9b266e8b-c0ce-4fb6-af3a-e38758e00c66@6c48a",
+      "displayName": "rain4",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "9b266e8b-c0ce-4fb6-af3a-e38758e00c66",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "9b266e8b-c0ce-4fb6-af3a-e38758e00c66@6c48a"
+  }
+}

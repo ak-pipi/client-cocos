@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "45035b82-8e37-4e81-b6bd-850bbcc12bff",
+  "files": [
+    ".jpg",
+    ".json"
+  ],
+  "subMetas": {
+    "GameEnd19": {
+      "ver": "1.0.3",
+      "uuid": "5c16d753-6196-48e1-9f33-bba0dd6ed13d",
+      "rawTextureUuid": "45035b82-8e37-4e81-b6bd-850bbcc12bff",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 1280,
+      "height": 720,
+      "rawWidth": 1280,
+      "rawHeight": 720,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "45035b82-8e37-4e81-b6bd-850bbcc12bff@6c48a",
+      "displayName": "GameEnd19",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "45035b82-8e37-4e81-b6bd-850bbcc12bff",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": false,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "45035b82-8e37-4e81-b6bd-850bbcc12bff@6c48a"
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "7aa67722-5e92-4a79-b123-0c1e485229a4",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "Z_power": {
+      "ver": "1.0.3",
+      "uuid": "521b4858-11da-45d5-95ac-5a9577f59e2c",
+      "rawTextureUuid": "7aa67722-5e92-4a79-b123-0c1e485229a4",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 1,
+      "width": 56,
+      "height": 29,
+      "rawWidth": 56,
+      "rawHeight": 31,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "7aa67722-5e92-4a79-b123-0c1e485229a4@6c48a",
+      "displayName": "Z_power",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "7aa67722-5e92-4a79-b123-0c1e485229a4",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "7aa67722-5e92-4a79-b123-0c1e485229a4@6c48a"
+  }
+}

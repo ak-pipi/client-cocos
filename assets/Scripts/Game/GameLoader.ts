@@ -96,8 +96,9 @@ export class GameLoader extends Component {
 
         console.log(`[GameLoader] Loading resources for ${displayName}...`);
 
-        ResourceLoader.Instance.loadAssets(DEFAULT_ASSETS, (current: number, total: number) => {
-            let percent = current / total;
+        const assetsToLoad = gameMeta.type === GameType.Mahjong ? [] : DEFAULT_ASSETS;
+        ResourceLoader.Instance.loadAssets(assetsToLoad, (current: number, total: number) => {
+            let percent = total > 0 ? (current / total) : 1;
             if (this.progressBar) this.progressBar.progress = percent;
             percent *= 100;
             if (this.progress) {

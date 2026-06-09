@@ -1,0 +1,70 @@
+{
+  "ver": "1.0.27",
+  "importer": "image",
+  "imported": true,
+  "uuid": "0033eba7-d47b-4de7-9f80-b6c29c71e066",
+  "files": [
+    ".json",
+    ".png"
+  ],
+  "subMetas": {
+    "Num15": {
+      "ver": "1.0.3",
+      "uuid": "d59ae64d-0860-428b-87a0-dcc69c4e3979",
+      "rawTextureUuid": "0033eba7-d47b-4de7-9f80-b6c29c71e066",
+      "trimType": "auto",
+      "trimThreshold": 1,
+      "rotated": false,
+      "offsetX": 0,
+      "offsetY": 0,
+      "trimX": 0,
+      "trimY": 0,
+      "width": 259,
+      "height": 87,
+      "rawWidth": 259,
+      "rawHeight": 87,
+      "borderTop": 0,
+      "borderBottom": 0,
+      "borderLeft": 0,
+      "borderRight": 0,
+      "subMetas": {},
+      "importer": "*",
+      "imported": false,
+      "files": [],
+      "userData": {},
+      "displayName": "",
+      "id": "",
+      "name": ""
+    },
+    "6c48a": {
+      "importer": "texture",
+      "uuid": "0033eba7-d47b-4de7-9f80-b6c29c71e066@6c48a",
+      "displayName": "Num15",
+      "id": "6c48a",
+      "name": "texture",
+      "userData": {
+        "wrapModeS": "repeat",
+        "wrapModeT": "repeat",
+        "minfilter": "linear",
+        "magfilter": "linear",
+        "mipfilter": "none",
+        "anisotropy": 0,
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "0033eba7-d47b-4de7-9f80-b6c29c71e066",
+        "visible": false
+      },
+      "ver": "1.0.22",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    }
+  },
+  "userData": {
+    "type": "texture",
+    "hasAlpha": true,
+    "fixAlphaTransparencyArtifacts": false,
+    "redirect": "0033eba7-d47b-4de7-9f80-b6c29c71e066@6c48a"
+  }
+}
