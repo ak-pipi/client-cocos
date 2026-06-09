@@ -13,7 +13,7 @@ const TAOJIANG_DEFAULT_RULES = {
     base_score: 1,
     max_score: 0,
     round_count: 8,
-    allow_chi: false,
+    allow_chi: true,
     allow_peng: true,
     allow_gang: true,
     allow_zimo: true,

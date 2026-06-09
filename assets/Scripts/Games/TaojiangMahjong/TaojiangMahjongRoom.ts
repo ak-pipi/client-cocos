@@ -450,10 +450,22 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             this.renderMyHand();
         }
 
-        // 显示副露
+        // 更新对手手牌数
+        if (actorSeat !== this.seat && msg.tileNums !== undefined) {
+            this.opponentHandCount = msg.tileNums;
+            this.opponentHandCounts.set(clientSeat, this.opponentHandCount);
+            this.renderOpponentHand(this.opponentHandCount);
+        }
+
+        // 显示副露（msg.chapters 是该玩家的副露数组，取最后一个即当前杠）
         const isAnGang = (msg.chapter === 5); // AnGang
-        const meldTiles: MahjongTile[][] = msg.chapters ? msg.chapters[clientSeat] : [];
-        this.showMeldGang(clientSeat, meldTiles[meldTiles.length - 1] || [], isAnGang);
+        const chapters: any[] = msg.chapters || [];
+        let meldTiles: MahjongTile[] = [];
+        if (chapters.length > 0) {
+            const lastChapter = chapters[chapters.length - 1];
+            meldTiles = (lastChapter.tiles || []).map((t: any) => this.parseMahjongTile(t));
+        }
+        this.showMeldGang(clientSeat, meldTiles, isAnGang);
         this.playGangSound();
         this.updateFanSummary(isAnGang ? '暗杠' : '明杠');
         console.log(`[TaojiangRoom] Player ${actorSeat} gang, chapter: ${msg.chapter}`);
@@ -464,7 +476,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         const actorSeat = msg.actor;
         const clientSeat = this.server2ClientSeat(actorSeat);
         const isPeng = msg.pengOrChi; // true=Peng, false=Chi
-        const tiles: MahjongTile[] = msg.tiles || [];
+        const tiles: MahjongTile[] = (msg.tiles || []).map((t: any) => this.parseMahjongTile(t));
 
         // 更新自己的手牌
         if (actorSeat === this.seat && msg.handTiles) {
@@ -473,10 +485,11 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             this.renderMyHand();
         }
 
-        // 更新对手手牌数
-        if (actorSeat !== this.seat && msg.tileNums !== undefined) {
-            this.opponentHandCount = msg.tileNums;
-            this.opponentHandCounts.set(1, this.opponentHandCount);
+        // 更新对手手牌数（碰/吃后手牌减少2张）
+        if (actorSeat !== this.seat) {
+            this.opponentHandCount -= 2;
+            if (this.opponentHandCount < 0) this.opponentHandCount = 0;
+            this.opponentHandCounts.set(clientSeat, this.opponentHandCount);
             this.renderOpponentHand(this.opponentHandCount);
         }
 
@@ -490,8 +503,13 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
     /** 服务端听牌通知 */
     protected onServerTingTile(msg: any): void {
-        // msg.tiles = 可以胡的牌列表
-        const tingTiles: MahjongTile[] = msg.tiles || [];
+        // msg.tiles = [{pattern, number}, ...] (MahjongTile::TileArray)，需转换为 MahjongTile 格式
+        const rawTiles: any[] = msg.tiles || [];
+        const tingTiles: MahjongTile[] = rawTiles.map(t => {
+            const p = Number(t.pattern) || 0;
+            const n = Number(t.number) || 0;
+            return { id: 0, tile: { pattern: p, number: n } };
+        });
         if (tingTiles.length > 0) {
             this.showTingHint(tingTiles);
             this.updateFanSummary(`听牌 ${tingTiles.length} 张`);
@@ -614,11 +632,48 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         return null;
     }
 
+    /** 覆写：2人对局所有出牌区统一使用横向布局，牌面正面朝向 */
+    protected renderDiscardArea(seatIndex: number): void {
+        const discardArea = this.getDiscardAreaBySeat(seatIndex);
+        if (!discardArea) return;
+        discardArea.removeAllChildren();
+        const discards = this.discardRecords.get(seatIndex) || [];
+        const columns = 8;
+        const tileGapY = 8;
+        for (let i = 0; i < discards.length; i++) {
+            const row = Math.floor(i / columns);
+            const col = i % columns;
+            const tileNode = this.createTileNodeForSeat(discards[i], 0, false);
+            tileNode.parent = discardArea;
+            tileNode.setPosition(col * 44 - ((columns - 1) * 22), -row * (42 + tileGapY), 0);
+        }
+    }
+
     /** 覆写：根据 client seat 获取副露区 */
     protected getMeldAreaBySeat(seatIndex: number): Node | null {
         if (seatIndex === 0) return this.myMeldArea;
         if (seatIndex === 1) return this.topMeldArea;
         return null;
+    }
+
+    /** 覆写：2人对局副露区统一横向布局，牌面正面朝向 */
+    protected renderMeldArea(seatIndex: number): void {
+        const area = this.getMeldAreaBySeat(seatIndex);
+        if (!area) return;
+        area.removeAllChildren();
+        const melds = this.meldRecords.get(seatIndex) || [];
+        for (let groupIndex = 0; groupIndex < melds.length; groupIndex++) {
+            const meld = melds[groupIndex];
+            const group = new Node(`Meld_${groupIndex}`);
+            group.parent = area;
+            (group.getComponent(UITransform) || group.addComponent(UITransform)).setContentSize(160, 72);
+            group.setPosition(groupIndex * 160, 0, 0);
+            for (let i = 0; i < meld.length; i++) {
+                const tileNode = this.createTileNodeForSeat(meld[i], 0, false);
+                tileNode.parent = group;
+                tileNode.setPosition(i * 42 - 42, 0, 0);
+            }
+        }
     }
 
     /** 覆写：对手手牌用顶部横排样式（2人对局） */

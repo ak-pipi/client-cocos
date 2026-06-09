@@ -563,12 +563,17 @@ export class MahjongRoomBase extends RoomBase {
      * @param playActionId 服务端发来的 Play 动作选项 ID
      */
     public discardSelectedTile(playActionId: number): void {
-        if (this.selectedTileIndex < 0 || this.selectedTileIndex >= this.myHandTiles.length) {
+        // 确定要打出的牌：优先从 myHandTiles 取，否则从 drawnTile 取
+        let tile: MahjongTile | null = null;
+        if (this.selectedTileIndex >= 0 && this.selectedTileIndex < this.myHandTiles.length) {
+            tile = this.myHandTiles[this.selectedTileIndex];
+        } else if (this.drawnTile && this.selectedTileId === this.drawnTile.id) {
+            tile = this.drawnTile;
+        }
+        if (!tile) {
             console.warn('[MahjongRoom] No tile selected for discard');
             return;
         }
-        const tile = this.myHandTiles[this.selectedTileIndex];
-        if (!tile) return;
 
         this.integrateDrawnTile();
         // 重新查找选中牌的位置（integrateDrawnTile 可能改变索引）
@@ -580,6 +585,7 @@ export class MahjongRoomBase extends RoomBase {
         // 发送到服务端
         this.hideActionPanel();
         this.stopCountdown();
+        this.currentActionOptions = [];
         this.lastLocalDiscardTileId = tile.id;
         NetworkManager.Instance.sendMessage("MsgDoActionOption", {
             venueId: GameManager.Instance.VenueId,
@@ -638,6 +644,7 @@ export class MahjongRoomBase extends RoomBase {
         if (playOpt) {
             this.hideActionPanel();
             this.stopCountdown();
+            this.currentActionOptions = [];
             this.lastLocalDiscardTileId = tile.id;
             NetworkManager.Instance.sendMessage("MsgDoActionOption", {
                 venueId: GameManager.Instance.VenueId,
@@ -694,6 +701,7 @@ export class MahjongRoomBase extends RoomBase {
     public doActionById(actionId: number, tileId?: number): void {
         this.hideActionPanel();
         this.stopCountdown();
+        this.currentActionOptions = [];
         const msg: any = { venueId: GameManager.Instance.VenueId, actionId: actionId };
         if (tileId !== undefined) msg.tileId = tileId;
         NetworkManager.Instance.sendMessage("MsgDoActionOption", msg, true);
@@ -706,6 +714,7 @@ export class MahjongRoomBase extends RoomBase {
     public doActionPass(): void {
         this.hideActionPanel();
         this.stopCountdown();
+        this.currentActionOptions = [];
         NetworkManager.Instance.sendInnerMessage("MsgPassActionOption");
         console.log('[MahjongRoom] Pass action');
     }
@@ -1283,6 +1292,10 @@ export class MahjongRoomBase extends RoomBase {
     protected onTileTapped(tile: MahjongTile, node: Node): void {
         if (!this.isMyTurn) return;
         this.selectedTileIndex = this.myHandTiles.findIndex(item => item.id === tile.id);
+        // 摸到的牌尚未加入 myHandTiles，用 -1 标记并通过 selectedTileId 区分
+        if (this.selectedTileIndex < 0 && this.drawnTile && tile.id === this.drawnTile.id) {
+            this.selectedTileIndex = -1;
+        }
         this.selectedTileId = tile.id;
         this.highlightTile(node);
         AudioManager.Instance.play('legacy-mj/sounds/select', AudioChannel.SFX, { volume: 0.3 });
