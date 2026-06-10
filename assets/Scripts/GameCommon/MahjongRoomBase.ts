@@ -105,6 +105,21 @@ export const MahjongActionType = {
     ZiMo: 9,
 } as const;
 
+/** 副露类型 */
+export enum MeldType {
+    Chi = 'chi',
+    Peng = 'peng',
+    ZhiGang = 'zhigang',
+    JiaGang = 'jiagang',
+    AnGang = 'angang',
+}
+
+/** 副露组数据 */
+export interface MahjongMeldGroup {
+    tiles: MahjongTile[];
+    meldType: MeldType;
+}
+
 export type MahjongActionOption = {
     id: number;
     type: number;
@@ -222,8 +237,11 @@ export class MahjongRoomBase extends RoomBase {
     /** 各玩家已打出的牌 */
     protected discardRecords: Map<number, MahjongTile[]> = new Map();
 
-    /** 各玩家的明牌(碰/杠/吃) */
-    protected meldRecords: Map<number, MahjongTile[][]> = new Map();
+    /** 各玩家的明牌(碰/杠/吃) — 每组含牌数据和副露类型 */
+    protected meldRecords: Map<number, MahjongMeldGroup[]> = new Map();
+
+    /** 各座位最后打出的牌 ID（用于高亮标记） */
+    protected lastDiscardTileId: Map<number, number> = new Map();
 
     /** 当前可用操作 */
     protected availableActions: AvailableActions | null = null;
@@ -563,6 +581,10 @@ export class MahjongRoomBase extends RoomBase {
      * @param playActionId 服务端发来的 Play 动作选项 ID
      */
     public discardSelectedTile(playActionId: number): void {
+        if (playActionId <= 0) {
+            console.error('[MahjongRoom] Invalid playActionId for discard:', playActionId);
+            return;
+        }
         // 确定要打出的牌：优先从 myHandTiles 取，否则从 drawnTile 取
         let tile: MahjongTile | null = null;
         if (this.selectedTileIndex >= 0 && this.selectedTileIndex < this.myHandTiles.length) {
@@ -610,28 +632,15 @@ export class MahjongRoomBase extends RoomBase {
     }
 
     public selectAndDiscard(tileIndex: number): void {
-        if (!this.isMyTurn || (this.availableActions && !this.canDiscardDirectly())) {
+        if (!this.isMyTurn || !this.canDiscardDirectly()) {
             return;
         }
         const tile = this.myHandTiles[tileIndex];
         if (!tile) return;
 
-        this.integrateDrawnTile();
-        this.myHandTiles.splice(tileIndex, 1);
-        this.renderMyHand();
         this.selectedTileIndex = -1;
         this.selectedTileId = -1;
         this.sendDiscard(tile);
-        this.isMyTurn = false;
-        this.stopCountdown();
-    }
-
-    protected canDiscardDirectly(): boolean {
-        if (!this.availableActions) return true;
-        return !this.availableActions.canHu &&
-               !this.availableActions.canGang &&
-               !this.availableActions.canPeng &&
-               !this.availableActions.canChi;
     }
 
     /**
@@ -641,19 +650,32 @@ export class MahjongRoomBase extends RoomBase {
     protected sendDiscard(tile: MahjongTile): void {
         // 找到 type=Play(2) 的 actionOption
         const playOpt = this.currentActionOptions.find(o => o.type === MahjongActionType.Play);
-        if (playOpt) {
-            this.hideActionPanel();
-            this.stopCountdown();
-            this.currentActionOptions = [];
-            this.lastLocalDiscardTileId = tile.id;
-            NetworkManager.Instance.sendMessage("MsgDoActionOption", {
-                venueId: GameManager.Instance.VenueId,
-                actionId: playOpt.id,
-                tileId: tile.id,
-            }, true);
-        } else {
-            console.warn('[MahjongRoom] No Play action option found for discard');
+        if (!playOpt) {
+            console.error('[MahjongRoom] No Play action option found for discard, isMyTurn:', this.isMyTurn,
+                'options:', JSON.stringify(this.currentActionOptions));
+            return;
         }
+
+        // 发送到服务端
+        this.hideActionPanel();
+        this.stopCountdown();
+        this.currentActionOptions = [];
+        this.lastLocalDiscardTileId = tile.id;
+        this.isMyTurn = false;
+
+        NetworkManager.Instance.sendMessage("MsgDoActionOption", {
+            venueId: GameManager.Instance.VenueId,
+            actionId: playOpt.id,
+            tileId: tile.id,
+        }, true);
+
+        // 仅在确认发送后更新本地状态（从手牌移除 + 添加到出牌区）
+        this.integrateDrawnTile();
+        const newIdx = this.myHandTiles.indexOf(tile);
+        if (newIdx >= 0) {
+            this.myHandTiles.splice(newIdx, 1);
+        }
+        this.renderMyHand();
 
         const mySeatIndex = 0;
         let discards = this.discardRecords.get(mySeatIndex) || [];
@@ -672,15 +694,28 @@ export class MahjongRoomBase extends RoomBase {
         this.availableActions = actions;
         if (this.actionPanel) {
             this.actionPanel.active = true;
+            this.actionPanel.opacity = 0;
+            const panel = this.actionPanel;
+            this.scheduleOnce(() => {
+                if (!panel.isValid) return;
+                panel.opacity = 255;
+            }, 0.15);
         }
         this.renderActionButtons(actions);
     }
 
     public hideActionPanel(): void {
-        this.availableActions = null;
-        if (this.actionPanel) {
-            this.actionPanel.active = false;
+        if (this.actionPanel && this.actionPanel.active) {
+            const panel = this.actionPanel;
+            panel.opacity = 255;
+            this.scheduleOnce(() => {
+                if (!panel.isValid) return;
+                panel.active = false;
+                panel.opacity = 255;
+            }, 0.1);
+            panel.opacity = 0;
         }
+        this.availableActions = null;
     }
 
     protected renderActionButtons(_actions: AvailableActions): void {
@@ -728,10 +763,14 @@ export class MahjongRoomBase extends RoomBase {
             discards.push(tile);
             this.discardRecords.set(seatIndex, discards);
         }
+        // 记录最后出牌
+        this.lastDiscardTileId.set(seatIndex, tile.id);
         if (seatIndex > 0) {
             const current = this.opponentHandCounts.get(seatIndex) || 0;
-            this.opponentHandCounts.set(seatIndex, Math.max(0, current - 1));
-            this.renderOpponentHandBySeat(seatIndex, this.opponentHandCounts.get(seatIndex) || 0);
+            const newCount = Math.max(0, current - 1);
+            this.opponentHandCounts.set(seatIndex, newCount);
+            this.opponentHandCount = newCount;
+            this.renderOpponentHandBySeat(seatIndex, newCount);
         }
         this.renderDiscardArea(seatIndex);
     }
@@ -740,30 +779,64 @@ export class MahjongRoomBase extends RoomBase {
         let discards = this.discardRecords.get(seatIndex) || [];
         discards.push(tile);
         this.discardRecords.set(seatIndex, discards);
+        // 记录最后出牌
+        this.lastDiscardTileId.set(seatIndex, tile.id);
         this.renderDiscardArea(seatIndex);
         const current = this.opponentHandCounts.get(seatIndex) || 0;
-        this.opponentHandCounts.set(seatIndex, Math.max(0, current - 1));
-        this.renderOpponentHandBySeat(seatIndex, this.opponentHandCounts.get(seatIndex) || 0);
+        const newCount = Math.max(0, current - 1);
+        this.opponentHandCounts.set(seatIndex, newCount);
+        this.opponentHandCount = newCount;
+        this.renderOpponentHandBySeat(seatIndex, newCount);
     }
 
     // ==================== 碰杠展示 ====================
 
     public showMeldPeng(seatIndex: number, tiles: MahjongTile[], _fromSeat: number): void {
         let melds = this.meldRecords.get(seatIndex) || [];
-        melds.push(tiles);
+        melds.push({ tiles, meldType: MeldType.Peng });
         this.meldRecords.set(seatIndex, melds);
         this.renderMeldArea(seatIndex);
         this.playMahjongActionEffect(seatIndex, 'peng');
+        this.playMeldAppearAnimation(seatIndex, melds.length - 1);
         console.log(`[MahjongRoom] Seat ${seatIndex} peng`);
+    }
+
+    public showMeldChi(seatIndex: number, tiles: MahjongTile[], _fromSeat: number): void {
+        let melds = this.meldRecords.get(seatIndex) || [];
+        melds.push({ tiles, meldType: MeldType.Chi });
+        this.meldRecords.set(seatIndex, melds);
+        this.renderMeldArea(seatIndex);
+        this.playMeldAppearAnimation(seatIndex, melds.length - 1);
+        console.log(`[MahjongRoom] Seat ${seatIndex} chi`);
     }
 
     public showMeldGang(seatIndex: number, tiles: MahjongTile[], isConcealed: boolean): void {
         let melds = this.meldRecords.get(seatIndex) || [];
-        melds.push(tiles);
+        const meldType = isConcealed ? MeldType.AnGang : MeldType.ZhiGang;
+        melds.push({ tiles, meldType });
         this.meldRecords.set(seatIndex, melds);
         this.renderMeldArea(seatIndex);
         this.playMahjongActionEffect(seatIndex, isConcealed ? 'gang' : 'guafeng');
+        this.playMeldAppearAnimation(seatIndex, melds.length - 1);
         console.log(`[MahjongRoom] Seat ${seatIndex} gang (${isConcealed ? 'concealed' : 'revealed'})`);
+    }
+
+    /** 副露组弹入动画 */
+    protected playMeldAppearAnimation(seatIndex: number, groupIndex: number): void {
+        const area = this.getMeldAreaBySeat(seatIndex);
+        if (!area) return;
+        const groupNode = area.children[groupIndex];
+        if (!groupNode) return;
+        groupNode.setScale(new Vec3(0.5, 0.5, 1));
+        this.scheduleOnce(() => {
+            if (!groupNode.isValid) return;
+            groupNode.setScale(new Vec3(1.0, 1.0, 1));
+        }, 0.0);
+        // 使用 tween 效果
+        this.scheduleOnce(() => {
+            if (!groupNode.isValid) return;
+            groupNode.setScale(new Vec3(1.0, 1.0, 1));
+        }, 0.15);
     }
 
     // ==================== 牌数与状态 ====================
@@ -1236,15 +1309,31 @@ export class MahjongRoomBase extends RoomBase {
         const discards = this.discardRecords.get(seatIndex) || [];
         const columns = seatIndex === 1 || seatIndex === 2 ? 4 : 8;
         const tileGapY = 8;
+        const lastDiscardId = this.lastDiscardTileId.get(seatIndex);
         for (let i = 0; i < discards.length; i++) {
             const row = Math.floor(i / columns);
             const col = i % columns;
+            const isLast = discards[i].id === lastDiscardId;
             const tileNode = this.createTileNodeForSeat(discards[i], seatIndex, false);
             tileNode.parent = discardArea;
             if (seatIndex === 1 || seatIndex === 2) {
                 tileNode.setPosition((seatIndex === 1 ? -1 : 1) * row * 42, 56 - col * 44, 0);
             } else {
                 tileNode.setPosition(col * 44 - ((columns - 1) * 22), -row * (42 + tileGapY), 0);
+            }
+            // 最后出牌高亮标记：黄色描边
+            if (isLast) {
+                this.paintHighlightBorder(tileNode, 48, 66, new Color(255, 220, 50, 255), 8);
+            }
+            // 新打出的牌弹出动画（与高亮标记统一处理，避免 scale 冲突）
+            if (i === discards.length - 1 && discards.length > 0) {
+                tileNode.setScale(new Vec3(0.6, 0.6, 1));
+                const capturedNode = tileNode;
+                const targetScale = isLast ? new Vec3(1.08, 1.08, 1) : Vec3.ONE;
+                this.scheduleOnce(() => {
+                    if (!capturedNode.isValid) return;
+                    capturedNode.setScale(targetScale);
+                }, 0.12);
             }
         }
     }
@@ -1271,13 +1360,19 @@ export class MahjongRoomBase extends RoomBase {
         area.removeAllChildren();
         const melds = this.meldRecords.get(seatIndex) || [];
         for (let groupIndex = 0; groupIndex < melds.length; groupIndex++) {
-            const meld = melds[groupIndex];
+            const meldGroup = melds[groupIndex];
+            const meld = meldGroup.tiles;
+            const isAnGang = meldGroup.meldType === MeldType.AnGang;
             const group = new Node(`Meld_${groupIndex}`);
             group.parent = area;
             (group.getComponent(UITransform) || group.addComponent(UITransform)).setContentSize(180, 72);
             group.setPosition((seatIndex === 0 || seatIndex === 3 ? groupIndex * 160 : 0), (seatIndex === 1 ? -groupIndex * 72 : seatIndex === 2 ? groupIndex * 72 : 0), 0);
             for (let i = 0; i < meld.length; i++) {
-                const tileNode = this.createTileNodeForSeat(meld[i], seatIndex, false);
+                // 暗杠：第0张和第1张显示正面，第2张（中间牌）显示牌背
+                const useBack = isAnGang && (i === 2);
+                const tileNode = useBack
+                    ? this.createTileBackNodeForSeat(seatIndex)
+                    : this.createTileNodeForSeat(meld[i], seatIndex, false);
                 tileNode.parent = group;
                 if (seatIndex === 1 || seatIndex === 2) {
                     tileNode.setPosition(0, i * 38 - 38, 0);
@@ -1288,9 +1383,29 @@ export class MahjongRoomBase extends RoomBase {
         }
     }
 
-    /** 点击手牌回调 — 仅选中，不直接出牌 */
+    /** 点击手牌回调 — 双击直接出牌（参考 babykylin MJGame.onMJClicked） */
     protected onTileTapped(tile: MahjongTile, node: Node): void {
         if (!this.isMyTurn) return;
+
+        // 双击已选中的牌直接出牌
+        if (this.selectedTileId === tile.id) {
+            const tileIndex = this.myHandTiles.findIndex(item => item.id === tile.id);
+            if (tileIndex >= 0 && this.canDiscardDirectly()) {
+                this.selectAndDiscard(tileIndex);
+                return;
+            }
+            // 摸到的牌（未加入 myHandTiles）
+            if (tileIndex < 0 && this.drawnTile && tile.id === this.drawnTile.id && this.canDiscardDirectly()) {
+                const playOpt = this.currentActionOptions.find(o => o.type === MahjongActionType.Play);
+                if (playOpt) {
+                    this.selectedTileIndex = -1;
+                    this.selectedTileId = tile.id;
+                    this.discardSelectedTile(playOpt.id);
+                }
+                return;
+            }
+        }
+
         this.selectedTileIndex = this.myHandTiles.findIndex(item => item.id === tile.id);
         // 摸到的牌尚未加入 myHandTiles，用 -1 标记并通过 selectedTileId 区分
         if (this.selectedTileIndex < 0 && this.drawnTile && tile.id === this.drawnTile.id) {
@@ -1299,6 +1414,11 @@ export class MahjongRoomBase extends RoomBase {
         this.selectedTileId = tile.id;
         this.highlightTile(node);
         AudioManager.Instance.play('legacy-mj/sounds/select', AudioChannel.SFX, { volume: 0.3 });
+    }
+
+    /** 判断当前是否可以直接出牌（有 Play 选项且不在等待碰/杠/胡） */
+    protected canDiscardDirectly(): boolean {
+        return this.currentActionOptions.some(o => o.type === MahjongActionType.Play);
     }
 
     /** 高亮选中的牌 */
@@ -1697,9 +1817,51 @@ export class MahjongRoomBase extends RoomBase {
         }
     }
 
+    /** 仅绘制高亮描边，不填充，不影响子节点布局 */
+    protected paintHighlightBorder(node: Node, w: number, h: number, strokeColor: Color, radius: number = 8): void {
+        const borderName = '__highlight_border__';
+        let borderNode = node.getChildByName(borderName);
+        if (!borderNode) {
+            borderNode = new Node(borderName);
+            borderNode.parent = node;
+            borderNode.layer = node.layer;
+        }
+        const transform = borderNode.getComponent(UITransform) || borderNode.addComponent(UITransform);
+        transform.setContentSize(w, h);
+        borderNode.setPosition(0, 0, 0);
+        borderNode.setSiblingIndex(0);
+
+        const graphics = borderNode.getComponent(Graphics) || borderNode.addComponent(Graphics);
+        graphics.clear();
+        graphics.strokeColor = strokeColor;
+        graphics.lineWidth = 3;
+        graphics.roundRect(-w / 2, -h / 2, w, h, radius);
+        graphics.stroke();
+    }
+
     /**
-     * 根据 currentActionOptions 渲染操作按钮
-     * 子类可在 showActionPanel 后调用此方法
+     * 根据吃牌选项的 tile1/tile2 生成按钮文字，如"吃5-7万"
+     */
+    protected buildChiButtonText(tileId1: number, tileId2: number): string {
+        const findTile = (id: number): string => {
+            if (!id) return '';
+            for (const t of this.myHandTiles) {
+                if (t.id === id) return tileDisplayText(t);
+            }
+            return '';
+        };
+        const t1 = findTile(tileId1);
+        const t2 = findTile(tileId2);
+        if (t1 && t2) return `吃${t1}${t2}`;
+        return '吃';
+    }
+
+    /**
+     * 根据 currentActionOptions 渲染操作按钮（增强版）
+     * 参考 babykylin MJGame.js showAction/addOption 的设计：
+     * - 碰/杠/胡按钮旁显示目标牌的缩略牌面预览
+     * - 按钮点击音效与缩放反馈
+     * - 过牌按钮仅在非"仅出牌"时显示
      */
     protected renderActionButtonsFromOptions(options: MahjongActionOption[]): void {
         if (!this.actionPanel) return;
@@ -1713,49 +1875,80 @@ export class MahjongRoomBase extends RoomBase {
         hint.horizontalAlign = 1;
         hint.color = new Color(255, 228, 166, 255);
 
-        const buttons: Array<{text: string, actionId: number, tileId?: number, color: Color}> = [];
+        const buttons: Array<{text: string, actionId: number, tileId?: number, color: Color, showPreview?: boolean, previewTileId?: number}> = [];
+        const self = this;
 
         for (const opt of options) {
             const t = opt.type;
-            if (t === MahjongActionType.ZiMo) buttons.push({text: '自摸', actionId: opt.id, tileId: opt.tile1, color: new Color(220, 50, 50, 255)});
-            else if (t === MahjongActionType.DianPao) buttons.push({text: '点炮', actionId: opt.id, tileId: opt.tile1, color: new Color(220, 50, 50, 255)});
-            else if (t === MahjongActionType.ZhiGang) buttons.push({text: '直杠', actionId: opt.id, tileId: opt.tile1, color: new Color(200, 150, 50, 255)});
-            else if (t === MahjongActionType.JiaGang) buttons.push({text: '加杠', actionId: opt.id, tileId: opt.tile1, color: new Color(200, 150, 50, 255)});
+            if (t === MahjongActionType.ZiMo) buttons.push({text: '自摸', actionId: opt.id, tileId: opt.tile1, color: new Color(220, 50, 50, 255), showPreview: true, previewTileId: opt.tile1});
+            else if (t === MahjongActionType.DianPao) buttons.push({text: '胡', actionId: opt.id, tileId: opt.tile1, color: new Color(220, 50, 50, 255), showPreview: true, previewTileId: opt.tile1});
+            else if (t === MahjongActionType.ZhiGang) buttons.push({text: '直杠', actionId: opt.id, tileId: opt.tile1, color: new Color(200, 150, 50, 255), showPreview: true, previewTileId: opt.tile1});
+            else if (t === MahjongActionType.JiaGang) buttons.push({text: '加杠', actionId: opt.id, tileId: opt.tile1, color: new Color(200, 150, 50, 255), showPreview: true, previewTileId: opt.tile1});
             else if (t === MahjongActionType.AnGang) buttons.push({text: '暗杠', actionId: opt.id, color: new Color(200, 150, 50, 255)});
-            else if (t === MahjongActionType.Peng) buttons.push({text: '碰', actionId: opt.id, tileId: opt.tile1, color: new Color(50, 150, 200, 255)});
-            else if (t === MahjongActionType.Chi) buttons.push({text: '吃', actionId: opt.id, tileId: opt.tile1, color: new Color(50, 200, 100, 255)});
+            else if (t === MahjongActionType.Peng) buttons.push({text: '碰', actionId: opt.id, tileId: opt.tile1, color: new Color(50, 150, 200, 255), showPreview: true, previewTileId: opt.tile1});
+            else if (t === MahjongActionType.Chi) {
+                const chiText = this.buildChiButtonText(opt.tile1, opt.tile2);
+                buttons.push({text: chiText, actionId: opt.id, tileId: opt.tile1, color: new Color(50, 200, 100, 255), showPreview: true, previewTileId: opt.tile1});
+            }
             else if (t === MahjongActionType.Play) buttons.push({text: '出牌', actionId: opt.id, color: new Color(180, 160, 80, 255)});
         }
 
-        // 添加过牌按钮
-        if (buttons.length > 0) {
+        // 仅在有碰/杠/胡/吃操作时才显示过牌按钮（参考 babykylin 仅在 peng/gang/hu 时显示 options）
+        const hasInteractiveActions = buttons.some(b => b.text !== '出牌');
+        if (hasInteractiveActions) {
             buttons.push({text: '过', actionId: -1, color: new Color(120, 120, 120, 255)});
         }
 
         if (buttons.length === 0) return;
 
-        const btnW = 120, btnH = 50, gap = 20;
-        const totalWidth = buttons.length * btnW + (buttons.length - 1) * gap;
-        let startX = -totalWidth / 2 + btnW / 2;
-
-        const self = this;
+        // 计算布局：含预览牌的按钮更宽
+        const btnW = 120, btnH = 54, gap = 16;
+        const previewBtnW = 160; // 有牌面预览的按钮更宽
+        let totalWidth = 0;
+        for (const btnInfo of buttons) {
+            totalWidth += btnInfo.showPreview ? previewBtnW : btnW;
+        }
+        totalWidth += (buttons.length - 1) * gap;
+        let startX = -totalWidth / 2;
 
         for (const btnInfo of buttons) {
-            const btnNode = new Node(btnInfo.text);
-            btnNode.parent = this.actionPanel;
-            const bt = btnNode.getComponent(UITransform) || btnNode.addComponent(UITransform);
-            bt.setContentSize(btnW, btnH);
-            btnNode.setPosition(startX, 0, 0);
-            startX += btnW + gap;
+            const currentBtnW = btnInfo.showPreview ? previewBtnW : btnW;
+            const btnContainer = new Node(`Btn_${btnInfo.text}`);
+            btnContainer.parent = this.actionPanel;
+            const bt = btnContainer.getComponent(UITransform) || btnContainer.addComponent(UITransform);
+            bt.setContentSize(currentBtnW, btnH);
+            startX += currentBtnW / 2;
+            btnContainer.setPosition(startX, 0, 0);
+            startX += currentBtnW / 2 + gap;
 
-            const g = btnNode.addComponent(Graphics);
+            // 按钮背景
+            const g = btnContainer.addComponent(Graphics);
             g.fillColor = btnInfo.color;
-            g.roundRect(-btnW / 2, -btnH / 2, btnW, btnH, 8);
+            g.roundRect(-currentBtnW / 2, -btnH / 2, currentBtnW, btnH, 10);
             g.fill();
+            // 描边
+            g.strokeColor = new Color(255, 255, 255, 80);
+            g.lineWidth = 1.5;
+            g.roundRect(-currentBtnW / 2, -btnH / 2, currentBtnW, btnH, 10);
+            g.stroke();
 
+            // 牌面预览（参考 babykylin 的 opTarget Sprite）
+            if (btnInfo.showPreview && btnInfo.previewTileId) {
+                const previewTile = this.findTileById(btnInfo.previewTileId);
+                if (previewTile) {
+                    const previewNode = this.createTileNodeForSeat(previewTile, 0, false);
+                    previewNode.setScale(new Vec3(0.42, 0.42, 1));
+                    previewNode.setPosition(-currentBtnW / 2 + 26, 0, 0);
+                    previewNode.parent = btnContainer;
+                }
+            }
+
+            // 按钮文字（有预览时偏右）
             const labelNode = new Node('Label');
-            labelNode.parent = btnNode;
-            (labelNode.getComponent(UITransform) || labelNode.addComponent(UITransform)).setContentSize(btnW - 8, btnH - 8);
+            labelNode.parent = btnContainer;
+            const labelW = btnInfo.showPreview ? currentBtnW - 68 : btnW - 12;
+            (labelNode.getComponent(UITransform) || labelNode.addComponent(UITransform)).setContentSize(labelW, btnH - 10);
+            labelNode.setPosition(btnInfo.showPreview ? 18 : 0, 0, 0);
             const lc = labelNode.addComponent(Label);
             lc.string = btnInfo.text;
             lc.fontSize = 24;
@@ -1765,18 +1958,25 @@ export class MahjongRoomBase extends RoomBase {
             lc.verticalAlign = 1;
             lc.color = new Color(255, 255, 255, 255);
 
-            const button = btnNode.addComponent(Button);
+            const button = btnContainer.addComponent(Button);
             button.transition = 1; // SCALE
-            button.zoomScale = 1.05;
-            button.duration = 0.1;
+            button.zoomScale = 0.92;
+            button.duration = 0.08;
 
             // 用闭包存储回调
             const isPlayBtn = (btnInfo.text === '出牌');
-            btnNode.on(Node.EventType.TOUCH_END, () => {
+            btnContainer.on(Node.EventType.TOUCH_END, () => {
+                // 点击音效
+                AudioManager.Instance.play('legacy-mj/sounds/btnClick', AudioChannel.SFX, { volume: 0.35 });
+                // 短暂禁用按钮防止重复点击
+                button.interactable = false;
+                self.scheduleOnce(() => {
+                    if (btnContainer.isValid) button.interactable = true;
+                }, 0.3);
+
                 if (btnInfo.actionId === -1) {
                     self.doActionPass();
                 } else if (isPlayBtn) {
-                    // 出牌：使用当前选中的手牌
                     self.discardSelectedTile(btnInfo.actionId);
                 } else {
                     self.doActionById(btnInfo.actionId, btnInfo.tileId);
@@ -1784,7 +1984,17 @@ export class MahjongRoomBase extends RoomBase {
             }, this);
         }
 
-        console.log(`[MahjongRoom] Rendered ${buttons.length} action buttons`);
+        console.log(`[MahjongRoom] Rendered ${buttons.length} action buttons (enhanced)`);
+    }
+
+    /** 根据 tileId 在手牌和摸牌中查找牌 */
+    protected findTileById(tileId: number): MahjongTile | null {
+        if (!tileId) return null;
+        for (const t of this.myHandTiles) {
+            if (t.id === tileId) return t;
+        }
+        if (this.drawnTile && this.drawnTile.id === tileId) return this.drawnTile;
+        return null;
     }
 
     // ==================== 事件覆写 ====================
@@ -1844,9 +2054,14 @@ export class MahjongRoomBase extends RoomBase {
             this.discardRecords.clear();
         }
         if (!this.meldRecords) {
-            this.meldRecords = new Map<number, MahjongTile[][]>();
+            this.meldRecords = new Map<number, MahjongMeldGroup[]>();
         } else {
             this.meldRecords.clear();
+        }
+        if (!this.lastDiscardTileId) {
+            this.lastDiscardTileId = new Map<number, number>();
+        } else {
+            this.lastDiscardTileId.clear();
         }
         const seatCount = this.getSeatCount();
         for (let i = 0; i < seatCount; i++) {

@@ -981,10 +981,11 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     /** 帧更新倒计时 (GuanDan 风格的15秒倒计时时钟) */
     private updateClock(deltaTime: number): void {
         if (!this.clockFlag) return;
-        if (this.countdownElapsed < 15.0) {
+        const totalSeconds = this.countdownSeconds || 15.0;
+        if (this.countdownElapsed < totalSeconds) {
             const prevElapsed = this.countdownElapsed;
             this.countdownElapsed += deltaTime;
-            const sec = Math.max(0, Math.floor(15.0 - this.countdownElapsed));
+            const sec = Math.max(0, Math.floor(totalSeconds - this.countdownElapsed));
             if (this.countdownLabel) {
                 this.countdownLabel.string = String(sec);
             }
