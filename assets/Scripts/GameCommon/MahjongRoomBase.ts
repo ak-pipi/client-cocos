@@ -13,7 +13,7 @@
  * Author: AI Assistant
  */
 
-import { _decorator, Node, Label, Prefab, instantiate, Vec3, SpriteFrame, Graphics, Color, Button, UITransform, Sprite, SpriteAtlas, resources, view } from 'cc';
+import { _decorator, Node, Label, Prefab, instantiate, Vec3, SpriteFrame, Graphics, Color, Button, UITransform, Sprite, SpriteAtlas, resources, view, UIOpacity } from 'cc';
 import { RoomBase, GameState } from './RoomBase';
 import { RoomState, MahjongAction } from './GameTypes';
 import { NetworkManager } from '../Manager/NetworkManager';
@@ -581,7 +581,8 @@ export class MahjongRoomBase extends RoomBase {
      * @param playActionId 服务端发来的 Play 动作选项 ID
      */
     public discardSelectedTile(playActionId: number): void {
-        if (playActionId <= 0) {
+        const actionId = typeof playActionId === 'number' ? playActionId : Number(playActionId);
+        if (!Number.isFinite(actionId) || actionId < 0) {
             console.error('[MahjongRoom] Invalid playActionId for discard:', playActionId);
             return;
         }
@@ -611,7 +612,7 @@ export class MahjongRoomBase extends RoomBase {
         this.lastLocalDiscardTileId = tile.id;
         NetworkManager.Instance.sendMessage("MsgDoActionOption", {
             venueId: GameManager.Instance.VenueId,
-            actionId: playActionId,
+            actionId: actionId,
             tileId: tile.id,
         }, true);
 
@@ -628,7 +629,7 @@ export class MahjongRoomBase extends RoomBase {
         this.addDiscardToDisplay(myClientSeat, tile);
         this.playDiscardSound();
 
-        console.log(`[MahjongRoom] Discard tile: ${tileDisplayText(tile)}, actionId=${playActionId}`);
+        console.log(`[MahjongRoom] Discard tile: ${tileDisplayText(tile)}, actionId=${actionId}`);
     }
 
     public selectAndDiscard(tileIndex: number): void {
@@ -694,11 +695,13 @@ export class MahjongRoomBase extends RoomBase {
         this.availableActions = actions;
         if (this.actionPanel) {
             this.actionPanel.active = true;
-            this.actionPanel.opacity = 0;
+            const uiOpacity = this.actionPanel.getComponent(UIOpacity) || this.actionPanel.addComponent(UIOpacity);
+            uiOpacity.opacity = 0;
             const panel = this.actionPanel;
             this.scheduleOnce(() => {
                 if (!panel.isValid) return;
-                panel.opacity = 255;
+                const uiOpacityInner = panel.getComponent(UIOpacity) || panel.addComponent(UIOpacity);
+                uiOpacityInner.opacity = 255;
             }, 0.15);
         }
         this.renderActionButtons(actions);
@@ -707,13 +710,15 @@ export class MahjongRoomBase extends RoomBase {
     public hideActionPanel(): void {
         if (this.actionPanel && this.actionPanel.active) {
             const panel = this.actionPanel;
-            panel.opacity = 255;
+            const uiOpacity = panel.getComponent(UIOpacity) || panel.addComponent(UIOpacity);
+            uiOpacity.opacity = 255;
             this.scheduleOnce(() => {
                 if (!panel.isValid) return;
                 panel.active = false;
-                panel.opacity = 255;
+                const uiOpacityInner = panel.getComponent(UIOpacity) || panel.addComponent(UIOpacity);
+                uiOpacityInner.opacity = 255;
             }, 0.1);
-            panel.opacity = 0;
+            uiOpacity.opacity = 0;
         }
         this.availableActions = null;
     }
@@ -769,7 +774,6 @@ export class MahjongRoomBase extends RoomBase {
             const current = this.opponentHandCounts.get(seatIndex) || 0;
             const newCount = Math.max(0, current - 1);
             this.opponentHandCounts.set(seatIndex, newCount);
-            this.opponentHandCount = newCount;
             this.renderOpponentHandBySeat(seatIndex, newCount);
         }
         this.renderDiscardArea(seatIndex);
@@ -785,7 +789,6 @@ export class MahjongRoomBase extends RoomBase {
         const current = this.opponentHandCounts.get(seatIndex) || 0;
         const newCount = Math.max(0, current - 1);
         this.opponentHandCounts.set(seatIndex, newCount);
-        this.opponentHandCount = newCount;
         this.renderOpponentHandBySeat(seatIndex, newCount);
     }
 
@@ -912,7 +915,11 @@ export class MahjongRoomBase extends RoomBase {
     // ==================== 工具方法 ====================
 
     protected initOpponentHandCounts(): void {
-        this.opponentHandCounts.clear();
+        if (!this.opponentHandCounts) {
+            this.opponentHandCounts = new Map<number, number>();
+        } else {
+            this.opponentHandCounts.clear();
+        }
         for (let i = 1; i < this.getSeatCount(); i++) {
             this.opponentHandCounts.set(i, 0);
         }
@@ -1008,7 +1015,10 @@ export class MahjongRoomBase extends RoomBase {
         }
         if (this.roundInfoLabel) {
             const stateText = this.gameState === GameState.Playing ? '对局中' : (this.gameState === GameState.Dealing ? '发牌中' : '等待开始');
-            this.roundInfoLabel.string = `${stateText}  剩余 ${this.remainingTiles}`;
+            const current = (this as any).roomInfo?.currentRound ?? (this as any).currentRound ?? 0;
+            const total = (this as any).roomInfo?.totalRounds ?? (this as any).totalRounds ?? 0;
+            const roundText = (current > 0 && total > 0) ? `第 ${current}/${total} 局` : (current > 0 ? `第 ${current} 局` : '');
+            this.roundInfoLabel.string = `${stateText}${roundText ? '  ' + roundText : ''}  剩余 ${this.remainingTiles}`;
         }
         if (this.remainCountLabel) {
             this.remainCountLabel.string = `剩余 ${this.remainingTiles} 张`;
@@ -1241,7 +1251,6 @@ export class MahjongRoomBase extends RoomBase {
                     effectNode.setScale(new Vec3(0.85 + index * 0.06, 0.85 + index * 0.06, 1));
                 }, 0.08 * index);
             }
-            this.scheduleOnce(() => effectNode.isValid && effectNode.destroy(), 0.8);
         } else {
             this.paintRect(effectNode, 220, 92, new Color(255, 215, 80, 180), new Color(255, 240, 180, 255), 18);
         }
@@ -1254,6 +1263,7 @@ export class MahjongRoomBase extends RoomBase {
         label.horizontalAlign = 1;
         label.verticalAlign = 1;
         label.color = new Color(255, 245, 214, 255);
+        this.scheduleOnce(() => effectNode.isValid && effectNode.destroy(), 0.8);
     }
 
     protected getEffectDisplayText(effect: MahjongEffectKey): string {

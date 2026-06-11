@@ -65,6 +65,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     protected settlementNode: Node | null = null;
     protected disbandVoteNode: Node | null = null;
     protected currentDisbandChoices: number[] = [];
+    protected pendingRoundIncrement: boolean = false;
 
     // ==================== 消息前缀覆写 ====================
 
@@ -124,6 +125,13 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     protected onSyncGame(msg: any): void {
         super.onSyncGame(msg);
         if (!msg) return;
+
+        if (msg.roundNo !== undefined) {
+            (this as any).currentRound = Number(msg.roundNo) || 0;
+        }
+        if (msg.roundCount !== undefined) {
+            (this as any).totalRounds = Number(msg.roundCount) || 0;
+        }
 
         // roundState: 0=NotStarted(Waiting), 1=Underway(Playing)
         if (msg.leftTiles !== undefined) {
@@ -240,11 +248,19 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     protected onTJStartRound(msg: any): void {
         console.log('[TaojiangRoom] Start round, banker:', msg.banker);
         this.gameState = GameState.Dealing;
+        if (msg?.roundNo !== undefined) {
+            (this as any).currentRound = Number(msg.roundNo) || 0;
+            this.pendingRoundIncrement = false;
+        } else if (this.pendingRoundIncrement || (this as any).currentRound === 0) {
+            const current = Number((this as any).currentRound) || 0;
+            (this as any).currentRound = current + 1;
+            this.pendingRoundIncrement = false;
+        }
+        if (msg?.roundCount !== undefined) {
+            (this as any).totalRounds = Number(msg.roundCount) || 0;
+        }
         this.stopCountdown();
-        this.hideActionPanel();
-        this.hideTingHint();
-        this.hideSettlementUI();
-        this.hideDisbandVoteUI();
+        this.resetRoundState();
         // 隐藏准备按钮和开始游戏按钮
         if (this.btnReady) this.btnReady.active = false;
         if (this.readyGroup) this.readyGroup.active = false;
@@ -253,10 +269,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         if (this.readyFlags) {
             for (const f of this.readyFlags) { if (f) f.active = false; }
         }
-        // 清理上一局的桌面牌
-        this.clearTableDisplay();
         this.totalFans = 0;
-        this.hideTingHint();
         this.refreshTaojiangHud();
     }
 
@@ -269,6 +282,13 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.hideDisbandVoteUI();
         this.totalFans = this.extractTotalFansFromSettlement(msg);
         this.myScore += this.extractMyRoundDelta(msg);
+        if (msg?.roundNo !== undefined) {
+            (this as any).currentRound = Number(msg.roundNo) || 0;
+        }
+        if (msg?.roundCount !== undefined) {
+            (this as any).totalRounds = Number(msg.roundCount) || 0;
+        }
+        this.pendingRoundIncrement = true;
 
         // 重置所有玩家的准备状态（服务端 afterHu 也会重置，客户端需同步）
         for (const seat of Object.keys(this.playerInfos)) {
@@ -304,6 +324,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
     /** 服务端发牌 */
     protected onServerDealTiles(msg: any): void {
+        this.resetRoundState();
         const tiles = msg.tiles || [];
         // 调试日志：打印收到的牌数据
         console.log('[TaojiangRoom] onServerDealTiles tiles count:', tiles.length);
@@ -413,7 +434,21 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
     /** 服务端动作选项通知 */
     protected onServerActionOption(msg: any): void {
-        const options: MahjongActionOption[] = msg.actionOptions || [];
+        const rawOptions: any[] = msg.actionOptions || [];
+        const options: MahjongActionOption[] = rawOptions.map((o: any) => {
+            const id = Number(o?.id ?? o?.[0] ?? o?.['0']);
+            const type = Number(o?.type ?? o?.[1] ?? o?.['1']);
+            const player = Number(o?.player ?? o?.[2] ?? o?.['2']);
+            const tile1 = Number(o?.tile1 ?? o?.[3] ?? o?.['3']);
+            const tile2 = Number(o?.tile2 ?? o?.[4] ?? o?.['4']);
+            return {
+                id: Number.isFinite(id) ? id : 0,
+                type: Number.isFinite(type) ? type : 0,
+                player: Number.isFinite(player) ? player : 0,
+                tile1: Number.isFinite(tile1) ? tile1 : 0,
+                tile2: Number.isFinite(tile2) ? tile2 : 0,
+            };
+        });
         this.currentActionOptions = options;
 
         if (options.length === 0) {
@@ -422,7 +457,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         }
 
         // 如果包含 Play 选项，说明轮到我出牌
-        const hasPlay = options.some(o => o.type === MahjongActionType.Play);
+        const hasPlay = options.some(o => Number(o.type) === MahjongActionType.Play);
         if (hasPlay) {
             this.isMyTurn = true;
         }
@@ -431,9 +466,10 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.renderActionButtonsFromOptions(options);
         this.showActionPanel(this.buildAvailableActions(options));
 
-        const timeout = 180;
+        const hasHu = options.some(o => Number(o.type) === MahjongActionType.ZiMo || Number(o.type) === MahjongActionType.DianPao);
+        const timeout = hasHu ? 180 : 180;
         this.startCountdown(timeout);
-        this.updateFanSummary(options.map(opt => this.actionTypeName(opt.type)).filter(Boolean).join(' / ') || '等待出牌');
+        this.updateFanSummary(options.map(opt => this.actionTypeName(Number(opt.type))).filter(Boolean).join(' / ') || '等待出牌');
         console.log(`[TaojiangRoom] Action options: ${options.length}, hasPlay=${hasPlay}, timeout: ${timeout}`);
     }
 
@@ -1059,7 +1095,12 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             188,
             new Color(46, 128, 88, 255),
             new Color(133, 231, 174, 255),
-            () => this.hideSettlementUI(),
+            () => {
+                this.hideSettlementUI();
+                this.onReadyClick();
+                this.updateReadyButtonState();
+                this.updateFanSummary('已准备，等待下一局');
+            },
         );
 
         this.settlementNode = overlay;

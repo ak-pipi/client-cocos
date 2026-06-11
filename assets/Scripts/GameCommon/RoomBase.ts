@@ -142,6 +142,12 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     /** 当前房间信息 */
     protected roomInfo: RoomInfo | null = null;
 
+    /** 当前局数（如果服务端未下发，则由客户端在开局事件中自增） */
+    protected currentRound: number = 0;
+
+    /** 总局数（优先使用服务端下发；缺失时为 0 表示未知） */
+    protected totalRounds: number = 0;
+
     /** 当前房间状态 */
     protected currentState: RoomState = RoomState.Idle;
 
@@ -238,6 +244,8 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
         const roomData = (msg.data && typeof msg.data === 'object') ? msg.data : msg;
         if (roomData.level !== undefined) this.level = roomData.level;
         if (roomData.number !== undefined) this.roomNumber = String(roomData.number);
+        if (roomData.currentRound !== undefined) this.currentRound = Number(roomData.currentRound) || 0;
+        if (roomData.totalRounds !== undefined) this.totalRounds = Number(roomData.totalRounds) || 0;
         if (roomData.ownerSeat !== undefined) this.ownerSeat = roomData.ownerSeat;
         if (roomData.seat !== undefined) this.seat = roomData.seat;
         // gameState / roundState 兼容处理
@@ -317,6 +325,8 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
 
         if (msg.level !== undefined) this.level = msg.level;
         if (msg.number !== undefined) this.roomNumber = String(msg.number);
+        if (msg.currentRound !== undefined) this.currentRound = Number(msg.currentRound) || 0;
+        if (msg.totalRounds !== undefined) this.totalRounds = Number(msg.totalRounds) || 0;
         if (msg.ownerSeat !== undefined) this.ownerSeat = msg.ownerSeat;
         if (msg.seat !== undefined) this.seat = msg.seat;
 
@@ -874,8 +884,11 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
         if (this.roomNoLabel && this.roomNumber) {
             this.roomNoLabel.string = `房号: ${this.roomNumber}`;
         }
-        if (this.roundLabel && this.roomInfo) {
-            this.roundLabel.string = `${this.roomInfo.currentRound}/${this.roomInfo.totalRounds}`;
+        if (this.roundLabel) {
+            const current = this.roomInfo?.currentRound ?? this.currentRound;
+            const total = this.roomInfo?.totalRounds ?? this.totalRounds;
+            if (current > 0 && total > 0) this.roundLabel.string = `${current}/${total}`;
+            else if (current > 0) this.roundLabel.string = `${current}`;
         }
     }
 
