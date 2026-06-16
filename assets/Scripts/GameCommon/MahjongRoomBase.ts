@@ -912,7 +912,11 @@ export class MahjongRoomBase extends RoomBase {
     // ==================== 工具方法 ====================
 
     protected initOpponentHandCounts(): void {
-        this.opponentHandCounts.clear();
+        if (!this.opponentHandCounts) {
+            this.opponentHandCounts = new Map();
+        } else {
+            this.opponentHandCounts.clear();
+        }
         for (let i = 1; i < this.getSeatCount(); i++) {
             this.opponentHandCounts.set(i, 0);
         }
