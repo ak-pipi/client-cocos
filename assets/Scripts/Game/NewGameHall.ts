@@ -1,4 +1,4 @@
-import { _decorator, Component, Node, Label, Color, Graphics, Button, EventHandler, UITransform, EditBox, Prefab, sys } from 'cc';
+import { _decorator, Component, Node, Label, Color, Graphics, Button, EventHandler, UITransform, EditBox, Prefab, sys, Widget } from 'cc';
 import { Client } from './Client';
 import { GameFactory } from '../App/GameFactory';
 import { GameId, GameType } from '../App/GameEnums';
@@ -207,11 +207,55 @@ export class NewGameHall extends Component {
         inputGraphics.roundRect(-180, -25, 360, 50, 8);
         inputGraphics.fill();
 
+        const textNode = new Node('Text');
+        textNode.parent = inputNode;
+        const textTransform = textNode.addComponent(UITransform);
+        textTransform.setContentSize(332, 50);
+        textTransform.anchorX = 0;
+        textTransform.anchorY = 0.5;
+        textNode.setPosition(0, 0, 0);
+        const textWidget = textNode.addComponent(Widget);
+        textWidget.isAlignLeft = true;
+        textWidget.left = 14;
+        textWidget.isAlignVerticalCenter = true;
+        textWidget.verticalCenter = -2;
+        const textLabel = textNode.addComponent(Label);
+        textLabel.string = '';
+        textLabel.fontSize = 26;
+        textLabel.lineHeight = 30;
+        textLabel.overflow = Label.Overflow.CLAMP;
+        textLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        textLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        textLabel.color = new Color(20, 20, 20, 255);
+
+        const placeholderNode = new Node('Placeholder');
+        placeholderNode.parent = inputNode;
+        const placeholderTransform = placeholderNode.addComponent(UITransform);
+        placeholderTransform.setContentSize(332, 50);
+        placeholderTransform.anchorX = 0;
+        placeholderTransform.anchorY = 0.5;
+        placeholderNode.setPosition(0, 0, 0);
+        const placeholderWidget = placeholderNode.addComponent(Widget);
+        placeholderWidget.isAlignLeft = true;
+        placeholderWidget.left = 14;
+        placeholderWidget.isAlignVerticalCenter = true;
+        placeholderWidget.verticalCenter = -2;
+        const placeholderLabel = placeholderNode.addComponent(Label);
+        placeholderLabel.string = '请输入6位数字房间号';
+        placeholderLabel.fontSize = 22;
+        placeholderLabel.lineHeight = 28;
+        placeholderLabel.overflow = Label.Overflow.CLAMP;
+        placeholderLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+        placeholderLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        placeholderLabel.color = new Color(120, 120, 120, 255);
+
         const editBox = inputNode.addComponent(EditBox);
-        editBox.maxLength = 32;
-        editBox.inputMode = EditBox.InputMode.SINGLE_LINE;
-        editBox.placeholder = '请输入房间号，如 G66N5i1e2R';
+        editBox.maxLength = 6;
+        editBox.inputMode = EditBox.InputMode.NUMERIC;
+        editBox.placeholder = placeholderLabel.string;
         editBox.string = '';
+        (editBox as any).textLabel = textLabel;
+        (editBox as any).placeholderLabel = placeholderLabel;
         this.joinEditBox = editBox;
 
         this.createPopupButton(panel, '确认', -80, new Color(46, 139, 87, 255), 'onJoinConfirm');

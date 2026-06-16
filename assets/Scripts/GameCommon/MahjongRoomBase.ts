@@ -815,8 +815,44 @@ export class MahjongRoomBase extends RoomBase {
 
     public showMeldGang(seatIndex: number, tiles: MahjongTile[], isConcealed: boolean): void {
         let melds = this.meldRecords.get(seatIndex) || [];
+        if (!tiles || tiles.length === 0) return;
+
+        const tileKey = (t: MahjongTile): string => {
+            const pattern = Number(t?.tile?.pattern) || 0;
+            const number = Number(t?.tile?.number) || 0;
+            return `${pattern}_${number}`;
+        };
+
+        // 加杠（碰后补杠）：升级已存在的 Peng 副露，而不是新增一组（避免出现 3+4=7 张）。
+        if (!isConcealed) {
+            const key = tileKey(tiles[0]);
+            const pengIndex = melds.findIndex(g => g?.meldType === MeldType.Peng &&
+                Array.isArray(g.tiles) &&
+                g.tiles.length >= 3 &&
+                g.tiles.every(tt => tileKey(tt) === key));
+
+            if (pengIndex >= 0) {
+                const existing = melds[pengIndex].tiles || [];
+                let upgradedTiles = tiles;
+                if (tiles.length < 4) {
+                    const extra = tiles[0];
+                    upgradedTiles = existing.slice(0, 3).concat([extra]);
+                } else if (tiles.length > 4) {
+                    upgradedTiles = tiles.slice(0, 4);
+                }
+                melds[pengIndex] = { tiles: upgradedTiles, meldType: MeldType.JiaGang };
+                this.meldRecords.set(seatIndex, melds);
+                this.renderMeldArea(seatIndex);
+                this.playMahjongActionEffect(seatIndex, 'guafeng');
+                this.playMeldAppearAnimation(seatIndex, pengIndex);
+                console.log(`[MahjongRoom] Seat ${seatIndex} jiagang (upgrade from peng)`);
+                return;
+            }
+        }
+
         const meldType = isConcealed ? MeldType.AnGang : MeldType.ZhiGang;
-        melds.push({ tiles, meldType });
+        const normalizedTiles = tiles.length > 4 ? tiles.slice(0, 4) : tiles;
+        melds.push({ tiles: normalizedTiles, meldType });
         this.meldRecords.set(seatIndex, melds);
         this.renderMeldArea(seatIndex);
         this.playMahjongActionEffect(seatIndex, isConcealed ? 'gang' : 'guafeng');
@@ -1317,35 +1353,25 @@ export class MahjongRoomBase extends RoomBase {
         if (!discardArea) return;
         discardArea.removeAllChildren();
         const discards = this.discardRecords.get(seatIndex) || [];
-        const columns = seatIndex === 1 || seatIndex === 2 ? 4 : 8;
-        const tileGapY = 8;
+        if (discards.length === 0) return;
+
+        // 历史出牌只展示最后一张，避免出牌堆叠到副露区域
         const lastDiscardId = this.lastDiscardTileId.get(seatIndex);
-        for (let i = 0; i < discards.length; i++) {
-            const row = Math.floor(i / columns);
-            const col = i % columns;
-            const isLast = discards[i].id === lastDiscardId;
-            const tileNode = this.createTileNodeForSeat(discards[i], seatIndex, false);
-            tileNode.parent = discardArea;
-            if (seatIndex === 1 || seatIndex === 2) {
-                tileNode.setPosition((seatIndex === 1 ? -1 : 1) * row * 42, 56 - col * 44, 0);
-            } else {
-                tileNode.setPosition(col * 44 - ((columns - 1) * 22), -row * (42 + tileGapY), 0);
-            }
-            // 最后出牌高亮标记：黄色描边
-            if (isLast) {
-                this.paintHighlightBorder(tileNode, 48, 66, new Color(255, 220, 50, 255), 8);
-            }
-            // 新打出的牌弹出动画（与高亮标记统一处理，避免 scale 冲突）
-            if (i === discards.length - 1 && discards.length > 0) {
-                tileNode.setScale(new Vec3(0.6, 0.6, 1));
-                const capturedNode = tileNode;
-                const targetScale = isLast ? new Vec3(1.08, 1.08, 1) : Vec3.ONE;
-                this.scheduleOnce(() => {
-                    if (!capturedNode.isValid) return;
-                    capturedNode.setScale(targetScale);
-                }, 0.12);
-            }
-        }
+        const last = (lastDiscardId != null)
+            ? (discards.find(d => d.id === lastDiscardId) || discards[discards.length - 1])
+            : discards[discards.length - 1];
+
+        const tileNode = this.createTileNodeForSeat(last, seatIndex, false);
+        tileNode.parent = discardArea;
+        tileNode.setPosition(0, 0, 0);
+
+        this.paintHighlightBorder(tileNode, 48, 66, new Color(255, 220, 50, 255), 8);
+        tileNode.setScale(new Vec3(0.6, 0.6, 1));
+        const capturedNode = tileNode;
+        this.scheduleOnce(() => {
+            if (!capturedNode.isValid) return;
+            capturedNode.setScale(new Vec3(1.08, 1.08, 1));
+        }, 0.12);
     }
 
     protected getMeldAreaBySeat(seatIndex: number): Node | null {

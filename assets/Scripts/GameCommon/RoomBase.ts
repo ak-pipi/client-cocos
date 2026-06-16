@@ -216,20 +216,17 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
             if (prefab) Client.Instance.setPromptTipPrefab(prefab);
         });
 
-        // 如果 MsgEnterVenueResp 已携带房间快照，直接用；否则请求同步
+        // 如果 MsgEnterVenueResp 已携带房间快照，先用其初始化 UI；
+        // 仍然再请求一次全量同步，确保重连/重新进入时能恢复局内完整状态（如碰/吃/杠副露、手牌数量等）。
         const enterData = GameManager.Instance.EnterVenueData;
         if (enterData) {
             GameManager.Instance.EnterVenueData = null;
             const savedRoomNumber = this.roomNumber;
             this.onEnterVenueData(enterData);
-            // 如果 EnterVenueResp 数据不完整（无房间号、无座位、无玩家），发送 Sync 获取完整状态
             if (!this.roomNumber && savedRoomNumber) {
                 this.roomNumber = savedRoomNumber;
             }
-            if (!this.roomNumber || this.seat === -1) {
-                console.log('[RoomBase] EnterVenueData incomplete, requesting Sync...');
-                NetworkManager.Instance.sendInnerMessage(this.syncMsgPrefix + "Sync");
-            }
+            NetworkManager.Instance.sendInnerMessage(this.syncMsgPrefix + "Sync");
         } else {
             NetworkManager.Instance.sendInnerMessage(this.syncMsgPrefix + "Sync");
         }
