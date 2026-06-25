@@ -38,3 +38,57 @@ export interface GameMetaInfo {
     playerCount: number;   // 玩家数量
     priority: number;      // 优先级(P0=0, P1=1, P2=2)
 }
+
+// ==================== 倍数配置 ====================
+
+/** 底注+局数组合选项 */
+export interface StakeOption {
+    baseScore: number;      // 底注
+    roundCount: number;      // 局数
+    districtId: number;      // 对应的 district ID
+    label: string;          // 显示文本，如 "底注1 · 4局"
+}
+
+/** 每种游戏的倍数选项列表 */
+export const GAME_STAKE_OPTIONS: Record<GameId, StakeOption[]> = {
+    [GameId.TaojiangMahjong]: [
+        { baseScore: 1, roundCount: 4, districtId: 9, label: '底注1 · 4局' },
+        { baseScore: 1, roundCount: 8, districtId: 10, label: '底注1 · 8局' },
+        { baseScore: 2, roundCount: 8, districtId: 11, label: '底注2 · 8局' },
+        { baseScore: 2, roundCount: 16, districtId: 12, label: '底注2 · 16局' },
+        { baseScore: 5, roundCount: 8, districtId: 13, label: '底注5 · 8局' },
+        { baseScore: 5, roundCount: 16, districtId: 14, label: '底注5 · 16局' },
+        { baseScore: 10, roundCount: 8, districtId: 15, label: '底注10 · 8局' },
+        { baseScore: 10, roundCount: 16, districtId: 16, label: '底注10 · 16局' },
+    ],
+    [GameId.HongzhongMahjong]: [
+        { baseScore: 1, roundCount: 8, districtId: 17, label: '底注1 · 8局' },
+        { baseScore: 2, roundCount: 8, districtId: 18, label: '底注2 · 8局' },
+        { baseScore: 5, roundCount: 8, districtId: 19, label: '底注5 · 8局' },
+        { baseScore: 10, roundCount: 8, districtId: 20, label: '底注10 · 8局' },
+    ],
+    [GameId.ChangshaMahjong]: [
+        { baseScore: 1, roundCount: 8, districtId: 21, label: '底注1 · 8局' },
+        { baseScore: 2, roundCount: 8, districtId: 22, label: '底注2 · 8局' },
+        { baseScore: 5, roundCount: 8, districtId: 23, label: '底注5 · 8局' },
+        { baseScore: 10, roundCount: 8, districtId: 24, label: '底注10 · 8局' },
+    ],
+    [GameId.Paodekuai]: [
+        { baseScore: 1, roundCount: 8, districtId: 25, label: '底注1 · 8局' },
+        { baseScore: 2, roundCount: 8, districtId: 26, label: '底注2 · 8局' },
+        { baseScore: 5, roundCount: 8, districtId: 27, label: '底注5 · 8局' },
+        { baseScore: 10, roundCount: 8, districtId: 28, label: '底注10 · 8局' },
+    ],
+    [GameId.Waihuzi]: [
+        { baseScore: 1, roundCount: 8, districtId: 29, label: '底注1 · 8局' },
+        { baseScore: 2, roundCount: 8, districtId: 30, label: '底注2 · 8局' },
+        { baseScore: 5, roundCount: 8, districtId: 31, label: '底注5 · 8局' },
+        { baseScore: 10, roundCount: 8, districtId: 32, label: '底注10 · 8局' },
+    ],
+    [GameId.Qianfen]: [
+        { baseScore: 1, roundCount: 8, districtId: 33, label: '底注1 · 8局' },
+        { baseScore: 2, roundCount: 8, districtId: 34, label: '底注2 · 8局' },
+        { baseScore: 5, roundCount: 8, districtId: 35, label: '底注5 · 8局' },
+        { baseScore: 10, roundCount: 8, districtId: 36, label: '底注10 · 8局' },
+    ],
+};

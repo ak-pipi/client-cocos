@@ -84,7 +84,47 @@ export enum DistrictId {
     GuanDanAdvanced = 7,
 
     // 掼蛋顶级房
-    GuanDanMaster = 8
+    GuanDanMaster = 8,
+
+    // 桃江麻将
+    TaojiangB1R4 = 9,
+    TaojiangB1R8 = 10,
+    TaojiangB2R8 = 11,
+    TaojiangB2R16 = 12,
+    TaojiangB5R8 = 13,
+    TaojiangB5R16 = 14,
+    TaojiangB10R8 = 15,
+    TaojiangB10R16 = 16,
+
+    // 红中麻将
+    HongzhongB1R8 = 17,
+    HongzhongB2R8 = 18,
+    HongzhongB5R8 = 19,
+    HongzhongB10R8 = 20,
+
+    // 长沙麻将
+    ChangshaB1R8 = 21,
+    ChangshaB2R8 = 22,
+    ChangshaB5R8 = 23,
+    ChangshaB10R8 = 24,
+
+    // 跑得快
+    PaodekuaiB1R8 = 25,
+    PaodekuaiB2R8 = 26,
+    PaodekuaiB5R8 = 27,
+    PaodekuaiB10R8 = 28,
+
+    // 歪胡子
+    WaihuziB1R8 = 29,
+    WaihuziB2R8 = 30,
+    WaihuziB5R8 = 31,
+    WaihuziB10R8 = 32,
+
+    // 沅江千分
+    QianfenB1R8 = 33,
+    QianfenB2R8 = 34,
+    QianfenB5R8 = 35,
+    QianfenB10R8 = 36,
 };
 
 // 网络连接状态

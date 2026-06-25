@@ -165,6 +165,24 @@ export class GameRoomApi {
     }
 
     /**
+     * 批量查询多个 district 的玩家人数
+     * 并行调用已有 getDistrictPlayerCount 接口
+     */
+    async getDistrictPlayerCounts(districtIds: number[]): Promise<Map<number, number>> {
+        const results = new Map<number, number>();
+        const promises = districtIds.map(async (id) => {
+            try {
+                const count = await this.getDistrictPlayerCount(id);
+                if (count !== null) results.set(id, count);
+            } catch (e) {
+                console.warn(`[GameRoomApi] Failed to get district ${id} player count`, e);
+            }
+        });
+        await Promise.all(promises);
+        return results;
+    }
+
+    /**
      * 六安比鸡公开房列表
      * GET /player/game/bi-ji/public
      */
