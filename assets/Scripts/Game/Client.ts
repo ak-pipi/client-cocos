@@ -23,6 +23,7 @@ import { EffectManager } from '../App/EffectManager';
 import { GameSettings } from '../App/GameSettings';
 import { CrashReporter } from '../App/CrashReporter';
 import { PerformanceMonitor } from '../App/PerformanceMonitor';
+import { GameFactory } from '../App/GameFactory';
 const { ccclass, property } = _decorator;
 
 @ccclass('Client')
@@ -271,6 +272,11 @@ export class Client extends Component {
     }
 
     public backToGameHall() {
+        // 先通过 GameFactory 正确清理房间（调用 cleanup + 移除组件 + 清空 currentRoom 引用），
+        // 必须在销毁节点前执行，否则节点销毁后组件字段（如数组引用）会被引擎析构为 null，
+        // 导致下次进入房间时 destroyCurrentRoom -> cleanup 访问失效字段而崩溃
+        GameFactory.Instance.destroyCurrentRoom();
+
         if (this.gameRoomNode) {
             this.gameRoomNode.destroy();
             this.gameRoomNode = null;

@@ -3,7 +3,7 @@ import { Client } from './Client';
 import { GameFactory } from '../App/GameFactory';
 import { GameId, GameType, StakeOption, GAME_STAKE_OPTIONS } from '../App/GameEnums';
 import { ResourceLoader } from '../Manager/ResourceLoader';
-import { GameRoomApi, EnterVenueResult, getServerGameType } from '../Network/GameRoomApi';
+import { GameRoomApi, EnterVenueResult, getServerGameType, DistrictVenueItem } from '../Network/GameRoomApi';
 import { DlgMahjongRecords } from './Dialogs/DlgMahjongRecords';
 
 const { ccclass } = _decorator;
@@ -39,6 +39,7 @@ export class NewGameHall extends Component {
     private createRules: Record<string, any> = {};
     private tableCardContainer: Node | null = null;
     private tableCardLabels: Map<number, Label> = new Map();  // districtId -> 在线人数 Label
+    private selectTablePopup: Node | null = null;
 
     public init(gameId: string, gameName: string): void {
         this.gameId = gameId as GameId;
@@ -327,7 +328,7 @@ export class NewGameHall extends Component {
         const sClick = new EventHandler();
         sClick.target = this.node;
         sClick.component = 'NewGameHall';
-        sClick.handler = 'onQuickJoin';
+        sClick.handler = 'onSelectTable';
         sClick.customEventData = String(stake.districtId);
         sButton.clickEvents.push(sClick);
     }
@@ -428,6 +429,258 @@ export class NewGameHall extends Component {
             GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue(result));
         }).catch((err) => {
             console.error('[NewGameHall] Quick join error:', err);
+            Client.Instance.showConnecting(false);
+            Client.Instance.showPromptDialog('加入失败，请重试');
+        });
+    }
+
+    // ==================== 选桌进入 ====================
+
+    public onSelectTable(_event: Event, customEventData: any | null) {
+        const districtId = Number(customEventData);
+        if (!districtId) return;
+        this.showSelectTablePopup(districtId);
+    }
+
+    /** 显示选桌弹窗 */
+    private async showSelectTablePopup(districtId: number): Promise<void> {
+        // 销毁旧弹窗
+        if (this.selectTablePopup) {
+            this.selectTablePopup.destroy();
+            this.selectTablePopup = null;
+        }
+
+        const popup = new Node('SelectTablePopup');
+        popup.parent = this.node;
+        this.selectTablePopup = popup;
+
+        // 遮罩
+        const mask = new Node('Mask');
+        mask.parent = popup;
+        mask.addComponent(UITransform).setContentSize(1920, 1080);
+        const mg = mask.addComponent(Graphics);
+        mg.fillColor = new Color(0, 0, 0, 160);
+        mg.roundRect(-960, -540, 1920, 1080, 0);
+        mg.fill();
+
+        // 面板
+        const panelW = 500;
+        const panelH = 420;
+        const panel = new Node('Panel');
+        panel.parent = popup;
+        panel.addComponent(UITransform).setContentSize(panelW, panelH);
+        const pg = panel.addComponent(Graphics);
+        pg.fillColor = new Color(29, 35, 52, 255);
+        pg.roundRect(-panelW / 2, -panelH / 2, panelW, panelH, 18);
+        pg.fill();
+        pg.strokeColor = new Color(238, 198, 116, 255);
+        pg.lineWidth = 2;
+        pg.roundRect(-panelW / 2, -panelH / 2, panelW, panelH, 18);
+        pg.stroke();
+
+        // 标题
+        const titleNode = new Node('Title');
+        titleNode.parent = panel;
+        titleNode.addComponent(UITransform).setContentSize(panelW - 40, 36);
+        titleNode.setPosition(0, panelH / 2 - 30, 0);
+        const titleLabel = titleNode.addComponent(Label);
+        titleLabel.string = '选桌进入';
+        titleLabel.fontSize = 26;
+        titleLabel.lineHeight = 32;
+        titleLabel.horizontalAlign = 1;
+        titleLabel.verticalAlign = 1;
+        titleLabel.color = new Color(255, 210, 116, 255);
+
+        // 关闭按钮
+        const closeBtn = new Node('CloseBtn');
+        closeBtn.parent = panel;
+        closeBtn.addComponent(UITransform).setContentSize(32, 32);
+        closeBtn.setPosition(panelW / 2 - 24, panelH / 2 - 24, 0);
+        const cbg = closeBtn.addComponent(Graphics);
+        cbg.fillColor = new Color(180, 60, 60, 220);
+        cbg.roundRect(-16, -16, 32, 32, 6);
+        cbg.fill();
+        const clNode = new Node('L');
+        clNode.parent = closeBtn;
+        clNode.addComponent(UITransform).setContentSize(28, 28);
+        const cll = clNode.addComponent(Label);
+        cll.string = '×';
+        cll.fontSize = 24;
+        cll.horizontalAlign = 1;
+        cll.verticalAlign = 1;
+        cll.color = new Color(255, 255, 255, 255);
+        const cButton = closeBtn.addComponent(Button);
+        cButton.transition = 1;
+        cButton.zoomScale = 1.1;
+        closeBtn.on(Node.EventType.TOUCH_END, () => {
+            if (this.selectTablePopup) {
+                this.selectTablePopup.destroy();
+                this.selectTablePopup = null;
+            }
+        });
+
+        // 加载提示
+        const loadingNode = new Node('Loading');
+        loadingNode.parent = panel;
+        loadingNode.addComponent(UITransform).setContentSize(panelW - 40, 40);
+        loadingNode.setPosition(0, 0, 0);
+        const loadingLabel = loadingNode.addComponent(Label);
+        loadingLabel.string = '正在加载房间列表...';
+        loadingLabel.fontSize = 20;
+        loadingLabel.horizontalAlign = 1;
+        loadingLabel.color = new Color(200, 200, 200, 255);
+
+        // 拉取房间列表
+        let venues: DistrictVenueItem[] = [];
+        try {
+            venues = await GameRoomApi.Instance.getDistrictVenues(districtId);
+        } catch (err) {
+            console.error('[NewGameHall] Get district venues error:', err);
+        }
+
+        loadingNode.destroy();
+
+        if (venues.length === 0) {
+            const emptyNode = new Node('Empty');
+            emptyNode.parent = panel;
+            emptyNode.addComponent(UITransform).setContentSize(panelW - 40, 40);
+            emptyNode.setPosition(0, 20, 0);
+            const emptyLabel = emptyNode.addComponent(Label);
+            emptyLabel.string = '当前没有可加入的房间';
+            emptyLabel.fontSize = 22;
+            emptyLabel.horizontalAlign = 1;
+            emptyLabel.color = new Color(200, 180, 120, 255);
+
+            // 快速创建按钮
+            const createBtn = new Node('QuickCreateBtn');
+            createBtn.parent = panel;
+            createBtn.addComponent(UITransform).setContentSize(180, 44);
+            createBtn.setPosition(0, -40, 0);
+            const cg2 = createBtn.addComponent(Graphics);
+            cg2.fillColor = new Color(46, 139, 87, 230);
+            cg2.roundRect(-90, -22, 180, 44, 8);
+            cg2.fill();
+            const cl2 = new Node('L');
+            cl2.parent = createBtn;
+            cl2.addComponent(UITransform).setContentSize(170, 36);
+            const cll2 = cl2.addComponent(Label);
+            cll2.string = '创建新房间';
+            cll2.fontSize = 20;
+            cll2.horizontalAlign = 1;
+            cll2.verticalAlign = 1;
+            cll2.color = new Color(255, 255, 255, 255);
+            const crtBtn = createBtn.addComponent(Button);
+            crtBtn.transition = 1;
+            crtBtn.zoomScale = 1.05;
+            createBtn.on(Node.EventType.TOUCH_END, () => {
+                if (this.selectTablePopup) {
+                    this.selectTablePopup.destroy();
+                    this.selectTablePopup = null;
+                }
+                // 走快速游戏流程（会自动创建新房间）
+                const fakeEvent = { } as Event;
+                this.onQuickJoin(fakeEvent, String(districtId));
+            });
+            return;
+        }
+
+        // 房间列表容器
+        const listNode = new Node('RoomList');
+        listNode.parent = panel;
+        listNode.addComponent(UITransform).setContentSize(panelW - 40, panelH - 100);
+        listNode.setPosition(0, -20, 0);
+
+        const itemH = 56;
+        const itemGap = 8;
+        const listW = panelW - 60;
+        const startY = (venues.length * (itemH + itemGap)) / 2 - itemH / 2;
+
+        venues.forEach((venue, index) => {
+            const itemNode = new Node(`Room_${index}`);
+            itemNode.parent = listNode;
+            itemNode.addComponent(UITransform).setContentSize(listW, itemH);
+            itemNode.setPosition(0, startY - index * (itemH + itemGap), 0);
+
+            const ig = itemNode.addComponent(Graphics);
+            ig.fillColor = new Color(40, 55, 80, 240);
+            ig.roundRect(-listW / 2, -itemH / 2, listW, itemH, 10);
+            ig.fill();
+            ig.strokeColor = new Color(80, 110, 150, 200);
+            ig.lineWidth = 1;
+            ig.roundRect(-listW / 2, -itemH / 2, listW, itemH, 10);
+            ig.stroke();
+
+            // 房间号/序号
+            const nameNode = new Node('Name');
+            nameNode.parent = itemNode;
+            nameNode.addComponent(UITransform).setContentSize(160, itemH - 10);
+            nameNode.setPosition(-listW / 2 + 90, 0, 0);
+            const nameLabel = nameNode.addComponent(Label);
+            nameLabel.string = `房间 ${index + 1}`;
+            nameLabel.fontSize = 20;
+            nameLabel.horizontalAlign = 1;
+            nameLabel.verticalAlign = 1;
+            nameLabel.color = new Color(255, 245, 223, 255);
+
+            // 人数信息
+            const countNode = new Node('Count');
+            countNode.parent = itemNode;
+            countNode.addComponent(UITransform).setContentSize(120, itemH - 10);
+            countNode.setPosition(20, 0, 0);
+            const countLabel = countNode.addComponent(Label);
+            countLabel.string = `${venue.playerCount}/${venue.maxPlayerNums} 人`;
+            countLabel.fontSize = 18;
+            countLabel.horizontalAlign = 1;
+            countLabel.verticalAlign = 1;
+            countLabel.color = new Color(180, 220, 180, 255);
+
+            // 加入按钮
+            const joinBtn = new Node('JoinBtn');
+            joinBtn.parent = itemNode;
+            joinBtn.addComponent(UITransform).setContentSize(90, 36);
+            joinBtn.setPosition(listW / 2 - 60, 0, 0);
+            const jbg = joinBtn.addComponent(Graphics);
+            jbg.fillColor = new Color(46, 139, 87, 230);
+            jbg.roundRect(-45, -18, 90, 36, 8);
+            jbg.fill();
+            const jl = new Node('L');
+            jl.parent = joinBtn;
+            jl.addComponent(UITransform).setContentSize(80, 30);
+            const jll = jl.addComponent(Label);
+            jll.string = '加入';
+            jll.fontSize = 18;
+            jll.horizontalAlign = 1;
+            jll.verticalAlign = 1;
+            jll.color = new Color(255, 255, 255, 255);
+            const jButton = joinBtn.addComponent(Button);
+            jButton.transition = 1;
+            jButton.zoomScale = 1.05;
+            joinBtn.on(Node.EventType.TOUCH_END, () => {
+                if (this.selectTablePopup) {
+                    this.selectTablePopup.destroy();
+                    this.selectTablePopup = null;
+                }
+                this.joinVenueById(venue.venueId);
+            });
+        });
+    }
+
+    /** 通过 venueId 加入房间 */
+    private joinVenueById(venueId: string): void {
+        const gameType = getServerGameType(this.gameId);
+        if (!gameType) {
+            Client.Instance.showPromptDialog('不支持的游戏类型');
+            return;
+        }
+        Client.Instance.showConnecting(true);
+        GameRoomApi.Instance.joinByVenueId(venueId, gameType).then((result) => {
+            if (!result) {
+                Client.Instance.showConnecting(false);
+                return;
+            }
+            GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue(result));
+        }).catch((err) => {
+            console.error('[NewGameHall] Join by venueId error:', err);
             Client.Instance.showConnecting(false);
             Client.Instance.showPromptDialog('加入失败，请重试');
         });

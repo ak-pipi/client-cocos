@@ -70,6 +70,13 @@ export interface PublicRoomItem {
     base64?: string;
 }
 
+/** 区域可加入房间列表项（选桌） */
+export interface DistrictVenueItem {
+    venueId: string;
+    playerCount: number;
+    maxPlayerNums: number;
+}
+
 /** 麻将战绩项 */
 export interface MahjongRecordItem {
     id: number;
@@ -180,6 +187,21 @@ export class GameRoomApi {
         });
         await Promise.all(promises);
         return results;
+    }
+
+    /**
+     * 查询区域内可加入的房间列表（选桌）
+     * GET /player/game/district/venues?districtId={id}
+     * 返回有空位的房间，满员房间不返回
+     */
+    async getDistrictVenues(districtId: number): Promise<DistrictVenueItem[]> {
+        const url = `/player/game/district/venues?districtId=${districtId}`;
+        const dto = await GameManager.Instance.authGet(url);
+        if (!dto || !isGameApiSuccess(dto.code)) {
+            return [];
+        }
+        const items = dto.items || [];
+        return items as DistrictVenueItem[];
     }
 
     /**

@@ -1337,14 +1337,14 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             btNode.active = false;
         }
 
-        this.tingHintNode = this.createUIChild(this.node, 'TaojiangTingHint', 430, 86, 520, -318, 120);
-        this.paintRect(this.tingHintNode, 430, 86, new Color(19, 24, 35, 214), new Color(117, 186, 255, 255), 16);
-        this.tingTitleLabel = this.createUIChild(this.tingHintNode, 'Title', 90, 24, -160, 22, 1).addComponent(Label);
+        this.tingHintNode = this.createUIChild(this.node, 'TaojiangTingHint', 430, 130, 520, -318, 120);
+        this.paintRect(this.tingHintNode, 430, 130, new Color(19, 24, 35, 214), new Color(117, 186, 255, 255), 16);
+        this.tingTitleLabel = this.createUIChild(this.tingHintNode, 'Title', 90, 24, -160, 52, 1).addComponent(Label);
         this.tingTitleLabel.fontSize = 20;
         this.tingTitleLabel.lineHeight = 24;
         this.tingTitleLabel.color = new Color(255, 222, 135, 255);
         this.tingTitleLabel.string = '听牌';
-        this.tingTilesRoot = this.createUIChild(this.tingHintNode, 'Tiles', 320, 50, 26, -4, 1);
+        this.tingTilesRoot = this.createUIChild(this.tingHintNode, 'Tiles', 400, 90, 10, -8, 1);
         this.tingHintNode.active = false;
 
         this.laiziHintRoot = this.createUIChild(this.node, 'LaiziHint', 230, 110, 520, 356, 120);
@@ -1568,6 +1568,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
     /** 更新庄家标记显示 */
     protected updateBankerUI(): void {
+        if (!this.bankerLabels) return;
         for (let i = 0; i < 2; i++) {
             const node = this.bankerLabels[i]?.node;
             if (!node) continue;
@@ -1584,6 +1585,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
     /** 更新报听标记显示 */
     protected updateBaoTingUI(): void {
+        if (!this.baoTingLabels) return;
         if (!this.baoTingEnabled) {
             for (let i = 0; i < 2; i++) {
                 if (this.baoTingLabels[i]?.node) this.baoTingLabels[i].node.active = false;
@@ -1714,47 +1716,63 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             }
         }
 
-        const panelHeight = isHu ? 430 : 370;
+        // 增大面板高度：标题(~75) + 徽章(42+16) + 胡牌样式(78+20) + 玩家行(N*96) + 按钮区(60) + 底部padding(30)
+        const playerRows = seatCount;
+        const panelHeight = isHu ? (75 + 58 + 98 + playerRows * 96 + 60 + 30) : (75 + 58 + playerRows * 96 + 60 + 30);
         const panel = this.createPopupPanel(
             overlay,
             'SettlementPanel',
-            760,
+            740,
             panelHeight,
             isHu ? '本局结算' : '本局流局',
             isLastRound ? '全部对局结束，即将自动解散' : (isHu ? '桃江麻将战绩回顾' : '本局无人胡牌，等待下一轮'),
         );
 
         const titleBarBottom = panelHeight / 2 - 48 - 33;
-        let cursorY = titleBarBottom - 20;
+        let cursorY = titleBarBottom - 12;
 
-        const badge = this.createUIChild(panel, 'ResultBadge', 180, 42, 0, cursorY - 21, 1);
-        this.paintRect(badge, 180, 42, isHu ? new Color(171, 74, 30, 230) : new Color(63, 90, 124, 230), new Color(255, 214, 132, 255), 16);
+        // --- 结果徽章 ---
+        const badge = this.createUIChild(panel, 'ResultBadge', 160, 38, 0, cursorY - 19, 1);
+        this.paintRect(badge, 160, 38, isHu ? new Color(171, 74, 30, 230) : new Color(63, 90, 124, 230), new Color(255, 214, 132, 255), 16);
         const badgeLabel = badge.addComponent(Label);
-        badgeLabel.string = isHu ? '胡牌结算' : '本局流局';
-        badgeLabel.fontSize = 22;
-        badgeLabel.lineHeight = 26;
+        badgeLabel.string = isHu ? '胡牌结果' : '本局流局';
+        badgeLabel.fontSize = 20;
+        badgeLabel.lineHeight = 24;
         badgeLabel.horizontalAlign = 1;
         badgeLabel.verticalAlign = 1;
         badgeLabel.color = new Color(255, 245, 223, 255);
-        cursorY = cursorY - 42 - 16;
+        cursorY = cursorY - 38 - 14;
 
+        // --- 胡牌样式卡片 ---
         if (isHu) {
-            const styleCard = this.createUIChild(panel, 'StyleCard', 680, 72, 0, cursorY - 36, 1);
-            this.paintRect(styleCard, 680, 72, new Color(20, 32, 48, 205), new Color(234, 190, 106, 255), 16);
+            const styleCard = this.createUIChild(panel, 'StyleCard', 660, 78, 0, cursorY - 39, 1);
+            this.paintRect(styleCard, 660, 78, new Color(25, 38, 55, 220), new Color(218, 170, 80, 255), 14);
             const styleLabel = styleCard.addComponent(Label);
             const yingStr = isYingZhuang ? '(硬庄)' : '';
             const styleStr = huStyleNames.length > 0 ? huStyleNames.join(' · ') : '平胡';
-            const wayStr = huWayNames.length > 0 ? `\n${huWayNames.join(' · ')}` : '';
+            const wayStr = huWayNames.length > 0 ? `  |  ${huWayNames.join(' · ')}` : '';
             styleLabel.string = `${styleStr}${yingStr}${wayStr}`;
-            styleLabel.fontSize = 22;
-            styleLabel.lineHeight = 28;
+            styleLabel.fontSize = 26;
+            styleLabel.lineHeight = 32;
             styleLabel.overflow = Label.Overflow.SHRINK;
             styleLabel.horizontalAlign = 1;
             styleLabel.verticalAlign = 1;
-            styleLabel.color = new Color(255, 219, 145, 255);
-            cursorY = cursorY - 72 - 18;
+            // 更亮的颜色确保可读性
+            styleLabel.color = new Color(255, 235, 180, 255);
+            cursorY = cursorY - 78 - 20;
         }
 
+        // --- 分隔线 ---
+        const sepLine = this.createUIChild(panel, 'SepLine', 660, 1, 0, cursorY, 1);
+        const sepGfx = sepLine.addComponent(Graphics);
+        sepGfx.strokeColor = new Color(100, 130, 160, 120);
+        sepGfx.lineWidth = 1;
+        sepGfx.moveTo(-330, 0);
+        sepGfx.lineTo(330, 0);
+        sepGfx.stroke();
+        cursorY = cursorY - 16;
+
+        // --- 玩家结算行 ---
         const golds = msg.golds || [];
         const winGolds = msg.winGolds || [];
         const scores = data.scores || [];
@@ -1769,41 +1787,56 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             const score = scores[serverSeat] || 0;
             const isPositive = winGold > 0;
             const isWinner = (serverSeat === huPlayerSeat);
-            const row = this.createUIChild(panel, `PlayerRow${i}`, 680, rowH, 0, startY - i * (rowH + rowGap), 1);
+            const rowY = startY - i * (rowH + rowGap);
+
+            const row = this.createUIChild(panel, `PlayerRow${i}`, 660, rowH, 0, rowY, 1);
             this.paintRect(
                 row,
-                680,
+                660,
                 rowH,
-                isWinner ? new Color(74, 54, 22, 225) : new Color(19, 28, 42, 205),
-                isWinner ? new Color(255, 210, 116, 255) : new Color(97, 124, 157, 255),
-                18,
+                isWinner ? new Color(80, 58, 20, 230) : new Color(20, 30, 45, 210),
+                isWinner ? new Color(255, 200, 100, 255) : new Color(70, 100, 140, 200),
+                16,
             );
 
-            const nameNode = this.createUIChild(row, 'Name', 220, 30, -195, 18, 1);
+            // 左侧：昵称 + 庄标记
+            const nameNode = this.createUIChild(row, 'Name', 240, 32, -195, 16, 1);
             const nameLabel = nameNode.addComponent(Label);
-            nameLabel.string = `${isWinner ? '赢家 ' : ''}${nickname}${serverSeat === this.bankerSeat ? ' [庄]' : ''}`;
+            nameLabel.string = `${isWinner ? '赢家  ' : ''}${nickname}${serverSeat === this.bankerSeat ? ' [庄]' : ''}`;
             nameLabel.fontSize = 24;
             nameLabel.lineHeight = 28;
             nameLabel.overflow = Label.Overflow.SHRINK;
             nameLabel.horizontalAlign = 0;
-            nameLabel.color = isWinner ? new Color(255, 228, 160, 255) : new Color(235, 241, 248, 255);
+            nameLabel.color = isWinner ? new Color(255, 225, 150, 255) : new Color(220, 230, 245, 255);
 
-            const detailNode = this.createUIChild(row, 'Detail', 610, 24, 0, -14, 1);
-            const detailLabel = detailNode.addComponent(Label);
-            detailLabel.string = `番分 ${score >= 0 ? '+' : ''}${score}    金币 ${winGold >= 0 ? '+' : ''}${winGold}    余额 ${golds[serverSeat] || 0}`;
-            detailLabel.fontSize = 20;
-            detailLabel.lineHeight = 24;
-            detailLabel.horizontalAlign = 1;
-            detailLabel.overflow = Label.Overflow.SHRINK;
-            detailLabel.color = isPositive ? new Color(147, 242, 169, 255) : new Color(255, 176, 176, 255);
+            // 右侧：番分 / 金币变化 / 余额 —— 分两行显示更清晰
+            const scoreNode = this.createUIChild(row, 'ScoreInfo', 600, 26, 0, 8, 1);
+            const scoreLabel = scoreNode.addComponent(Label);
+            scoreLabel.fontSize = 21;
+            scoreLabel.lineHeight = 26;
+            scoreLabel.horizontalAlign = 1;
+            scoreLabel.overflow = Label.Overflow.SHRINK;
+            scoreLabel.string = `番分 ${score >= 0 ? '+' : ''}${score}   金币 ${winGold >= 0 ? '+' : ''}${winGold}`;
+            scoreLabel.color = isPositive ? new Color(130, 235, 160, 255) : new Color(255, 140, 140, 255);
+
+            const goldNode = this.createUIChild(row, 'GoldInfo', 300, 22, 140, -18, 1);
+            const goldLabel = goldNode.addComponent(Label);
+            goldLabel.fontSize = 17;
+            goldLabel.lineHeight = 20;
+            goldLabel.horizontalAlign = 2; // right align
+            goldLabel.overflow = Label.Overflow.SHRINK;
+            goldLabel.string = `余额 ${golds[serverSeat] || 0}`;
+            goldLabel.color = new Color(170, 185, 205, 255);
         }
 
+        // --- 底部按钮区 ---
+        const btnAreaTop = startY - seatCount * (rowH + rowGap) - 20;
         this.createPopupButton(
             panel,
             isLastRound ? '确认' : '继续',
             0,
-            -panelHeight / 2 + 42,
-            188,
+            -panelHeight / 2 + 44,
+            178,
             new Color(46, 128, 88, 255),
             new Color(133, 231, 174, 255),
             () => {
@@ -2021,13 +2054,20 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         if (this.tingTitleLabel) {
             this.tingTitleLabel.string = `可胡 ${tingTiles.length} 张`;
         }
-        let startX = -130;
-        for (const t of tingTiles.slice(0, 8)) {
+        // 多行展示：每行最多8张，自动换行
+        const tilesPerRow = 8;
+        const tileSpacing = 38;
+        const rowSpacing = 44;
+        const startX = -145;
+
+        for (let idx = 0; idx < tingTiles.length; idx++) {
+            const t = tingTiles[idx];
+            const row = Math.floor(idx / tilesPerRow);
+            const col = idx % tilesPerRow;
             const tileNode = this.createTileNodeForSeat(t, 3, false);
             tileNode.setScale(0.7, 0.7, 1);
             tileNode.parent = this.tingTilesRoot;
-            tileNode.setPosition(startX, 0, 0);
-            startX += 38;
+            tileNode.setPosition(startX + col * tileSpacing, -row * rowSpacing, 0);
         }
     }
 
