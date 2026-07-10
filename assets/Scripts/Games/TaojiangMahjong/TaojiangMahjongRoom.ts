@@ -59,6 +59,9 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     protected tingHintNode: Node | null = null;
     protected tingTitleLabel: Label | null = null;
     protected tingTilesRoot: Node | null = null;
+    protected gangRevealNode: Node | null = null;
+    protected gangRevealTitleLabel: Label | null = null;
+    protected gangRevealTilesRoot: Node | null = null;
     protected totalFans: number = 0;
     protected myScore: number = 0;
     protected opponentHandCount: number = 0;
@@ -66,6 +69,8 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     protected disbandVoteNode: Node | null = null;
     protected currentDisbandChoices: number[] = [];
     protected pendingRoundIncrement: boolean = false;
+    protected finalSettlementPendingExit: boolean = false;
+    protected finalSettlementServerDisbanded: boolean = false;
 
     // 赖子系统
     protected laiziEnabled: boolean = false;
@@ -77,6 +82,10 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     // 报听
     protected baoTingEnabled: boolean = false;
     protected baoTinged: boolean[] = [false, false, false, false];
+    protected baoTingButtonNode: Node | null = null;
+    protected baoTingButtonLabel: Label | null = null;
+    protected currentTingTiles: MahjongTile[] = [];
+    protected pendingGangRevealAction: boolean = false;
     // 房间规则
     protected roomNumber: string = '';
     protected diZhu: number = 1;
@@ -119,10 +128,17 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         super.start();
         this.gameId = 'taojiang_mahjong';
         this.buildTaojiangHud();
+        this.pendingGangRevealAction = false;
         this.refreshTaojiangHud();
     }
 
     protected getSeatCount(): number { return 2; }
+
+    protected isAllRoundsFinished(): boolean {
+        const currentRound = Number((this as any).currentRound) || 0;
+        const totalRounds = Number((this as any).totalRounds) || 0;
+        return this.gameState === GameState.Waiting && totalRounds > 0 && currentRound >= totalRounds;
+    }
 
     init(roomInfo: RoomInfo): void {
         super.init(roomInfo);
@@ -138,20 +154,16 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     protected onSyncGameUIUpdate(isSitting: boolean): void {
         super.onSyncGameUIUpdate(isSitting);
         // 桃江麻将已入座（桌面模式）时也需要准备按钮，覆写 readyGroup 逻辑
-        if (this.readyGroup && this.seat !== -1) {
-            this.readyGroup.active = (this.gameState === GameState.Waiting);
-        }
+        if (isSitting || this.seat !== -1) this.updateReadyButtonState();
         this.hideTingHint();
     }
 
     /** 覆写准备按钮状态，确保已入座时 readyGroup 也可见 */
     protected updateReadyButtonState(): void {
+        const canReady = (this.seat !== -1 && this.gameState === GameState.Waiting && !this.isAllRoundsFinished());
+        // 已入座桌面模式下，需要手动同步 readyGroup 父节点
+        if (this.readyGroup) this.readyGroup.active = canReady;
         if (!this.btnReady) return;
-        const canReady = (this.seat !== -1 && this.gameState === GameState.Waiting);
-        // 已入座桌面模式下，需要手动激活 readyGroup 父节点
-        if (canReady && this.readyGroup) {
-            this.readyGroup.active = true;
-        }
         this.btnReady.active = canReady;
         if (!canReady) return;
 
@@ -286,6 +298,8 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         if (msgType === "MsgTJStartRound") { this.onTJStartRound(msg); return true; }
         if (msgType === "MsgTJSettlement") { this.onTJSettlement(msg); return true; }
         if (msgType === "MsgTJDisbandVote") { this.onTJDisbandVote(msg); return true; }
+        if (msgType === "MsgTJGangReveal") { this.onTJGangReveal(msg); return true; }
+        if (msgType === "MsgTJBaoTing") { this.onTJBaoTing(msg); return true; }
 
         // ---- 基础麻将消息 ----
         if (msgType === "MsgMahjongTiles") { this.onServerDealTiles(msg); return true; }
@@ -374,6 +388,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.hideActionPanel();
         this.hideDisbandVoteUI();
         this.hideTingHint();
+        this.hideGangReveal();
         this.totalFans = this.extractTotalFansFromSettlement(msg);
         this.myScore += this.extractMyRoundDelta(msg);
         if (msg?.roundNo !== undefined) {
@@ -384,8 +399,10 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         }
         this.pendingRoundIncrement = true;
 
-        // 检查是否最后一局（服务端 _roundNo >= _roundCount 后自动解散）
-        const isLastRound = (this as any).currentRound >= (this as any).totalRounds && (this as any).totalRounds > 0;
+        // 检查是否最后一局，最后一局保留结算界面，由玩家手动返回房间。
+        const isLastRound = this.isAllRoundsFinished();
+        this.finalSettlementPendingExit = isLastRound;
+        this.finalSettlementServerDisbanded = false;
 
         // 重置所有玩家的准备状态（服务端 afterHu 也会重置，客户端需同步）
         for (const seat of Object.keys(this.playerInfos)) {
@@ -396,9 +413,12 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
         // 显示结算弹窗
         this.showSettlementUI(msg, isLastRound);
+        if (isLastRound) {
+            this.updateFanSummary('全部对局结束，请手动返回');
+        }
 
         // 被踢出房间（金币不足）
-        if (msg.kick) {
+        if (msg.kick && !isLastRound) {
             console.log('[TaojiangRoom] Kicked due to insufficient gold');
             this.scheduleOnce(() => this.exitRoom(), 3);
         }
@@ -417,7 +437,32 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.showDisbandVoteUI(msg);
     }
 
-    // ==================== 基础麻将消息处理 ====================
+    /** 杠后翻牌通知：展示翻出的3张牌 */
+    protected onTJGangReveal(msg: any): void {
+        const seat = Number(msg.seat);
+        const tiles: any[] = msg.tiles || [];
+        const count = Number(msg.count) || 0;
+        const revealedTiles: MahjongTile[] = [];
+        for (let i = 0; i < count && i < tiles.length; i++) {
+            revealedTiles.push(this.parseMahjongTile(tiles[i]));
+        }
+
+        this.showGangReveal(revealedTiles);
+        this.updateFanSummary(`杠翻牌 ${count} 张`);
+        this.pendingGangRevealAction = count > 0;
+        console.log(`[TaojiangRoom] Gang reveal: seat=${seat}, count=${count}`);
+    }
+
+    /** 报听通知：更新报听状态 */
+    protected onTJBaoTing(msg: any): void {
+        const seat = Number(msg.seat);
+        if (seat >= 0 && seat < 4) {
+            this.baoTinged[seat] = true;
+            this.updateBaoTingUI();
+        }
+        this.updateFanSummary(`玩家${seat + 1}报听`);
+        console.log(`[TaojiangRoom] BaoTing: seat=${seat}`);
+    }
 
     /** 服务端发牌 */
     protected onServerDealTiles(msg: any): void {
@@ -524,6 +569,18 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             return null;
         };
         if (!raw) return { id: 0, tile: { pattern: 0, number: 0 } };
+
+        // MsgTingTile 发的是 MahjongTile::Tile，常见形态是 {pattern, number} 或 [pattern, number]。
+        if (Array.isArray(raw) && raw.length >= 2) {
+            const p = toNum(raw[0] ?? raw['0']);
+            const n = toNum(raw[1] ?? raw['1']);
+            if (p != null && n != null) return { id: 0, tile: { pattern: p, number: n } };
+        }
+        {
+            const p = toNum(raw.pattern ?? raw.Pattern);
+            const n = toNum(raw.number ?? raw.Number);
+            if (p != null && n != null) return { id: 0, tile: { pattern: p, number: n } };
+        }
         if (raw.tile) {
             const p0 = toNum(raw.tile.pattern);
             const n0 = toNum(raw.tile.number);
@@ -539,12 +596,8 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             const n = toNum(raw.number ?? raw[1] ?? raw['1']);
             if (p != null && n != null) return { id: 0, tile: { pattern: p, number: n } };
         }
-        if (Array.isArray(raw)) {
-            const p = toNum(raw[0]);
-            const n = toNum(raw[1]);
-            return { id: 0, tile: { pattern: p ?? 0, number: n ?? 0 } };
-        }
-        return { id: 0, tile: { pattern: toNum(raw.pattern) ?? 0, number: toNum(raw.number) ?? 0 } };
+        const parsed = this.parseMahjongTile(raw);
+        return { id: 0, tile: { pattern: Number(parsed.tile.pattern) || 0, number: Number(parsed.tile.number) || 0 } };
     }
 
     private parseActionOptionRaw(raw: any): MahjongActionOption {
@@ -753,11 +806,13 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         if (isSelf) {
             const tile = this.parseMahjongTile(msg.tile);
             this.drawTile(tile);
+            this.markLaiziTilesInHand();
         } else {
             this.opponentHandCount += 1;
             this.opponentHandCounts.set(1, this.opponentHandCount);
             this.renderOpponentHand(this.opponentHandCount);
         }
+        this.pendingGangRevealAction = false;
         this.refreshTaojiangHud();
     }
 
@@ -818,6 +873,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         } else {
             this.playDiscardSound();
         }
+        this.pendingGangRevealAction = false;
         this.refreshTaojiangHud();
         console.log(`[TaojiangRoom] Player server=${serverSeat} client=${clientSeat} played: ${tileDisplayText(tile)}`);
     }
@@ -920,12 +976,17 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             tingTiles.push({ id: 0, tile: { pattern: p, number: n } });
         }
         if (tingTiles.length > 0) {
+            this.currentTingTiles = tingTiles;
             this.showTingHint(tingTiles);
-            this.updateFanSummary(`听牌 ${tingTiles.length} 张`);
+            const names = tingTiles.map(t => tileDisplayText(t));
+            const summary = names.length <= 9 ? names.join('、') : `${names.slice(0, 9).join('、')}等`;
+            this.updateFanSummary(`听牌 ${tingTiles.length} 张：${summary}`);
             console.log(`[TaojiangRoom] Ting: ${tingTiles.length} tiles`);
         } else {
+            this.currentTingTiles = [];
             this.hideTingHint();
         }
+        this.refreshTaojiangHud();
     }
 
     /** 服务端胡牌通知 */
@@ -936,6 +997,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         console.log(`[TaojiangRoom] Hu! actor=${actorSeat}, ziMo=${ziMo}, winners=${JSON.stringify(winnerSeats)}`);
         this.stopCountdown();
         this.hideActionPanel();
+        this.pendingGangRevealAction = false;
 
         // 显示胡牌庆祝
         if (winnerSeats.length > 0) {
@@ -990,12 +1052,17 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.hideActionPanel();
         this.stopCountdown();
         this.currentActionOptions = [];
+        this.pendingGangRevealAction = false;
         console.log('[TaojiangRoom] Action options finished');
     }
 
     /** 过牌提示 */
     protected onServerPassTip(msg: any): void {
-        const tip = msg.action === 0 ? '已过碰，不能再碰' : '已过胡，不能再胡';
+        const action = Number(msg.action);
+        const tile = msg.tile ? ` ${String(msg.tile)}` : '';
+        const tip = action === 0
+            ? `已过碰${tile}，本轮不能再碰`
+            : `已过胡${tile}，手牌变化后可重新胡`;
         Client.Instance.showPromptTip(tip, 2.0);
     }
 
@@ -1014,9 +1081,18 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     /** 房间解散 */
     protected onDisband(_msg: any): void {
         console.log('[TaojiangRoom] Room disbanded');
+        if (this.finalSettlementPendingExit || (this.settlementNode && this.isAllRoundsFinished())) {
+            this.finalSettlementServerDisbanded = true;
+            this.hideDisbandVoteUI();
+            this.hideTingHint();
+            this.hideGangReveal();
+            this.updateFanSummary('全部对局结束，请点击返回');
+            return;
+        }
         this.hideSettlementUI();
         this.hideDisbandVoteUI();
         this.hideTingHint();
+        this.hideGangReveal();
         // 如果还有未处理的积分，显示最终积分提示
         if (this.myScore !== 0) {
             Client.Instance.showPromptTip(`对局结束，总积分 ${this.myScore >= 0 ? '+' : ''}${this.myScore}`, 3.0);
@@ -1098,6 +1174,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             const meld = meldGroup.tiles;
             const isAnGang = meldGroup.meldType === MeldType.AnGang;
             const group = new Node(`Meld_${groupIndex}`);
+            group.layer = 1 << 25; // UI_2D layer
             group.parent = area;
             (group.getComponent(UITransform) || group.addComponent(UITransform)).setContentSize(160, 72);
             group.setPosition(groupIndex * 160, 0, 0);
@@ -1203,6 +1280,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     protected addLaiziMarker(tileNode: Node): void {
         if (tileNode.getChildByName('LaiziBadge')) return; // 避免重复添加
         const badge = new Node('LaiziBadge');
+        badge.layer = 1 << 25; // UI_2D layer
         badge.parent = tileNode;
         badge.addComponent(UITransform).setContentSize(22, 22);
         badge.setPosition(20, 20, 0);
@@ -1337,14 +1415,36 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             btNode.active = false;
         }
 
-        this.tingHintNode = this.createUIChild(this.node, 'TaojiangTingHint', 430, 130, 520, -318, 120);
-        this.paintRect(this.tingHintNode, 430, 130, new Color(19, 24, 35, 214), new Color(117, 186, 255, 255), 16);
-        this.tingTitleLabel = this.createUIChild(this.tingHintNode, 'Title', 90, 24, -160, 52, 1).addComponent(Label);
+        this.baoTingButtonNode = this.createUIChild(this.taojiangHudRoot, 'BaoTingButton', 92, 30, 0, -84, 2);
+        this.paintRect(this.baoTingButtonNode, 92, 30, new Color(35, 109, 174, 238), new Color(147, 211, 255, 255), 10);
+        this.baoTingButtonLabel = this.baoTingButtonNode.addComponent(Label);
+        this.baoTingButtonLabel.string = '报听';
+        this.baoTingButtonLabel.fontSize = 18;
+        this.baoTingButtonLabel.lineHeight = 22;
+        this.baoTingButtonLabel.horizontalAlign = 1;
+        this.baoTingButtonLabel.verticalAlign = 1;
+        this.baoTingButtonLabel.color = new Color(236, 248, 255, 255);
+        this.baoTingButtonNode.on(Node.EventType.TOUCH_END, this.onBaoTingClick, this);
+        this.baoTingButtonNode.active = false;
+
+        this.gangRevealNode = this.createUIChild(this.node, 'TaojiangGangReveal', 330, 92, 0, 128, 121);
+        this.paintRect(this.gangRevealNode, 330, 92, new Color(20, 30, 35, 225), new Color(255, 206, 112, 255), 16);
+        this.gangRevealTitleLabel = this.createUIChild(this.gangRevealNode, 'Title', 70, 22, -120, 28, 1).addComponent(Label);
+        this.gangRevealTitleLabel.string = '杠翻';
+        this.gangRevealTitleLabel.fontSize = 18;
+        this.gangRevealTitleLabel.lineHeight = 22;
+        this.gangRevealTitleLabel.color = new Color(255, 226, 164, 255);
+        this.gangRevealTilesRoot = this.createUIChild(this.gangRevealNode, 'Tiles', 220, 66, 34, -2, 1);
+        this.gangRevealNode.active = false;
+
+        this.tingHintNode = this.createUIChild(this.node, 'TaojiangTingHint', 430, 88, 520, -118, 120);
+        this.paintRect(this.tingHintNode, 430, 88, new Color(19, 24, 35, 214), new Color(117, 186, 255, 255), 16);
+        this.tingTitleLabel = this.createUIChild(this.tingHintNode, 'Title', 90, 24, -150, 30, 1).addComponent(Label);
         this.tingTitleLabel.fontSize = 20;
         this.tingTitleLabel.lineHeight = 24;
         this.tingTitleLabel.color = new Color(255, 222, 135, 255);
         this.tingTitleLabel.string = '听牌';
-        this.tingTilesRoot = this.createUIChild(this.tingHintNode, 'Tiles', 400, 90, 10, -8, 1);
+        this.tingTilesRoot = this.createUIChild(this.tingHintNode, 'Tiles', 330, 54, 18, -12, 1);
         this.tingHintNode.active = false;
 
         this.laiziHintRoot = this.createUIChild(this.node, 'LaiziHint', 230, 110, 520, 356, 120);
@@ -1409,7 +1509,9 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
         // 番型状态
         if (this.fanSummaryLabel) {
-            const summary = this.totalFans > 0 ? `累计番数 ${this.totalFans} 番` : '番型状态 等待结算';
+            const summary = this.isAllRoundsFinished()
+                ? '全部对局结束，请手动返回'
+                : (this.totalFans > 0 ? `累计番数 ${this.totalFans} 番` : '番型状态 等待结算');
             this.fanSummaryLabel.string = summary;
         }
 
@@ -1472,6 +1574,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         const tw = 72;
         const th = 100;
         const node = new Node('HintTile');
+        node.layer = 1 << 25; // UI_2D layer
         node.parent = parent;
         node.setPosition(0, 0, 0);
         node.addComponent(UITransform).setContentSize(tw, th);
@@ -1497,6 +1600,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         g.stroke();
 
         const labelNode = new Node('TileLabel');
+        labelNode.layer = node.layer;
         labelNode.parent = node;
         (labelNode.getComponent(UITransform) || labelNode.addComponent(UITransform)).setContentSize(tw - 10, th - 10);
         const label = labelNode.addComponent(Label);
@@ -1584,22 +1688,44 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     }
 
     /** 更新报听标记显示 */
-    protected updateBaoTingUI(): void {
-        if (!this.baoTingLabels) return;
-        if (!this.baoTingEnabled) {
-            for (let i = 0; i < 2; i++) {
-                if (this.baoTingLabels[i]?.node) this.baoTingLabels[i].node.active = false;
-            }
-            return;
-        }
-        for (let i = 0; i < 2; i++) {
-            const node = this.baoTingLabels[i]?.node;
-            if (!node) continue;
-            const clientSeat = i;
-            const serverSeat = this.client2ServerSeat(clientSeat);
-            node.active = this.baoTinged[serverSeat] || false;
-        }
-    }
+	    protected updateBaoTingUI(): void {
+	        if (!this.baoTingLabels) return;
+	        if (!this.baoTingEnabled) {
+	            for (let i = 0; i < 2; i++) {
+	                if (this.baoTingLabels[i]?.node) this.baoTingLabels[i].node.active = false;
+	            }
+	            if (this.baoTingButtonNode) this.baoTingButtonNode.active = false;
+	            return;
+	        }
+	        for (let i = 0; i < 2; i++) {
+	            const node = this.baoTingLabels[i]?.node;
+	            if (!node) continue;
+	            const clientSeat = i;
+	            const serverSeat = this.client2ServerSeat(clientSeat);
+	            node.active = this.baoTinged[serverSeat] || false;
+	        }
+	        if (this.baoTingButtonNode) {
+	            this.baoTingButtonNode.active = this.canShowBaoTingButton();
+	        }
+	    }
+
+	    protected canShowBaoTingButton(): boolean {
+	        if (!this.baoTingEnabled) return false;
+	        if (this.seat < 0 || this.bankerSeat < 0) return false;
+	        if (this.seat === this.bankerSeat) return false;
+	        if (this.baoTinged[this.seat]) return false;
+	        if (this.currentTingTiles.length === 0) return false;
+	        if (this.gameState !== GameState.Playing && this.gameState !== GameState.Dealing) return false;
+	        const myDiscards = this.discardRecords.get(0) || [];
+	        return myDiscards.length === 0;
+	    }
+
+	    protected onBaoTingClick(): void {
+	        if (!this.canShowBaoTingButton()) return;
+	        if (this.baoTingButtonNode) this.baoTingButtonNode.active = false;
+	        NetworkManager.Instance.sendInnerMessage('MsgTJBaoTing');
+	        this.updateFanSummary('已申请报听');
+	    }
 
     protected updateFanSummary(text: string): void {
         if (this.fanSummaryLabel) {
@@ -1615,7 +1741,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             case MahjongActionType.ZhiGang: return '直杠';
             case MahjongActionType.JiaGang: return '加杠';
             case MahjongActionType.AnGang: return '暗杠';
-            case MahjongActionType.DianPao: return '胡';
+            case MahjongActionType.DianPao: return this.pendingGangRevealAction ? '抢杠胡' : '胡';
             case MahjongActionType.ZiMo: return '自摸';
             default: return '';
         }
@@ -1725,7 +1851,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             740,
             panelHeight,
             isHu ? '本局结算' : '本局流局',
-            isLastRound ? '全部对局结束，即将自动解散' : (isHu ? '桃江麻将战绩回顾' : '本局无人胡牌，等待下一轮'),
+            isLastRound ? '全部对局结束，请手动返回' : (isHu ? '桃江麻将战绩回顾' : '本局无人胡牌，等待下一轮'),
         );
 
         const titleBarBottom = panelHeight / 2 - 48 - 33;
@@ -1833,7 +1959,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         const btnAreaTop = startY - seatCount * (rowH + rowGap) - 20;
         this.createPopupButton(
             panel,
-            isLastRound ? '确认' : '继续',
+            isLastRound ? '返回' : '继续',
             0,
             -panelHeight / 2 + 44,
             178,
@@ -1841,11 +1967,18 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             new Color(133, 231, 174, 255),
             () => {
                 this.hideSettlementUI();
-                if (!isLastRound) {
-                    this.onReadyClick();
-                    this.updateReadyButtonState();
-                    this.updateFanSummary('已准备，等待下一局');
+                if (isLastRound) {
+                    this.finalSettlementPendingExit = false;
+                    if (this.finalSettlementServerDisbanded) {
+                        this.exitRoom();
+                    } else {
+                        this.onBackClick();
+                    }
+                    return;
                 }
+                this.onReadyClick();
+                this.updateReadyButtonState();
+                this.updateFanSummary('已准备，等待下一局');
             },
         );
 
@@ -1998,12 +2131,14 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     /** 创建弹窗按钮 */
     private createPopupButton(parent: Node, text: string, x: number, y: number, width: number, color: Color, strokeColor: Color, handler: () => void): void {
         const btnNode = new Node(text);
+        btnNode.layer = 1 << 25; // UI_2D layer
         btnNode.parent = parent;
         btnNode.addComponent(UITransform).setContentSize(width, 52);
         btnNode.setPosition(x, y, 0);
         this.paintRect(btnNode, width, 52, color, strokeColor, 14);
 
         const labelNode = new Node('Label');
+        labelNode.layer = btnNode.layer;
         labelNode.parent = btnNode;
         labelNode.addComponent(UITransform).setContentSize(width - 20, 36);
         const lc = labelNode.addComponent(Label);
@@ -2044,30 +2179,92 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.scheduleOnce(() => labelNode.destroy(), 2.5);
     }
 
+    // ==================== 杠翻展示 ====================
+
+    protected showGangReveal(tiles: MahjongTile[]): void {
+        if (!this.gangRevealNode || !this.gangRevealTilesRoot) return;
+        if (tiles.length === 0) {
+            this.hideGangReveal();
+            return;
+        }
+
+        const tileSpacing = 54;
+        const panelW = Math.max(300, tiles.length * tileSpacing + 126);
+        const panelH = 92;
+        const transform = this.gangRevealNode.getComponent(UITransform);
+        if (transform) transform.setContentSize(panelW, panelH);
+        this.gangRevealNode.setPosition(0, 128, 0);
+        this.gangRevealNode.setSiblingIndex(225);
+        this.paintRect(this.gangRevealNode, panelW, panelH, new Color(20, 30, 35, 225), new Color(255, 206, 112, 255), 16);
+
+        if (this.gangRevealTitleLabel) {
+            this.gangRevealTitleLabel.node.setPosition(-panelW / 2 + 58, 28, 0);
+            this.gangRevealTitleLabel.string = '杠翻';
+        }
+
+        const rootW = Math.max(180, tiles.length * tileSpacing);
+        const rootTransform = this.gangRevealTilesRoot.getComponent(UITransform);
+        if (rootTransform) rootTransform.setContentSize(rootW, 66);
+        this.gangRevealTilesRoot.setPosition(34, -2, 0);
+        this.gangRevealTilesRoot.removeAllChildren();
+
+        const startX = -((tiles.length - 1) * tileSpacing) / 2;
+        for (let i = 0; i < tiles.length; i++) {
+            const tileNode = this.createTileNodeForSeat(tiles[i], 0, false);
+            tileNode.setScale(0.74, 0.74, 1);
+            tileNode.parent = this.gangRevealTilesRoot;
+            tileNode.setPosition(startX + i * tileSpacing, 0, 0);
+        }
+
+        this.gangRevealNode.active = true;
+    }
+
+    protected hideGangReveal(): void {
+        if (this.gangRevealTilesRoot) this.gangRevealTilesRoot.removeAllChildren();
+        if (this.gangRevealNode) this.gangRevealNode.active = false;
+    }
+
     // ==================== 听牌提示 ====================
 
     public showTingHint(tingTiles: MahjongTile[]): void {
         if (tingTiles.length === 0) return;
         if (!this.tingHintNode || !this.tingTilesRoot) return;
         this.tingHintNode.active = true;
+        this.tingHintNode.setSiblingIndex(220);
         this.tingTilesRoot.removeAllChildren();
         if (this.tingTitleLabel) {
             this.tingTitleLabel.string = `可胡 ${tingTiles.length} 张`;
         }
-        // 多行展示：每行最多8张，自动换行
-        const tilesPerRow = 8;
-        const tileSpacing = 38;
+        // 紧凑展示在右下手牌上方，避开手牌、牌章和动作按钮。
+        const tilesPerRow = Math.min(9, Math.max(1, tingTiles.length));
+        const tileSpacing = 42;
         const rowSpacing = 44;
-        const startX = -145;
+
+        const rows = Math.ceil(tingTiles.length / tilesPerRow);
+        const tilesContentH = rows * rowSpacing + 4;
+        const panelH = Math.max(tilesContentH + 38, 82);
+        const panelW = Math.min(470, Math.max(330, tilesPerRow * tileSpacing + 88));
+        const panelX = 520;
+        const panelY = -118;
+        const startX = -((tilesPerRow - 1) * tileSpacing) / 2;
+
+        const hintTransform = this.tingHintNode.getComponent(UITransform);
+        if (hintTransform) hintTransform.setContentSize(panelW, panelH);
+        this.tingHintNode.setPosition(panelX, panelY, 0);
+        this.paintRect(this.tingHintNode, panelW, panelH, new Color(19, 24, 35, 214), new Color(117, 186, 255, 255), 16);
+        if (this.tingTitleLabel) this.tingTitleLabel.node.setPosition(-panelW / 2 + 64, panelH / 2 - 22, 0);
+        const rootTransform = this.tingTilesRoot.getComponent(UITransform);
+        if (rootTransform) rootTransform.setContentSize(panelW - 104, tilesContentH);
+        this.tingTilesRoot.setPosition(30, -(panelH / 2 - tilesContentH / 2 - 5), 0);
 
         for (let idx = 0; idx < tingTiles.length; idx++) {
             const t = tingTiles[idx];
             const row = Math.floor(idx / tilesPerRow);
             const col = idx % tilesPerRow;
-            const tileNode = this.createTileNodeForSeat(t, 3, false);
-            tileNode.setScale(0.7, 0.7, 1);
+            const tileNode = this.createTileNodeForSeat(t, 0, false);
+            tileNode.setScale(0.64, 0.64, 1);
             tileNode.parent = this.tingTilesRoot;
-            tileNode.setPosition(startX + col * tileSpacing, -row * rowSpacing, 0);
+            tileNode.setPosition(startX + col * tileSpacing, -(tilesContentH / 2 - rowSpacing / 2) + row * rowSpacing, 0);
         }
     }
 
@@ -2289,11 +2486,14 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
     protected resetRoundState(): void {
         super.resetRoundState();
+        this.finalSettlementPendingExit = false;
+        this.finalSettlementServerDisbanded = false;
         this.opponentHandCount = 0;
         this.hideSettlementUI();
         this.hideDisbandVoteUI();
         this.totalFans = 0;
         this.hideTingHint();
+        this.hideGangReveal();
         this.hideLaiziReveal();
         this.hideLaiziHint();
         // 清除上一局赖子相关UI状态（不重置 laiziTile 等数据，由 onTJStartRound 重新设置）

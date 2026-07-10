@@ -125,6 +125,12 @@ export enum DistrictId {
     QianfenB2R8 = 34,
     QianfenB5R8 = 35,
     QianfenB10R8 = 36,
+
+    // 斗地主
+    DoudizhuB1R8 = 37,
+    DoudizhuB2R8 = 38,
+    DoudizhuB5R8 = 39,
+    DoudizhuB10R8 = 40,
 };
 
 // 网络连接状态

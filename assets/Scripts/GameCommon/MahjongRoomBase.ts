@@ -1133,6 +1133,7 @@ export class MahjongRoomBase extends RoomBase {
         const tw = seatIndex === 0 && interactive ? 72 : 48;
         const th = seatIndex === 0 && interactive ? 100 : 66;
         const node = new Node(`tile_${tile.id || 0}_${tile.tile?.pattern || 0}_${tile.tile?.number || 0}`);
+        node.layer = 1 << 25; // UI_2D layer
         (node as any)._tileData = tile;
 
         const transform = node.getComponent(UITransform) || node.addComponent(UITransform);
@@ -1163,6 +1164,7 @@ export class MahjongRoomBase extends RoomBase {
             g.stroke();
 
             const labelNode = new Node('TileLabel');
+            labelNode.layer = node.layer;
             labelNode.parent = node;
             (labelNode.getComponent(UITransform) || labelNode.addComponent(UITransform)).setContentSize(tw - 10, th - 10);
             const label = labelNode.addComponent(Label);
@@ -1220,6 +1222,7 @@ export class MahjongRoomBase extends RoomBase {
         }
 
         const node = new Node(`tile_back_${seatIndex}`);
+        node.layer = 1 << 25; // UI_2D layer
         const transform = node.addComponent(UITransform);
         const tw = seatIndex === 3 ? 42 : 36;
         const th = seatIndex === 3 ? 58 : 52;
@@ -1400,6 +1403,7 @@ export class MahjongRoomBase extends RoomBase {
             const meld = meldGroup.tiles;
             const isAnGang = meldGroup.meldType === MeldType.AnGang;
             const group = new Node(`Meld_${groupIndex}`);
+            group.layer = 1 << 25; // UI_2D layer
             group.parent = area;
             (group.getComponent(UITransform) || group.addComponent(UITransform)).setContentSize(180, 72);
             group.setPosition((seatIndex === 0 || seatIndex === 3 ? groupIndex * 160 : 0), (seatIndex === 1 ? -groupIndex * 72 : seatIndex === 2 ? groupIndex * 72 : 0), 0);

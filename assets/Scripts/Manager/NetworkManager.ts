@@ -333,12 +333,13 @@ export class NetworkManager implements NetMsgHandler  {
      * 发送场地内消息
      * @param msgType 消息类型
      */
-    public sendInnerMessage(msgType: string) {
+    public sendInnerMessage(msgType: string, payload?: Record<string, any>) {
         if (!this.isConnected()) return;
         if (!msgType) return;
         if (GameManager.Instance.EnterVenueState !== EnterVenueState.Entered) return;
         let msg = {
-            venueId: GameManager.Instance.VenueId
+            venueId: GameManager.Instance.VenueId,
+            ...(payload || {})
         };
         this.sendMessage(msgType, msg, true);
     }

@@ -47,6 +47,12 @@ export const GAME_SPECIFIC_SETTINGS: Record<string, GameSettingOption[]> = {
         { key: 'showHint', label: '\u51fa\u724c\u63d0\u793a', type: 'toggle', defaultValue: true },
         { key: 'doubleConfirmBomb', label: '\u70b8\u5f39\u4e8c\u6b21\u786e\u8ba4', type: 'toggle', defaultValue: true },
     ],
+    Doudizhu: [
+        { key: 'autoPlay', label: '\u81ea\u52a8\u51fa\u724c', type: 'toggle', defaultValue: false },
+        { key: 'showHint', label: '\u51fa\u724c\u63d0\u793a', type: 'toggle', defaultValue: true },
+        { key: 'doubleConfirmBomb', label: '\u70b8\u5f39\u4e8c\u6b21\u786e\u8ba4', type: 'toggle', defaultValue: true },
+        { key: 'showScoreDetail', label: '\u5206\u6570\u8be6\u60c5', type: 'toggle', defaultValue: true },
+    ],
     Waihuzi: [
         { key: 'autoHu', label: '\u81ea\u52a8\u80e1', type: 'toggle', defaultValue: false },
         { key: 'showHint', label: '\u51fa\u724c\u63d0\u793a', type: 'toggle', defaultValue: true },

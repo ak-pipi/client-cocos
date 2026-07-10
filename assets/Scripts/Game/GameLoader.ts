@@ -27,6 +27,7 @@ const GAME_DISPLAY_NAMES: Record<string, string> = {
     [GameId.TaojiangMahjong]: '桃江麻将',
     [GameId.HongzhongMahjong]: '红中麻将',
     [GameId.ChangshaMahjong]: '长沙麻将',
+    [GameId.Doudizhu]: '斗地主',
     [GameId.Paodekuai]: '跑得快',
     [GameId.Waihuzi]: '益阳歪胡子',
     [GameId.Qianfen]: '沅江千分',

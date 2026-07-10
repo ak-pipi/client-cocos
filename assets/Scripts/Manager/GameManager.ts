@@ -344,6 +344,7 @@ export class GameManager {
             case ServerGameType.TaojiangMahjong: return GameId.TaojiangMahjong;
             case ServerGameType.HongzhongMahjong: return GameId.HongzhongMahjong;
             case ServerGameType.ChangShaMahjong: return GameId.ChangshaMahjong;
+            case ServerGameType.DouDiZhu: return GameId.Doudizhu;
             case ServerGameType.PaoDeKuai: return GameId.Paodekuai;
             case ServerGameType.YiYangWaiHuZi: return GameId.Waihuzi;
             case ServerGameType.YuanJiangQianFen: return GameId.Qianfen;

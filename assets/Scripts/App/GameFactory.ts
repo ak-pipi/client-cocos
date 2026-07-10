@@ -33,6 +33,7 @@ const GAME_CLASS_NAMES: Record<GameId, string> = {
     [GameId.TaojiangMahjong]: 'TaojiangMahjongRoom',
     [GameId.HongzhongMahjong]: 'HongzhongMahjongRoom',
     [GameId.ChangshaMahjong]: 'ChangshaMahjongRoom',
+    [GameId.Doudizhu]: 'DoudizhuRoom',
     [GameId.Paodekuai]: 'PaodekuaiRoom',
     [GameId.Waihuzi]: 'WaihuziRoom',
     [GameId.Qianfen]: 'QianfenRoom',
@@ -62,11 +63,18 @@ const GAME_REGISTRY: Map<GameId, GameMetaInfo> = new Map([
         playerCount: 4,
         priority: 1,
     }],
+    [GameId.Doudizhu, {
+        id: GameId.Doudizhu,
+        name: '斗地主',
+        type: GameType.Poker,
+        playerCount: 2,
+        priority: 1,
+    }],
     [GameId.Paodekuai, {
         id: GameId.Paodekuai,
         name: '跑得快',
         type: GameType.Poker,
-        playerCount: 3,
+        playerCount: 2,
         priority: 1,
     }],
     [GameId.Waihuzi, {

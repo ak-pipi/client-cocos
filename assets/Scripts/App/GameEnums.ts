@@ -14,6 +14,7 @@ export enum GameId {
     TaojiangMahjong = 'taojiang_mahjong',
     HongzhongMahjong = 'hongzhong_mahjong',
     ChangshaMahjong = 'changsha_mahjong',
+    Doudizhu = 'doudizhu_poker',
     Paodekuai = 'paodekuai_poker',
     Waihuzi = 'yiyangwaihuzi_zipai',
     Qianfen = 'yuanjiangqianfen_poker',
@@ -52,14 +53,14 @@ export interface StakeOption {
 /** 每种游戏的倍数选项列表 */
 export const GAME_STAKE_OPTIONS: Record<GameId, StakeOption[]> = {
     [GameId.TaojiangMahjong]: [
-        { baseScore: 1, roundCount: 4, districtId: 9, label: '底注1 · 4局' },
-        { baseScore: 1, roundCount: 8, districtId: 10, label: '底注1 · 8局' },
-        { baseScore: 2, roundCount: 8, districtId: 11, label: '底注2 · 8局' },
-        { baseScore: 2, roundCount: 16, districtId: 12, label: '底注2 · 16局' },
-        { baseScore: 5, roundCount: 8, districtId: 13, label: '底注5 · 8局' },
-        { baseScore: 5, roundCount: 16, districtId: 14, label: '底注5 · 16局' },
-        { baseScore: 10, roundCount: 8, districtId: 15, label: '底注10 · 8局' },
-        { baseScore: 10, roundCount: 16, districtId: 16, label: '底注10 · 16局' },
+        { baseScore: 5, roundCount: 1, districtId: 9, label: '台桌5 · 单局' },
+        { baseScore: 10, roundCount: 1, districtId: 10, label: '台桌10 · 单局' },
+        { baseScore: 25, roundCount: 1, districtId: 11, label: '台桌25 · 单局' },
+        { baseScore: 1, roundCount: 8, districtId: 12, label: '台桌1 · 8局' },
+        { baseScore: 2, roundCount: 8, districtId: 13, label: '台桌2 · 8局' },
+        { baseScore: 5, roundCount: 8, districtId: 14, label: '台桌5 · 8局' },
+        { baseScore: 10, roundCount: 8, districtId: 15, label: '台桌10 · 8局' },
+        { baseScore: 20, roundCount: 8, districtId: 16, label: '台桌20 · 8局' },
     ],
     [GameId.HongzhongMahjong]: [
         { baseScore: 1, roundCount: 8, districtId: 17, label: '底注1 · 8局' },
@@ -72,6 +73,12 @@ export const GAME_STAKE_OPTIONS: Record<GameId, StakeOption[]> = {
         { baseScore: 2, roundCount: 8, districtId: 22, label: '底注2 · 8局' },
         { baseScore: 5, roundCount: 8, districtId: 23, label: '底注5 · 8局' },
         { baseScore: 10, roundCount: 8, districtId: 24, label: '底注10 · 8局' },
+    ],
+    [GameId.Doudizhu]: [
+        { baseScore: 1, roundCount: 8, districtId: 37, label: '底注1 · 8局' },
+        { baseScore: 2, roundCount: 8, districtId: 38, label: '底注2 · 8局' },
+        { baseScore: 5, roundCount: 8, districtId: 39, label: '底注5 · 8局' },
+        { baseScore: 10, roundCount: 8, districtId: 40, label: '底注10 · 8局' },
     ],
     [GameId.Paodekuai]: [
         { baseScore: 1, roundCount: 8, districtId: 25, label: '底注1 · 8局' },

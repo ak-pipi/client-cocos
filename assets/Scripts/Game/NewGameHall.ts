@@ -11,14 +11,38 @@ const { ccclass } = _decorator;
 // 桃江麻将默认规则配置
 const TAOJIANG_DEFAULT_RULES = {
     base_score: 1,
-    max_score: 0,
+    max_score: 18,
     round_count: 8,
     allow_chi: true,
     allow_peng: true,
     allow_gang: true,
     allow_zimo: true,
     allow_dianpao: true,
+    laizi_enabled: true,
+    hongzhong_enabled: false,
+    bao_ting_enabled: true,
+    dissolve_vote: true,
 };
+
+const TAOJIANG_BASE_OPTIONS = [
+    { text: '1', value: 1 },
+    { text: '2', value: 2 },
+    { text: '5', value: 5 },
+    { text: '10', value: 10 },
+    { text: '20', value: 20 },
+    { text: '25', value: 25 },
+];
+
+const TAOJIANG_ROUND_OPTIONS = [
+    { text: '单局', value: 1 },
+    { text: '8局', value: 8 },
+];
+
+const TAOJIANG_MAX_SCORE_OPTIONS = [
+    { text: '18倍', value: 18 },
+    { text: '24倍', value: 24 },
+    { text: '36倍', value: 36 },
+];
 
 @ccclass('NewGameHall')
 export class NewGameHall extends Component {
@@ -726,7 +750,7 @@ export class NewGameHall extends Component {
         // 面板
         const panel = new Node('Panel');
         panel.parent = popup;
-        const pw = 550, ph = 520;
+        const pw = 550, ph = 450;
         panel.addComponent(UITransform).setContentSize(pw, ph);
         const pg = panel.addComponent(Graphics);
         pg.fillColor = new Color(30, 55, 85, 255);
@@ -737,28 +761,14 @@ export class NewGameHall extends Component {
         this.addLabel(panel, '创建房间 - 规则设置', 24, new Color(255, 220, 100, 255), 0, ph / 2 - 35);
 
         let y = ph / 2 - 80;
-        // 底注选项
-        y = this.addOptionRow(panel, '底注', y, [
-            { text: '1', value: 1 },
-            { text: '2', value: 2 },
-            { text: '5', value: 5 },
-            { text: '10', value: 10 },
-        ], 'base_score');
+        // 台桌分选项
+        y = this.addOptionRow(panel, '台桌分', y, TAOJIANG_BASE_OPTIONS, 'base_score');
 
-        // 封顶分选项
-        y = this.addOptionRow(panel, '封顶', y, [
-            { text: '不限', value: 0 },
-            { text: '100', value: 100 },
-            { text: '200', value: 200 },
-            { text: '500', value: 500 },
-        ], 'max_score');
+        // 封顶倍率选项
+        y = this.addOptionRow(panel, '封顶', y, TAOJIANG_MAX_SCORE_OPTIONS, 'max_score');
 
         // 局数选项
-        y = this.addOptionRow(panel, '局数', y, [
-            { text: '4局', value: 4 },
-            { text: '8局', value: 8 },
-            { text: '16局', value: 16 },
-        ], 'round_count');
+        y = this.addOptionRow(panel, '局数', y, TAOJIANG_ROUND_OPTIONS, 'round_count');
 
         y -= 15;
         // 分割线
@@ -771,17 +781,6 @@ export class NewGameHall extends Component {
         sg.rect(-(pw - 40) / 2, -1, pw - 40, 2);
         sg.fill();
         y -= 25;
-
-        // 开关选项标签
-        this.addLabel(panel, '玩法选项', 20, new Color(200, 200, 200, 255), -pw / 2 + 50, y);
-        y -= 30;
-
-        // 开关选项
-        y = this.addToggleRow(panel, '允许吃牌', y, 'allow_chi');
-        y = this.addToggleRow(panel, '允许碰牌', y, 'allow_peng');
-        y = this.addToggleRow(panel, '允许杠牌', y, 'allow_gang');
-        y = this.addToggleRow(panel, '允许自摸', y, 'allow_zimo');
-        y = this.addToggleRow(panel, '允许点炮', y, 'allow_dianpao');
 
         // 按钮
         y = -ph / 2 + 40;
@@ -802,35 +801,43 @@ export class NewGameHall extends Component {
         label.color = new Color(200, 200, 200, 255);
         label.horizontalAlign = 0;
 
-        const startX = -80;
-        const gap = 110;
+        const compact = options.length > 4;
+        const buttonWidth = compact ? 68 : 100;
+        const buttonGap = compact ? 72 : 110;
+        const startX = compact ? -120 : -80;
         const defaultVal = this.createRules[ruleKey] ?? options[0].value;
 
         options.forEach((opt, idx) => {
             const isSelected = (opt.value === defaultVal);
             const btnNode = new Node(`Opt_${ruleKey}_${idx}`);
             btnNode.parent = parent;
-            btnNode.addComponent(UITransform).setContentSize(100, 32);
-            btnNode.setPosition(startX + idx * gap, y, 0);
+            btnNode.addComponent(UITransform).setContentSize(buttonWidth, 32);
+            btnNode.setPosition(startX + idx * buttonGap, y, 0);
 
             const g = btnNode.addComponent(Graphics);
             g.fillColor = isSelected ? new Color(70, 150, 220, 255) : new Color(60, 80, 100, 255);
-            g.roundRect(-50, -16, 100, 32, 6);
+            g.roundRect(-buttonWidth / 2, -16, buttonWidth, 32, 6);
             g.fill();
 
             const l = new Node('L');
             l.parent = btnNode;
-            l.addComponent(UITransform).setContentSize(90, 28);
+            l.addComponent(UITransform).setContentSize(buttonWidth - 8, 28);
             const lc = l.addComponent(Label);
             lc.string = opt.text;
-            lc.fontSize = 18;
+            lc.fontSize = compact ? 16 : 18;
             lc.color = isSelected ? new Color(255, 255, 255, 255) : new Color(160, 160, 160, 255);
             lc.horizontalAlign = 1;
             lc.verticalAlign = 1;
 
             btnNode.on(Node.EventType.TOUCH_END, () => {
                 this.createRules[ruleKey] = opt.value;
-                this.refreshOptionRow(parent, ruleKey, options);
+                if (ruleKey === 'base_score' || ruleKey === 'round_count') {
+                    this.normalizeTaojiangCreateRules(ruleKey);
+                    this.refreshOptionRow(parent, 'base_score', TAOJIANG_BASE_OPTIONS);
+                    this.refreshOptionRow(parent, 'round_count', TAOJIANG_ROUND_OPTIONS);
+                } else {
+                    this.refreshOptionRow(parent, ruleKey, options);
+                }
             });
         });
 
@@ -851,6 +858,32 @@ export class NewGameHall extends Component {
                 if (lc) lc.color = isSelected ? new Color(255, 255, 255, 255) : new Color(160, 160, 160, 255);
             }
         });
+    }
+
+    private normalizeTaojiangCreateRules(changedKey: string): void {
+        const baseScore = Number(this.createRules.base_score) || 1;
+        const roundCount = Number(this.createRules.round_count) || 8;
+        const singleScores = [5, 10, 25];
+        const eightRoundScores = [1, 2, 5, 10, 20];
+
+        if (changedKey === 'base_score') {
+            if (baseScore === 25) {
+                this.createRules.round_count = 1;
+            } else if (baseScore === 1 || baseScore === 2 || baseScore === 20) {
+                this.createRules.round_count = 8;
+            } else if (roundCount !== 1 && roundCount !== 8) {
+                this.createRules.round_count = 8;
+            }
+            return;
+        }
+
+        if (changedKey === 'round_count') {
+            if (roundCount === 1 && singleScores.indexOf(baseScore) < 0) {
+                this.createRules.base_score = 5;
+            } else if (roundCount === 8 && eightRoundScores.indexOf(baseScore) < 0) {
+                this.createRules.base_score = 1;
+            }
+        }
     }
 
     /** 添加开关行 */

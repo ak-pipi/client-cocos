@@ -22,6 +22,7 @@ export const GAME_ID_TO_SERVER_TYPE: Record<string, number> = {
     [GameId.TaojiangMahjong]: ServerGameType.TaojiangMahjong,
     [GameId.HongzhongMahjong]: ServerGameType.HongzhongMahjong,
     [GameId.ChangshaMahjong]: ServerGameType.ChangShaMahjong,
+    [GameId.Doudizhu]: ServerGameType.DouDiZhu,
     [GameId.Paodekuai]: ServerGameType.PaoDeKuai,
     [GameId.Waihuzi]: ServerGameType.YiYangWaiHuZi,
     [GameId.Qianfen]: ServerGameType.YuanJiangQianFen,
@@ -101,6 +102,7 @@ export interface PageResult<T> {
 
 export class GameRoomApi {
     private static _instance: GameRoomApi | null = null;
+    private districtPlayerCountUnavailable = false;
 
     public static get Instance(): GameRoomApi {
         if (!GameRoomApi._instance) {
@@ -162,8 +164,13 @@ export class GameRoomApi {
      * GET /player/game/district/player/count?districtId={id}
      */
     async getDistrictPlayerCount(districtId: number): Promise<number | null> {
+        if (this.districtPlayerCountUnavailable) return null;
         const url = `/player/game/district/player/count?districtId=${districtId}`;
         const dto = await GameManager.Instance.authGet(url);
+        if (dto?.status === 404 || dto?.code === 404 || dto?.error === 'Not Found') {
+            this.districtPlayerCountUnavailable = true;
+            return null;
+        }
         if (!dto || !isGameApiSuccess(dto.code)) {
             return null;
         }
@@ -177,15 +184,19 @@ export class GameRoomApi {
      */
     async getDistrictPlayerCounts(districtIds: number[]): Promise<Map<number, number>> {
         const results = new Map<number, number>();
-        const promises = districtIds.map(async (id) => {
+        for (const id of districtIds) {
+            if (this.districtPlayerCountUnavailable) break;
             try {
                 const count = await this.getDistrictPlayerCount(id);
                 if (count !== null) results.set(id, count);
             } catch (e) {
+                if (String(e).includes('404')) {
+                    this.districtPlayerCountUnavailable = true;
+                    break;
+                }
                 console.warn(`[GameRoomApi] Failed to get district ${id} player count`, e);
             }
-        });
-        await Promise.all(promises);
+        }
         return results;
     }
 
