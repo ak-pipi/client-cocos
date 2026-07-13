@@ -33,6 +33,7 @@ const { ccclass, property } = _decorator;
 export interface MahjongTile {
     id: number;
     tile: { pattern: number; number: number };
+    style?: number;
 }
 
 // ==================== 麻将牌辅助函数 ====================
@@ -248,6 +249,9 @@ export class MahjongRoomBase extends RoomBase {
 
     /** 服务端发来的当前操作选项列表（含 actionId） */
     protected currentActionOptions: MahjongActionOption[] = [];
+
+    /** 操作面板显示/隐藏版本，防止旧的延迟隐藏回调关掉新的按钮 */
+    protected actionPanelVisibilityToken: number = 0;
 
     /** 是否正在出牌阶段 */
     protected isMyTurn: boolean = false;
@@ -693,26 +697,27 @@ export class MahjongRoomBase extends RoomBase {
 
     public showActionPanel(actions: AvailableActions): void {
         this.availableActions = actions;
+        this.actionPanelVisibilityToken++;
         if (this.actionPanel) {
             this.actionPanel.active = true;
+            if (this.actionPanel.parent) {
+                this.actionPanel.setSiblingIndex(this.actionPanel.parent.children.length - 1);
+            }
             const uiOpacity = this.actionPanel.getComponent(UIOpacity) || this.actionPanel.addComponent(UIOpacity);
-            uiOpacity.opacity = 0;
-            const panel = this.actionPanel;
-            this.scheduleOnce(() => {
-                if (!panel.isValid) return;
-                const uiOpacityInner = panel.getComponent(UIOpacity) || panel.addComponent(UIOpacity);
-                uiOpacityInner.opacity = 255;
-            }, 0.15);
+            uiOpacity.opacity = 255;
         }
         this.renderActionButtons(actions);
     }
 
     public hideActionPanel(): void {
+        this.actionPanelVisibilityToken++;
+        const token = this.actionPanelVisibilityToken;
         if (this.actionPanel && this.actionPanel.active) {
             const panel = this.actionPanel;
             const uiOpacity = panel.getComponent(UIOpacity) || panel.addComponent(UIOpacity);
             uiOpacity.opacity = 255;
             this.scheduleOnce(() => {
+                if (token !== this.actionPanelVisibilityToken) return;
                 if (!panel.isValid) return;
                 panel.active = false;
                 const uiOpacityInner = panel.getComponent(UIOpacity) || panel.addComponent(UIOpacity);
@@ -1897,6 +1902,15 @@ export class MahjongRoomBase extends RoomBase {
     }
 
     /**
+     * 根据胡牌选项的目标 tileId 生成按钮文字。
+     * 子类可扩展 findTileById 来支持杠翻牌、弃牌等非手牌区域。
+     */
+    protected buildHuButtonText(tileId: number): string {
+        const tile = this.findTileById(tileId);
+        return tile ? `胡${tileDisplayText(tile)}` : '胡牌';
+    }
+
+    /**
      * 根据 currentActionOptions 渲染操作按钮（增强版）
      * 参考 babykylin MJGame.js showAction/addOption 的设计：
      * - 碰/杠/胡按钮旁显示目标牌的缩略牌面预览
@@ -1920,8 +1934,8 @@ export class MahjongRoomBase extends RoomBase {
 
         for (const opt of options) {
             const t = opt.type;
-            if (t === MahjongActionType.ZiMo) buttons.push({text: '自摸', actionId: opt.id, tileId: opt.tile1, color: new Color(220, 50, 50, 255), showPreview: true, previewTileId: opt.tile1});
-            else if (t === MahjongActionType.DianPao) buttons.push({text: '胡', actionId: opt.id, tileId: opt.tile1, color: new Color(220, 50, 50, 255), showPreview: true, previewTileId: opt.tile1});
+            if (t === MahjongActionType.ZiMo) buttons.push({text: this.buildHuButtonText(opt.tile1), actionId: opt.id, tileId: opt.tile1, color: new Color(220, 50, 50, 255), showPreview: true, previewTileId: opt.tile1});
+            else if (t === MahjongActionType.DianPao) buttons.push({text: this.buildHuButtonText(opt.tile1), actionId: opt.id, tileId: opt.tile1, color: new Color(220, 50, 50, 255), showPreview: true, previewTileId: opt.tile1});
             else if (t === MahjongActionType.ZhiGang) buttons.push({text: '直杠', actionId: opt.id, tileId: opt.tile1, color: new Color(200, 150, 50, 255), showPreview: true, previewTileId: opt.tile1});
             else if (t === MahjongActionType.JiaGang) buttons.push({text: '加杠', actionId: opt.id, tileId: opt.tile1, color: new Color(200, 150, 50, 255), showPreview: true, previewTileId: opt.tile1});
             else if (t === MahjongActionType.AnGang) buttons.push({text: '暗杠', actionId: opt.id, color: new Color(200, 150, 50, 255)});

@@ -27,6 +27,11 @@ export class DoudizhuRoom extends PokerRoomBase {
     private bottomCardsArea: Node | null = null;
     private callPanel: Node | null = null;
     private overlayRoot: Node | null = null;
+    private settlementPanel: Node | null = null;
+    private settlementTitleLabel: Label | null = null;
+    private settlementScoreLabel: Label | null = null;
+    private settlementDetailLabel: Label | null = null;
+    private settlementRemainLabel: Label | null = null;
 
     private landlordSeat: number = -1;
     private highestBid: number = 0;
@@ -37,6 +42,7 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     start(): void {
         this.gameId = 'doudizhu_poker';
+        this.syncMsgPrefix = this.pokerMsgPrefix;
         super.start();
         this.ensureDoudizhuUI();
         this.updateStatus('等待准备');
@@ -51,10 +57,13 @@ export class DoudizhuRoom extends PokerRoomBase {
     }
 
     public onMessage(msgType: string, msg: any): boolean {
+        if (msgType === 'DouDiZhu.SyncResp') {
+            this.onDoudizhuSyncResp(msg);
+            return true;
+        }
         if (super.onMessage(msgType, msg)) return true;
 
-        if (msgType === 'DouDiZhu.SyncResp') this.onDoudizhuSyncResp(msg);
-        else if (msgType === 'DouDiZhu.Deal') this.onDoudizhuDeal(msg);
+        if (msgType === 'DouDiZhu.Deal') this.onDoudizhuDeal(msg);
         else if (msgType === 'DouDiZhu.CallNotify') this.onDoudizhuCallNotify(msg);
         else if (msgType === 'DouDiZhu.Landlord') this.onDoudizhuLandlord(msg);
         else if (msgType === 'DouDiZhu.PlayNotify') this.onDoudizhuPlayNotify(msg);
@@ -77,6 +86,10 @@ export class DoudizhuRoom extends PokerRoomBase {
     public call1(): void { this.callScore(1); }
     public call2(): void { this.callScore(2); }
     public call3(): void { this.callScore(3); }
+
+    public closeSettlementPanel(): void {
+        this.hideSettlementPanel();
+    }
 
     public pass(): void {
         if (!this.isMyTurn || !this.pokerActions?.canPass) return;
@@ -145,6 +158,9 @@ export class DoudizhuRoom extends PokerRoomBase {
         if (n === 2 && this.isRocket(values)) {
             return { pattern: PokerPattern.Rocket, cards, weight: 1000 };
         }
+        if (n === 2 && values[0] === values[1]) {
+            return { pattern: PokerPattern.Pair, cards, weight: values[0] };
+        }
 
         const base = super.recognizePattern(cards);
         if (base) return base;
@@ -195,6 +211,21 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.updateCardCountDisplay();
     }
 
+    protected updateReadyButtonState(): void {
+        super.updateReadyButtonState();
+        this.updateDoudizhuReadyButtonLabel();
+        if (!this.isAllRoundsFinished()) return;
+        if (this.btnReady) this.btnReady.active = false;
+        if (this.readyGroup) this.readyGroup.active = false;
+        if (this.btnStartGame) this.btnStartGame.active = false;
+        this.updateStatus('全部对局结束');
+    }
+
+    protected onPlayerReadyUIUpdate(seatIndex: number): void {
+        super.onPlayerReadyUIUpdate(seatIndex);
+        this.updateDoudizhuReadyButtonLabel();
+    }
+
     protected applySelectedStyle(node: Node): void {
         const idx = (node as any)._cardIndex || 0;
         const gap = this.myCards.length > 16 ? 52 : 62;
@@ -243,25 +274,37 @@ export class DoudizhuRoom extends PokerRoomBase {
     }
 
     private onDoudizhuSyncResp(msg: any): void {
+        const state = Number(msg.gameState ?? DoudizhuState.None);
+        this.hideSettlementPanel();
+        const waitingState = state === DoudizhuState.None || state === DoudizhuState.Ready;
         this.seat = Number(msg.mySeat ?? this.seat);
         this.landlordSeat = Number(msg.landlordSeat ?? -1);
         this.highestBid = Number(msg.highestBid ?? 0);
         this.highestBidSeat = Number(msg.highestBidSeat ?? -1);
         this.currentMultiplier = Number(msg.multiplier ?? 1) || 1;
         this.currentRound = Number(msg.roundNo ?? this.currentRound) || 0;
-        this.gameState = msg.gameState === DoudizhuState.Ready ? GameState.Waiting : GameState.Playing;
-        this.currentState = msg.gameState === DoudizhuState.Ready ? RoomState.Waiting : RoomState.Playing;
+        if (msg.number !== undefined) this.roomNumber = String(msg.number);
+        if (msg.level !== undefined) this.level = Number(msg.level) || this.level;
+        if (msg.roundCount !== undefined) {
+            const roundCount = Number(msg.roundCount);
+            this.totalRounds = isNaN(roundCount) ? 0 : roundCount;
+        }
+        this.gameState = waitingState ? GameState.Waiting : GameState.Playing;
+        this.currentState = waitingState ? RoomState.Waiting :
+            (state === DoudizhuState.Settling ? RoomState.RoundSettlement : RoomState.Playing);
 
         if (Array.isArray(msg.myCards)) this.dealCards(this.toPokerCards(msg.myCards));
         this.renderBottomCards(msg.bottomCards || []);
         this.updateHandCounts(msg.handCounts);
         this.updateMultiplierLabel();
+        this.onSyncGameUIUpdate(this.seat === -1);
         this.updateRoomDisplay();
+        this.updateReadyButtonState();
 
-        if (msg.gameState === DoudizhuState.Bidding) {
+        if (state === DoudizhuState.Bidding) {
             this.showCallPanel(Number(msg.callTurn) === this.seat);
             this.updateStatus(Number(msg.callTurn) === this.seat ? '轮到你叫地主' : '等待对手叫地主');
-        } else if (msg.gameState === DoudizhuState.Playing) {
+        } else if (state === DoudizhuState.Playing) {
             this.showCallPanel(false);
             const lastCards = Array.isArray(msg.lastPlayCards) ? msg.lastPlayCards : [];
             if (lastCards.length > 0) {
@@ -274,15 +317,25 @@ export class DoudizhuRoom extends PokerRoomBase {
         } else {
             this.showCallPanel(false);
             this.showPassAndPlayButtons(false);
-            this.updateStatus('等待准备');
+            this.updateStatus(this.isAllRoundsFinished() ? '全部对局结束' : '等待准备');
         }
     }
 
     private onDoudizhuDeal(msg: any): void {
         this.resetRoundState();
+        this.hideSettlementPanel();
         this.gameState = GameState.Playing;
         this.currentState = RoomState.Playing;
+        this.setLocalReadyFlags(false);
+        if (this.readyGroup) this.readyGroup.active = false;
+        if (this.btnReady) this.btnReady.active = false;
+        if (this.btnStartGame) this.btnStartGame.active = false;
+        this.updateReadyButtonState();
         this.currentRound = Number(msg.roundNo ?? this.currentRound) || 0;
+        if (msg.roundCount !== undefined) {
+            const roundCount = Number(msg.roundCount);
+            this.totalRounds = isNaN(roundCount) ? 0 : roundCount;
+        }
         this.dealCards(this.toPokerCards(msg.cards || []));
         this.updateHandCounts(msg.handCounts);
         this.renderBottomCards([]);
@@ -383,7 +436,12 @@ export class DoudizhuRoom extends PokerRoomBase {
         const winnerSeat = Number(msg.winnerSeat ?? -1);
         const springText = msg.spring ? ' 春天' : '';
         this.updateStatus(`${winnerSeat === this.seat ? '胜利' : '失败'} ${myScore >= 0 ? '+' : ''}${myScore}${springText}`);
+        this.showSettlementPanel(msg, scores, myScore, winnerSeat);
         Client.Instance.showPromptTip(`本局${winnerSeat === this.seat ? '胜利' : '失败'}：${myScore >= 0 ? '+' : ''}${myScore}`, 2.5);
+        this.gameState = GameState.Waiting;
+        this.setLocalReadyFlags(false);
+        if (this.readyGroup) this.readyGroup.active = true;
+        this.updateReadyButtonState();
     }
 
     private callScore(score: number): void {
@@ -454,6 +512,31 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.createTextButton(this.playGroup, '提示', -68, 0, 'hint', new Color(60, 128, 170, 235));
         this.createTextButton(this.playGroup, '出牌', 68, 0, 'playSelectedCards', new Color(46, 139, 87, 235));
         this.showPassAndPlayButtons(false);
+
+        this.ensureSettlementPanel(overlay);
+    }
+
+    private ensureSettlementPanel(parent: Node): void {
+        if (this.settlementPanel) return;
+
+        const panel = this.createArea(parent, 'SettlementPanel', 0, 34, 640, 360);
+        const bg = panel.addComponent(Graphics);
+        bg.fillColor = new Color(18, 29, 42, 244);
+        bg.roundRect(-320, -180, 640, 360, 8);
+        bg.fill();
+        bg.strokeColor = new Color(236, 190, 96, 255);
+        bg.lineWidth = 2;
+        bg.roundRect(-320, -180, 640, 360, 8);
+        bg.stroke();
+
+        this.settlementTitleLabel = this.createLabel(panel, 'Title', '', 32, 0, 128, 360, 48, new Color(255, 225, 120, 255));
+        this.settlementScoreLabel = this.createLabel(panel, 'Score', '', 38, 0, 74, 360, 54, new Color(255, 255, 255, 255));
+        this.settlementDetailLabel = this.createLabel(panel, 'Detail', '', 22, 0, 6, 560, 70, new Color(218, 226, 234, 255));
+        this.settlementRemainLabel = this.createLabel(panel, 'RemainCards', '', 20, 0, -72, 580, 92, new Color(230, 235, 238, 255));
+        this.createTextButton(panel, '继续', 0, -142, 'closeSettlementPanel', new Color(46, 139, 87, 235));
+
+        panel.active = false;
+        this.settlementPanel = panel;
     }
 
     private createArea(parent: Node, name: string, x: number, y: number, w: number, h: number): Node {
@@ -571,15 +654,79 @@ export class DoudizhuRoom extends PokerRoomBase {
         if (this.statusLabel) this.statusLabel.string = text;
     }
 
-    private toPokerCards(ids: number[]): PokerCard[] {
-        return (ids || []).map(id => this.cardIdToPokerCard(Number(id))).filter(Boolean);
+    private showSettlementPanel(msg: any, scores: number[], myScore: number, winnerSeat: number): void {
+        if (!this.settlementPanel) return;
+
+        const multiplier = Number(msg.multiplier ?? this.currentMultiplier ?? 1) || 1;
+        const landlordSeat = Number(msg.landlordSeat ?? this.landlordSeat);
+        const isWin = winnerSeat === this.seat;
+        const roleText = landlordSeat === this.seat ? '地主' : '农民';
+        const winnerText = winnerSeat === this.seat ? '你' : '对手';
+        const winnerRole = winnerSeat === landlordSeat ? '地主' : '农民';
+        const opponentSeat = this.seat === 0 ? 1 : 0;
+        const opponentScore = scores[opponentSeat] ?? 0;
+        const springText = msg.spring ? ' | 春天' : '';
+
+        if (this.settlementTitleLabel) this.settlementTitleLabel.string = isWin ? '本局胜利' : '本局失败';
+        if (this.settlementScoreLabel) this.settlementScoreLabel.string = `${myScore >= 0 ? '+' : ''}${myScore}`;
+        if (this.settlementDetailLabel) {
+            this.settlementDetailLabel.string =
+                `${roleText} | ${multiplier}倍${springText}\n胜方：${winnerText}（${winnerRole}）  对手：${opponentScore >= 0 ? '+' : ''}${opponentScore}`;
+        }
+
+        const remainCards = this.arrayLikeToNestedArray(msg.remainCards);
+        const myRemain = this.seat >= 0 ? (remainCards[this.seat] || []) : [];
+        const opponentRemain = this.seat >= 0 ? (remainCards[opponentSeat] || []) : [];
+        if (this.settlementRemainLabel) {
+            this.settlementRemainLabel.string =
+                `你剩余：${this.formatCardIds(myRemain)}\n对手剩余：${this.formatCardIds(opponentRemain)}`;
+        }
+
+        this.settlementPanel.active = true;
     }
 
-    private cardIdToPokerCard(id: number): PokerCard {
-        if (id >= 44) {
-            return { value: id === 44 ? 16 : 17, suit: -1, cardId: String(id) };
+    private hideSettlementPanel(): void {
+        if (this.settlementPanel) this.settlementPanel.active = false;
+    }
+
+    private isAllRoundsFinished(): boolean {
+        return this.gameState === GameState.Waiting &&
+            this.totalRounds > 0 && this.currentRound >= this.totalRounds;
+    }
+
+    private setLocalReadyFlags(ready: boolean): void {
+        for (let s = 0; s < 2; s++) {
+            if (this.playerInfos[s]) this.playerInfos[s].ready = ready;
+            const clientSeat = this.server2ClientSeat(s);
+            if (this.readyFlags[clientSeat]) this.readyFlags[clientSeat].active = ready;
+            const playerView = this.guanDanPlayers[clientSeat] as any;
+            if (playerView && typeof playerView.setReady === 'function') {
+                playerView.setReady(ready);
+            }
         }
-        const pointOrder = [1, 2, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+    }
+
+    private updateDoudizhuReadyButtonLabel(): void {
+        if (!this.btnReadyLabel || this.seat < 0) return;
+        const ready = !!this.playerInfos[this.seat]?.ready;
+        this.btnReadyLabel.string = ready ? '已准备' : '准备';
+    }
+
+    private toPokerCards(ids: number[]): PokerCard[] {
+        const cards: PokerCard[] = [];
+        for (const id of ids || []) {
+            const card = this.cardIdToPokerCard(Number(id));
+            if (card) cards.push(card);
+        }
+        return cards;
+    }
+
+    private cardIdToPokerCard(id: number): PokerCard | null {
+        if (!isFinite(id) || id < 0 || id > 53) return null;
+        if (id >= 52) {
+            return { value: id === 52 ? 16 : 17, suit: -1, cardId: String(id) };
+        }
+        const pointOrder = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
         const point = pointOrder[Math.floor(id / 4)] || 0;
         const value = point === 1 ? 14 : point === 2 ? 15 : point;
         return { value, suit: id % 4, cardId: String(id) };
@@ -648,5 +795,22 @@ export class DoudizhuRoom extends PokerRoomBase {
             return Object.keys(value).sort().map(k => Number(value[k]) || 0);
         }
         return [];
+    }
+
+    private arrayLikeToNestedArray(value: any): number[][] {
+        if (Array.isArray(value)) return value.map(v => this.arrayLikeToArray(v));
+        if (value && typeof value === 'object') {
+            return Object.keys(value)
+                .sort((a, b) => Number(a) - Number(b))
+                .map(k => this.arrayLikeToArray(value[k]));
+        }
+        return [];
+    }
+
+    private formatCardIds(ids: number[]): string {
+        const cards = this.toPokerCards(ids);
+        if (cards.length === 0) return '无';
+        cards.sort((a, b) => b.value - a.value || b.suit - a.suit);
+        return cards.map(card => this.cardText(card).replace('\n', '')).join(' ');
     }
 }

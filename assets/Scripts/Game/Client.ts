@@ -239,7 +239,7 @@ export class Client extends Component {
         this.gameHallNode = hallNode;
     }
 
-    public initGameRoom(prefab?: Prefab | null) {
+    public initGameRoom(prefab?: Prefab | null, beforeAttach?: (node: Node) => void) {
         if (this.gameRoomNode) {
             this.gameRoomNode.destroy();
             this.gameRoomNode = null;
@@ -249,6 +249,7 @@ export class Client extends Component {
         } else {
             this.gameRoomNode = new Node('GameRoomRoot');
         }
+        beforeAttach?.(this.gameRoomNode);
         this.gameRoomNode.parent = this.gameRoom;
     }
 

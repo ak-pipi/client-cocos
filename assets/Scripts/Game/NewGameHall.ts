@@ -44,6 +44,34 @@ const TAOJIANG_MAX_SCORE_OPTIONS = [
     { text: '36倍', value: 36 },
 ];
 
+const DOUDIZHU_DEFAULT_RULES = {
+    base_score: 1,
+    max_score: 0,
+    round_count: 8,
+    player_count: 2,
+    hand_card_count: 20,
+    bottom_card_count: 3,
+    remove_three_and_four: false,
+};
+
+const DOUDIZHU_BASE_OPTIONS = [
+    { text: '1', value: 1 },
+    { text: '2', value: 2 },
+    { text: '5', value: 5 },
+    { text: '10', value: 10 },
+];
+
+const DOUDIZHU_ROUND_OPTIONS = [
+    { text: '单局', value: 1 },
+    { text: '8局', value: 8 },
+];
+
+const DOUDIZHU_MAX_SCORE_OPTIONS = [
+    { text: '不封顶', value: 0 },
+    { text: '50', value: 50 },
+    { text: '100', value: 100 },
+];
+
 @ccclass('NewGameHall')
 export class NewGameHall extends Component {
     private gameId: GameId = '' as GameId;
@@ -105,7 +133,7 @@ export class NewGameHall extends Component {
         this.createTableGrid();
         this.createBottomButtons();
         this.createJoinPopup();
-        this.createMahjongConfigPopup();
+        this.createCreateConfigPopup();
     }
 
     private createBackground(): void {
@@ -714,20 +742,27 @@ export class NewGameHall extends Component {
 
     public onCreateRoom(_event: Event, _customEventData: any | null) {
         const meta = GameFactory.getGameMeta(this.gameId);
-        if (meta?.type === GameType.Mahjong) {
-            // 麻将游戏显示规则配置弹窗
+        if (meta?.type === GameType.Mahjong || this.gameId === GameId.Doudizhu) {
             if (this.createConfigPopup) {
                 this.resetCreateRules();
                 this.createConfigPopup.active = true;
             }
         } else {
-            // 非麻将游戏直接创建
             this.doCreateRoom({});
         }
     }
 
     private resetCreateRules(): void {
-        this.createRules = { ...TAOJIANG_DEFAULT_RULES };
+        this.createRules = this.gameId === GameId.Doudizhu ?
+            { ...DOUDIZHU_DEFAULT_RULES } :
+            { ...TAOJIANG_DEFAULT_RULES };
+    }
+
+    private createCreateConfigPopup(): void {
+        if (this.gameId === GameId.Doudizhu)
+            this.createDoudizhuConfigPopup();
+        else
+            this.createMahjongConfigPopup();
     }
 
     /** 创建麻将规则配置弹窗 */
@@ -788,6 +823,52 @@ export class NewGameHall extends Component {
         this.createPopupButton(panel, '取消', y, new Color(160, 82, 45, 255), 'onCreateCancel', 100);
     }
 
+    /** 创建斗地主规则配置弹窗 */
+    private createDoudizhuConfigPopup(): void {
+        const popup = new Node('CreateDoudizhuConfigPopup');
+        popup.parent = this.node;
+        popup.active = false;
+        this.createConfigPopup = popup;
+
+        const mask = new Node('Mask');
+        mask.parent = popup;
+        mask.addComponent(UITransform).setContentSize(1920, 1080);
+        const mg = mask.addComponent(Graphics);
+        mg.fillColor = new Color(0, 0, 0, 160);
+        mg.roundRect(-960, -540, 1920, 1080, 0);
+        mg.fill();
+        mask.on(Node.EventType.TOUCH_END, () => { });
+
+        const panel = new Node('Panel');
+        panel.parent = popup;
+        const pw = 550, ph = 390;
+        panel.addComponent(UITransform).setContentSize(pw, ph);
+        const pg = panel.addComponent(Graphics);
+        pg.fillColor = new Color(30, 55, 85, 255);
+        pg.roundRect(-pw / 2, -ph / 2, pw, ph, 12);
+        pg.fill();
+
+        this.addLabel(panel, '创建房间 - 斗地主规则', 24, new Color(255, 220, 100, 255), 0, ph / 2 - 35);
+
+        let y = ph / 2 - 85;
+        y = this.addOptionRow(panel, '底分', y, DOUDIZHU_BASE_OPTIONS, 'base_score');
+        y = this.addOptionRow(panel, '封顶', y, DOUDIZHU_MAX_SCORE_OPTIONS, 'max_score');
+        y = this.addOptionRow(panel, '局数', y, DOUDIZHU_ROUND_OPTIONS, 'round_count');
+
+        const sep = new Node('Sep');
+        sep.parent = panel;
+        sep.addComponent(UITransform).setContentSize(pw - 40, 2);
+        sep.setPosition(0, y - 10, 0);
+        const sg = sep.addComponent(Graphics);
+        sg.fillColor = new Color(80, 110, 140, 200);
+        sg.rect(-(pw - 40) / 2, -1, pw - 40, 2);
+        sg.fill();
+
+        y = -ph / 2 + 40;
+        this.createPopupButton(panel, '创建', y, new Color(46, 139, 87, 255), 'onCreateConfirm', -100);
+        this.createPopupButton(panel, '取消', y, new Color(160, 82, 45, 255), 'onCreateCancel', 100);
+    }
+
     /** 添加选项行（单选按钮组） */
     private addOptionRow(parent: Node, labelText: string, y: number, options: Array<{text: string, value: number}>, ruleKey: string): number {
         // 标签
@@ -831,7 +912,7 @@ export class NewGameHall extends Component {
 
             btnNode.on(Node.EventType.TOUCH_END, () => {
                 this.createRules[ruleKey] = opt.value;
-                if (ruleKey === 'base_score' || ruleKey === 'round_count') {
+                if (this.gameId !== GameId.Doudizhu && (ruleKey === 'base_score' || ruleKey === 'round_count')) {
                     this.normalizeTaojiangCreateRules(ruleKey);
                     this.refreshOptionRow(parent, 'base_score', TAOJIANG_BASE_OPTIONS);
                     this.refreshOptionRow(parent, 'round_count', TAOJIANG_ROUND_OPTIONS);
@@ -1176,6 +1257,15 @@ export class NewGameHall extends Component {
     }
 
     private onEnterVenue(result: EnterVenueResult): void {
+        GameFactory.ensureRoomClassLoaded(this.gameId)
+            .then(() => this.createEnteredRoom(result))
+            .catch((err) => {
+                console.error('[NewGameHall] Load room script error:', err);
+                Client.Instance.showPromptDialog('游戏房间加载失败');
+            });
+    }
+
+    private createEnteredRoom(result: EnterVenueResult): void {
         const meta = GameFactory.getGameMeta(this.gameId);
         if (meta?.type === GameType.Mahjong) {
             Client.Instance.initGameRoom(null);
@@ -1189,9 +1279,10 @@ export class NewGameHall extends Component {
                 Client.Instance.showPromptDialog('游戏房间加载失败');
                 return;
             }
-            Client.Instance.initGameRoom(prefab);
-            const room = GameFactory.Instance.createRoom(this.gameId, undefined, Client.Instance.getGameRoomNode());
-            room.presetRoomNumber(result?.number || null);
+            Client.Instance.initGameRoom(prefab, (roomNode) => {
+                const room = GameFactory.Instance.createRoom(this.gameId, undefined, roomNode);
+                room.presetRoomNumber(result?.number || null);
+            });
         });
     }
 }

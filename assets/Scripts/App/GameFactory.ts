@@ -154,6 +154,42 @@ export class GameFactory {
         return ctor;
     }
 
+    public static async ensureRoomClassLoaded(gameId: GameId): Promise<void> {
+        const className = GAME_CLASS_NAMES[gameId];
+        if (!className) {
+            throw new Error(`[GameFactory] No class name mapped for game: ${gameId}`);
+        }
+        if (js.getClassByName(className)) return;
+
+        switch (gameId) {
+            case GameId.TaojiangMahjong:
+                await import('../Games/TaojiangMahjong/TaojiangMahjongRoom');
+                break;
+            case GameId.HongzhongMahjong:
+                await import('../Games/HongzhongMahjong/HongzhongMahjongRoom');
+                break;
+            case GameId.ChangshaMahjong:
+                await import('../Games/ChangshaMahjong/ChangshaMahjongRoom');
+                break;
+            case GameId.Doudizhu:
+                await import('../Games/Doudizhu/DoudizhuRoom');
+                break;
+            case GameId.Paodekuai:
+                await import('../Games/Paodekuai/PaodekuaiRoom');
+                break;
+            case GameId.Waihuzi:
+                await import('../Games/Waihuzi/WaihuziRoom');
+                break;
+            case GameId.Qianfen:
+                await import('../Games/Qianfen/QianfenRoom');
+                break;
+        }
+
+        if (!js.getClassByName(className)) {
+            throw new Error(`[GameFactory] Class "${className}" still not registered after dynamic import.`);
+        }
+    }
+
     /**
      * 创建游戏房间
      * @param gameId 游戏ID

@@ -12,9 +12,10 @@
  * Author: AI Assistant
  */
 
-import { _decorator, Component, Node, Label, Prefab, instantiate, Vec3, Color, Sprite } from 'cc';
-import { RoomBase } from './RoomBase';
-import { GameTypes, RoomState, PlayerRoomState, SeatPosition, PokerPattern, RoundSettlementData, FinalSettlementData } from './GameTypes';
+import { _decorator, Node, Label, Prefab, instantiate, Vec3 } from 'cc';
+import { RoomBase, GameState } from './RoomBase';
+import { NetworkManager } from '../Manager/NetworkManager';
+import { RoomState, PokerPattern } from './GameTypes';
 
 const { ccclass, property } = _decorator;
 

@@ -317,24 +317,30 @@ export class GameManager {
 
         this.enterVenue(wsAddress, venueId, gameType, () => {
             const meta = GameFactory.getGameMeta(gameId);
-            if (meta?.type === GameType.Mahjong) {
-                Client.Instance.initGameRoom(null);
-                const room = GameFactory.Instance.createRoom(gameId, Client.Instance.getGameRoomNode() || undefined, undefined);
-                room.presetRoomNumber(number);
-                this.autoReentering = false;
-                return;
-            }
-
-            ResourceLoader.Instance.loadAsset('GuanDanRoomMain', 'Room', Prefab, (prefab: Prefab) => {
-                if (!prefab) {
+            GameFactory.ensureRoomClassLoaded(gameId).then(() => {
+                if (meta?.type === GameType.Mahjong) {
+                    Client.Instance.initGameRoom(null);
+                    const room = GameFactory.Instance.createRoom(gameId, Client.Instance.getGameRoomNode() || undefined, undefined);
+                    room.presetRoomNumber(number);
                     this.autoReentering = false;
-                    Client.Instance.showPromptDialog('游戏房间加载失败');
                     return;
                 }
-                Client.Instance.initGameRoom(prefab);
-                const room = GameFactory.Instance.createRoom(gameId, undefined, Client.Instance.getGameRoomNode());
-                room.presetRoomNumber(number);
+
+                ResourceLoader.Instance.loadAsset('GuanDanRoomMain', 'Room', Prefab, (prefab: Prefab) => {
+                    if (!prefab) {
+                        this.autoReentering = false;
+                        Client.Instance.showPromptDialog('游戏房间加载失败');
+                        return;
+                    }
+                    Client.Instance.initGameRoom(prefab);
+                    const room = GameFactory.Instance.createRoom(gameId, undefined, Client.Instance.getGameRoomNode());
+                    room.presetRoomNumber(number);
+                    this.autoReentering = false;
+                });
+            }).catch((err) => {
+                console.error('[GameManager] Load room script error:', err);
                 this.autoReentering = false;
+                Client.Instance.showPromptDialog('游戏房间加载失败');
             });
         });
     }

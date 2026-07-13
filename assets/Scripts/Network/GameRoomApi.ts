@@ -174,8 +174,9 @@ export class GameRoomApi {
         if (!dto || !isGameApiSuccess(dto.code)) {
             return null;
         }
-        const count = dto.data ?? dto.count;
-        return typeof count === 'number' ? count : Number(count);
+        const count = dto.data ?? dto.count ?? dto.playerCount;
+        const parsed = typeof count === 'number' ? count : Number(count);
+        return isFinite(parsed) ? parsed : null;
     }
 
     /**
