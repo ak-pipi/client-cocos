@@ -74,8 +74,13 @@ export interface PublicRoomItem {
 /** 区域可加入房间列表项（选桌） */
 export interface DistrictVenueItem {
     venueId: string;
+    districtId?: number;
+    gameType?: number;
+    number?: string;
     playerCount: number;
     maxPlayerNums: number;
+    baseScore?: number;
+    roundCount?: number;
 }
 
 /** 麻将战绩项 */

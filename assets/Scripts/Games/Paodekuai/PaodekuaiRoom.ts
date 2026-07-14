@@ -3,7 +3,7 @@
  *
  * 两人15张跑得快：
  * - 45张牌库：去掉大小王、三张2、三张A、一张K
- * - 黑桃3首出，先出完获胜
+ * - 首局随机先出，后续由上一局赢家先出
  * - 炸弹翻倍，输家一张未出关门/春天翻倍
  */
 
@@ -44,12 +44,17 @@ export class PaodekuaiRoom extends PokerRoomBase {
     protected serverCurrentPlayer: number = -1;
     protected serverLastPlaySeat: number = -1;
     protected pdkIsLeader: boolean = true;
-    protected mustIncludeSpade3: boolean = true;
     protected forcePlayIfCanBeat: boolean = true;
     protected hasFirstPlayed: boolean = false;
+    private myRoundScore: number = 0;
     private statusLabel: Label | null = null;
+    private roomInfoLabel: Label | null = null;
+    private ruleInfoLabel: Label | null = null;
+    private opponentInfoLabel: Label | null = null;
     private opponentCountLabel: Label | null = null;
+    private opponentHandArea: Node | null = null;
     private overlayRoot: Node | null = null;
+    private pdkReadyGroup: Node | null = null;
 
     protected get pokerMsgPrefix(): string { return 'PaoDeKuai.'; }
 
@@ -59,6 +64,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         super.start();
         this.ensurePaodekuaiUI();
         this.updateStatus('等待准备');
+        this.refreshPaodekuaiHud();
         this.updateReadyButtonState();
     }
 
@@ -68,6 +74,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         super.bindPrefabNodes();
         this.hideGuanDanPokerNodes();
         this.ensurePaodekuaiUI();
+        this.refreshPaodekuaiHud();
         this.updateReadyButtonState();
     }
 
@@ -81,8 +88,8 @@ export class PaodekuaiRoom extends PokerRoomBase {
         super.init(roomInfo);
         this.baseScore = Number(roomInfo.ruleConfig?.base_score) || 1;
         this.roundCount = Number(roomInfo.ruleConfig?.round_count) || 8;
-        this.mustIncludeSpade3 = roomInfo.ruleConfig?.must_include_spade3 !== false;
         this.forcePlayIfCanBeat = roomInfo.ruleConfig?.force_play_if_can_beat !== false;
+        this.refreshPaodekuaiHud();
         console.log('[PaodekuaiRoom] Initialized as 2-player 15-card mode');
     }
 
@@ -99,8 +106,21 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     protected onSyncGameUIUpdate(isSitting: boolean): void {
         super.onSyncGameUIUpdate(isSitting);
+        if (isSitting || this.seat !== -1) this.updateReadyButtonState();
         this.ensurePaodekuaiUI();
+        this.refreshPaodekuaiHud();
         this.updateReadyButtonState();
+    }
+
+    protected onPlayerAdded(seatIndex: number, playerInfo: any): void {
+        super.onPlayerAdded(seatIndex, playerInfo);
+        this.refreshPaodekuaiHud();
+    }
+
+    protected onPlayerRemoved(seatIndex: number): void {
+        super.onPlayerRemoved(seatIndex);
+        this.renderOpponentHandBacks(0);
+        this.refreshPaodekuaiHud();
     }
 
     protected updateReadyButtonState(): void {
@@ -114,9 +134,27 @@ export class PaodekuaiRoom extends PokerRoomBase {
         if (this.readyGroup) this.readyGroup.active = canReady;
         if (!this.btnReady) return;
         this.btnReady.active = canReady;
+        if (this.btnStartGame) this.btnStartGame.active = false;
         if (this.btnReadyLabel) {
             this.btnReadyLabel.string = '准备';
         }
+    }
+
+    protected updateRoomDisplay(): void {
+        super.updateRoomDisplay();
+        this.refreshPaodekuaiHud();
+    }
+
+    protected onPlayerReadyUIUpdate(seatIndex: number): void {
+        super.onPlayerReadyUIUpdate(seatIndex);
+        if (this.gameState !== GameState.Waiting) return;
+        if (seatIndex === this.seat) {
+            this.updateStatus('已准备，等待对手');
+        } else {
+            this.updateStatus('对手已准备');
+        }
+        this.refreshPaodekuaiHud();
+        this.updateReadyButtonState();
     }
 
     /** 服务端 PaoDeKuai.SyncResp -> 通用房间状态 + 跑得快局内状态 */
@@ -167,6 +205,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         }
 
         this.updateMultiplierDisplay();
+        this.refreshPaodekuaiHud();
         this.updateTurnState();
     }
 
@@ -188,11 +227,6 @@ export class PaodekuaiRoom extends PokerRoomBase {
         const selectedCards = indices.map(i => this.myCards[i]);
         const play = this.recognizePattern(selectedCards);
         if (!play) {
-            this.playErrorSound();
-            return;
-        }
-        if (!this.hasFirstPlayed && this.mustIncludeSpade3 && !this.cardsContainSpade3(selectedCards)) {
-            Client.Instance.showPromptTip('首出必须包含黑桃3', 2.0);
             this.playErrorSound();
             return;
         }
@@ -249,8 +283,10 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
         const cards = Array.isArray(msg?.cards) ? msg.cards.map((id: number) => this.cardFromServerId(Number(id))) : [];
         this.dealCards(cards);
+        this.renderOpponentHandBacks(15);
         this.updateRoomDisplay();
         this.updateMultiplierDisplay();
+        this.refreshPaodekuaiHud();
         this.updateReadyButtonState();
         this.updateTurnState();
     }
@@ -293,6 +329,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.renderMyHand();
         this.updateCardCountDisplay();
         this.updateMultiplierDisplay();
+        this.refreshPaodekuaiHud();
         this.updateTurnState();
     }
 
@@ -331,6 +368,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         Client.Instance.showPromptTip(`本局${resultText}：${myScore >= 0 ? '+' : ''}${myScore}`, 2.5);
         this.gameState = GameState.Waiting;
         this.setLocalReadyFlags(false);
+        this.refreshPaodekuaiHud();
         this.updateReadyButtonState();
         console.log(`[PaodekuaiRoom] Settlement winner=${winner}, multiplier=${this.currentMultiplier}, spring=${!!msg?.spring}`);
     }
@@ -347,7 +385,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         if (n === 3 && values[0] === values[2]) return { pattern: PokerPattern.Triple, cards, weight: values[0] };
         if (n === 4 && values[0] === values[3]) return { pattern: PokerPattern.Bomb, cards, weight: values[0] };
         if (n === 4 && tripleValue > 0) return { pattern: PokerPattern.TripleWithOne, cards, weight: tripleValue };
-        if (n === 5 && tripleValue > 0 && this.hasPairExcept(counts, tripleValue)) {
+        if (n === 5 && tripleValue > 0 && this.isTripleWithAnyTwo(counts, tripleValue)) {
             return { pattern: PokerPattern.TripleWithPair, cards, weight: tripleValue };
         }
         if (n >= 5 && this.isStraight(values)) return { pattern: PokerPattern.Straight, cards, weight: values[n - 1] };
@@ -373,11 +411,6 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     protected findFirstLeadPlay(): { indices: number[]; play: CardPlay } | null {
-        const spade3 = this.myCards.findIndex(c => c.value === 3 && c.suit === 0);
-        if (spade3 >= 0) {
-            const play = this.recognizePattern([this.myCards[spade3]]);
-            if (play) return { indices: [spade3], play };
-        }
         return this.enumerateBestPlay(null);
     }
 
@@ -433,7 +466,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
             this.pokerActions = { canPlay: true, canHint: true, canPass, isLeader: this.pdkIsLeader, mustPlay: !canPass };
             this.showPassAndPlayButtons(true);
             this.startCountdown(30);
-            this.updateStatus(this.pdkIsLeader ? '轮到你出牌' : '轮到你跟牌');
+            this.updateStatus(this.pdkIsLeader ? '轮到你出牌' : (canPass ? '要不起可跳过' : '有牌可管，必须出牌'));
         } else {
             this.pokerActions = null;
             this.showPassAndPlayButtons(false);
@@ -448,16 +481,19 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     private updateMultiplierDisplay(): void {
         if (this.multiLabel) this.multiLabel.string = `${this.currentMultiplier}倍`;
+        this.refreshPaodekuaiHud();
     }
 
     protected updateScore(score: number): void {
-        if (this.scoreLabel) this.scoreLabel.string = String(score);
+        this.myRoundScore = score;
+        this.refreshPaodekuaiHud();
     }
 
     protected resetRoundState(): void {
         super.resetRoundState();
         this.bombCountThisRound = 0;
         this.currentMultiplier = 1;
+        this.myRoundScore = 0;
         this.serverCurrentPlayer = -1;
         this.serverLastPlaySeat = -1;
         this.pdkIsLeader = true;
@@ -513,13 +549,16 @@ export class PaodekuaiRoom extends PokerRoomBase {
         if (seatIndex === 0) {
             this.updateCardCountDisplay();
         } else if (seatIndex === 1 && this.opponentCountLabel) {
-            this.opponentCountLabel.string = `对手 ${count}张`;
+            this.opponentCountLabel.string = count > 0 ? '对手手牌' : '对手无牌';
+            this.renderOpponentHandBacks(count);
         }
+        this.refreshPaodekuaiHud();
     }
 
     protected updateCardCountDisplay(): void {
         if (this.cardCountLabel) this.cardCountLabel.string = `${this.myCards.length}张`;
         this.playerCardCounts.set(0, this.myCards.length);
+        this.refreshPaodekuaiHud();
     }
 
     protected createCardNode(card: PokerCard, interactive: boolean): Node {
@@ -554,38 +593,68 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     private ensurePaodekuaiUI(): void {
         if (this.overlayRoot) {
-            if (this.desktopUILayer && this.overlayRoot.parent !== this.desktopUILayer) {
-                this.overlayRoot.parent = this.desktopUILayer;
+            if (this.overlayRoot.parent !== this.node) {
+                this.overlayRoot.parent = this.node;
             }
+            this.ensurePaodekuaiReadyButton();
             return;
         }
 
-        const parent = this.desktopUILayer || this.node;
-        if (this.desktopUILayer) this.desktopUILayer.active = true;
-
         const overlay = new Node('PaodekuaiOverlay');
         overlay.layer = 1 << 25;
-        overlay.parent = parent;
+        overlay.parent = this.node;
         overlay.addComponent(UITransform).setContentSize(1920, 1080);
         overlay.setPosition(0, 0, 0);
         this.overlayRoot = overlay;
 
-        this.statusLabel = this.createLabel(overlay, 'Status', '', 28, 0, 248, 500, 44, new Color(255, 226, 136, 255));
-        this.multiLabel = this.createLabel(overlay, 'Multiplier', '1倍', 24, -760, 358, 180, 38, new Color(255, 226, 136, 255));
-        this.scoreLabel = this.createLabel(overlay, 'Score', '0', 24, 760, 358, 180, 38, new Color(255, 226, 136, 255));
+        const hud = this.createArea(overlay, 'PaodekuaiHud', -560, 356, 360, 240);
+        this.paintRect(hud, 360, 240, new Color(29, 35, 52, 214), new Color(238, 198, 116, 255), 18);
+
+        this.createLabel(hud, 'Title', '跑得快', 26, 0, 92, 280, 30, new Color(255, 236, 198, 255));
+        this.roomInfoLabel = this.createLabel(hud, 'RoomInfo', '', 16, 0, 62, 320, 22, new Color(188, 205, 225, 255));
+        this.ruleInfoLabel = this.createLabel(hud, 'RuleInfo', '两人15张 · 赢家先出', 16, 0, 38, 320, 22, new Color(255, 200, 80, 255));
+        this.scoreLabel = this.createLabel(hud, 'Score', '本局 0', 22, 0, 10, 300, 26, new Color(255, 255, 255, 255));
+        this.multiLabel = this.createLabel(hud, 'Multiplier', '倍数 1倍', 18, 0, -18, 320, 24, new Color(255, 219, 144, 255));
+        this.opponentInfoLabel = this.createLabel(hud, 'OpponentInfo', '等待对手入座', 18, 0, -48, 320, 24, new Color(184, 226, 255, 255));
+        this.opponentCountLabel = this.createLabel(hud, 'OpponentCount', '对手手牌', 16, 0, -76, 320, 22, new Color(188, 205, 225, 255));
+
+        this.statusLabel = this.createLabel(overlay, 'Status', '', 28, 0, 248, 560, 44, new Color(255, 226, 136, 255));
         this.cardCountLabel = this.createLabel(overlay, 'MyCount', '0张', 22, 0, -292, 180, 36, new Color(240, 240, 240, 255));
-        this.opponentCountLabel = this.createLabel(overlay, 'OpponentCount', '对手 0张', 22, 0, 212, 220, 36, new Color(240, 240, 240, 255));
 
         this.myHandArea = this.createArea(overlay, 'MyHand', 0, -390, 1240, 140);
         this.myPlayArea = this.createArea(overlay, 'MyPlay', 0, -120, 760, 98);
         this.leftPlayArea = this.createArea(overlay, 'OpponentPlay', 0, 118, 760, 98);
+        this.opponentHandArea = this.createArea(overlay, 'OpponentHand', 0, 302, 760, 82);
 
         this.passGroup = this.createArea(overlay, 'PassGroup', -92, -242, 120, 52);
         this.playGroup = this.createArea(overlay, 'PlayGroup', 92, -242, 250, 52);
-        this.createTextButton(this.passGroup, '不要', 0, 0, 'pass', new Color(92, 99, 112, 235));
+        this.createTextButton(this.passGroup, '要不起', 0, 0, 'pass', new Color(92, 99, 112, 235));
         this.createTextButton(this.playGroup, '提示', -68, 0, 'hint', new Color(60, 128, 170, 235));
         this.createTextButton(this.playGroup, '出牌', 68, 0, 'playSelectedCards', new Color(46, 139, 87, 235));
+        this.ensurePaodekuaiReadyButton();
         this.showPassAndPlayButtons(false);
+    }
+
+    private ensurePaodekuaiReadyButton(): void {
+        if (!this.overlayRoot) return;
+
+        if (this.readyGroup && this.readyGroup !== this.pdkReadyGroup) {
+            this.readyGroup.active = false;
+        }
+
+        if (this.pdkReadyGroup) {
+            this.readyGroup = this.pdkReadyGroup;
+            this.btnReady = this.findChildByName(this.pdkReadyGroup, 'BtnReady');
+            this.btnReadyLabel = this.btnReady ? this.findChildComponent<Label>(this.btnReady, 'Label', Label) : null;
+            return;
+        }
+
+        const readyRoot = this.createArea(this.overlayRoot, 'PaodekuaiReadyGroup', 0, -242, 180, 58);
+        this.pdkReadyGroup = readyRoot;
+        this.readyGroup = readyRoot;
+        this.btnReady = this.createTextButton(readyRoot, '准备', 0, 0, 'onReadyClick', new Color(196, 118, 37, 238), 'BtnReady');
+        this.btnReadyLabel = this.findChildComponent<Label>(this.btnReady, 'Label', Label);
+        this.readyGroup.active = false;
     }
 
     private createArea(parent: Node, name: string, x: number, y: number, w: number, h: number): Node {
@@ -595,6 +664,20 @@ export class PaodekuaiRoom extends PokerRoomBase {
         node.addComponent(UITransform).setContentSize(w, h);
         node.setPosition(x, y, 0);
         return node;
+    }
+
+    private paintRect(node: Node, w: number, h: number, fill: Color, stroke?: Color, radius: number = 8): void {
+        const g = node.getComponent(Graphics) || node.addComponent(Graphics);
+        g.clear();
+        g.fillColor = fill;
+        g.roundRect(-w / 2, -h / 2, w, h, radius);
+        g.fill();
+        if (stroke) {
+            g.strokeColor = stroke;
+            g.lineWidth = 2;
+            g.roundRect(-w / 2, -h / 2, w, h, radius);
+            g.stroke();
+        }
     }
 
     private createLabel(parent: Node, name: string, text: string, size: number, x: number, y: number, w: number, h: number, color: Color): Label {
@@ -610,8 +693,8 @@ export class PaodekuaiRoom extends PokerRoomBase {
         return label;
     }
 
-    private createTextButton(parent: Node, text: string, x: number, y: number, handler: string, color: Color): Node {
-        const node = this.createArea(parent, handler, x, y, 112, 44);
+    private createTextButton(parent: Node, text: string, x: number, y: number, handler: string, color: Color, nodeName: string = handler): Node {
+        const node = this.createArea(parent, nodeName, x, y, 112, 44);
         const g = node.addComponent(Graphics);
         g.fillColor = color;
         g.roundRect(-56, -22, 112, 44, 8);
@@ -638,6 +721,75 @@ export class PaodekuaiRoom extends PokerRoomBase {
         return node;
     }
 
+    private refreshPaodekuaiHud(): void {
+        if (!this.overlayRoot) return;
+        if (this.roomInfoLabel) {
+            const roomNo = this.roomNumber || this.roomInfo?.roomNo || '--';
+            const current = Number(this.currentRound || this.roomInfo?.currentRound || 0);
+            const total = Number(this.roundCount || this.totalRounds || this.roomInfo?.totalRounds || 0);
+            const roundText = total > 0 ? `${current || 0}/${total}` : `${current || 0}`;
+            this.roomInfoLabel.string = `房号 ${roomNo}   局数 ${roundText}   底分 ${this.baseScore}`;
+        }
+        if (this.ruleInfoLabel) {
+            this.ruleInfoLabel.string = '首局随机先出 · 赢家先出 · 有牌必出';
+        }
+        if (this.scoreLabel) this.scoreLabel.string = `本局 ${this.myRoundScore}`;
+        if (this.multiLabel) this.multiLabel.string = `倍数 ${this.currentMultiplier || 1}倍`;
+        if (this.opponentInfoLabel) this.opponentInfoLabel.string = this.getOpponentInfoText();
+    }
+
+    private getOpponentInfoText(): string {
+        const opponentSeat = this.getOpponentServerSeat();
+        const info = opponentSeat >= 0 ? this.playerInfos[opponentSeat] : null;
+        if (!info) return '等待对手入座';
+        const name = info.nickname || info.playerId || '对手';
+        const status = this.gameState === GameState.Playing ? '游戏中' : (info.ready ? '已准备' : '未准备');
+        const gold = Number(info.gold || 0);
+        return gold > 0 ? `${name} · ${status} · ${gold}` : `${name} · ${status}`;
+    }
+
+    private getOpponentServerSeat(): number {
+        if (this.seat >= 0) return (this.seat + 1) % 2;
+        if (this.playerInfos[1]) return 1;
+        if (this.playerInfos[0]) return 0;
+        return -1;
+    }
+
+    private renderOpponentHandBacks(count: number): void {
+        if (!this.opponentHandArea) return;
+        this.opponentHandArea.removeAllChildren();
+        if (count <= 0) return;
+
+        const shown = 10;
+        const gap = 34;
+        const startX = -((shown - 1) * gap) / 2;
+        for (let i = 0; i < shown; i++) {
+            const node = this.createCardBackNode();
+            node.parent = this.opponentHandArea;
+            node.setPosition(startX + i * gap, 0, 0);
+        }
+    }
+
+    private createCardBackNode(): Node {
+        const w = 46;
+        const h = 64;
+        const node = new Node('OpponentCardBack');
+        node.layer = 1 << 25;
+        node.addComponent(UITransform).setContentSize(w, h);
+        const g = node.addComponent(Graphics);
+        g.fillColor = new Color(39, 85, 142, 255);
+        g.roundRect(-w / 2, -h / 2, w, h, 7);
+        g.fill();
+        g.strokeColor = new Color(224, 236, 255, 255);
+        g.lineWidth = 2;
+        g.roundRect(-w / 2, -h / 2, w, h, 7);
+        g.stroke();
+        g.fillColor = new Color(76, 135, 200, 255);
+        g.roundRect(-w / 2 + 8, -h / 2 + 8, w - 16, h - 16, 5);
+        g.fill();
+        return node;
+    }
+
     private renderPlayCards(area: Node | null, play: CardPlay, gap: number, scale: number): void {
         if (!area) return;
         area.removeAllChildren();
@@ -654,7 +806,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         const area = this.getPlayAreaBySeat(clientSeat);
         if (!area) return;
         area.removeAllChildren();
-        this.createLabel(area, 'PassText', '不要', 24, 0, 0, 120, 42, new Color(210, 220, 230, 255));
+        this.createLabel(area, 'PassText', '要不起', 24, 0, 0, 120, 42, new Color(210, 220, 230, 255));
     }
 
     private hideGuanDanPokerNodes(): void {
@@ -693,10 +845,6 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     private isRedCard(card: PokerCard): boolean {
         return card.suit === 1 || card.suit === 3;
-    }
-
-    private cardsContainSpade3(cards: PokerCard[]): boolean {
-        return cards.some(card => card.value === 3 && card.suit === 0);
     }
 
     private cardFromServerId(id: number): PokerCard {
@@ -760,6 +908,17 @@ export class PaodekuaiRoom extends PokerRoomBase {
             if (value !== exclude && count === 2) ok = true;
         });
         return ok;
+    }
+
+    private isTripleWithAnyTwo(counts: Map<number, number>, tripleValue: number): boolean {
+        if ((counts.get(tripleValue) || 0) !== 3) return false;
+        let mates = 0;
+        for (const [value, count] of counts) {
+            if (value === tripleValue) continue;
+            if (count > 2) return false;
+            mates += count;
+        }
+        return mates === 2;
     }
 
     private isStraight(values: number[]): boolean {

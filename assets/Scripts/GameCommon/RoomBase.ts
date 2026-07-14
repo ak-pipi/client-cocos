@@ -425,8 +425,15 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
         const count = msg.avatars?.length || 0;
         for (let i = 0; i < count; i++) {
             const info = msg.avatars[i];
-            const text = CommonUtils.decodeBase64(info.base64);
-            const extraInfo = JSON.parse(text);
+            let extraInfo: any = {};
+            if (info.base64) {
+                try {
+                    const text = CommonUtils.decodeBase64(info.base64);
+                    extraInfo = text ? JSON.parse(text) : {};
+                } catch (err) {
+                    console.warn('[RoomBase] Failed to parse avatar extra info:', err);
+                }
+            }
             const total = (extraInfo.winNum || 0) + (extraInfo.loseNum || 0) + (extraInfo.drawNum || 0);
             const winRate = total > 0 ? ((extraInfo.winNum + extraInfo.drawNum) * 100.0 / total) : 100.0;
 

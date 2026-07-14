@@ -665,20 +665,40 @@ export class NewGameHall extends Component {
             // 房间号/序号
             const nameNode = new Node('Name');
             nameNode.parent = itemNode;
-            nameNode.addComponent(UITransform).setContentSize(160, itemH - 10);
-            nameNode.setPosition(-listW / 2 + 90, 0, 0);
+            nameNode.addComponent(UITransform).setContentSize(150, itemH - 10);
+            nameNode.setPosition(-listW / 2 + 82, 0, 0);
             const nameLabel = nameNode.addComponent(Label);
-            nameLabel.string = `房间 ${index + 1}`;
-            nameLabel.fontSize = 20;
+            const shortVenueId = venue.venueId ? venue.venueId.slice(-6) : String(index + 1);
+            const roomName = venue.number && !venue.number.startsWith('dist-')
+                ? `房号 ${venue.number}`
+                : `匹配桌 ${shortVenueId}`;
+            nameLabel.string = roomName;
+            nameLabel.fontSize = 18;
             nameLabel.horizontalAlign = 1;
             nameLabel.verticalAlign = 1;
+            nameLabel.overflow = Label.Overflow.SHRINK;
             nameLabel.color = new Color(255, 245, 223, 255);
+
+            const ruleNode = new Node('Rule');
+            ruleNode.parent = itemNode;
+            ruleNode.addComponent(UITransform).setContentSize(130, itemH - 10);
+            ruleNode.setPosition(-70, 0, 0);
+            const ruleLabel = ruleNode.addComponent(Label);
+            const ruleParts: string[] = [];
+            if (venue.baseScore) ruleParts.push(`底分${venue.baseScore}`);
+            if (venue.roundCount) ruleParts.push(`${venue.roundCount}局`);
+            ruleLabel.string = ruleParts.length > 0 ? ruleParts.join(' · ') : '快速场';
+            ruleLabel.fontSize = 16;
+            ruleLabel.horizontalAlign = 1;
+            ruleLabel.verticalAlign = 1;
+            ruleLabel.overflow = Label.Overflow.SHRINK;
+            ruleLabel.color = new Color(235, 214, 156, 255);
 
             // 人数信息
             const countNode = new Node('Count');
             countNode.parent = itemNode;
-            countNode.addComponent(UITransform).setContentSize(120, itemH - 10);
-            countNode.setPosition(20, 0, 0);
+            countNode.addComponent(UITransform).setContentSize(92, itemH - 10);
+            countNode.setPosition(64, 0, 0);
             const countLabel = countNode.addComponent(Label);
             countLabel.string = `${venue.playerCount}/${venue.maxPlayerNums} 人`;
             countLabel.fontSize = 18;

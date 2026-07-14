@@ -5,6 +5,7 @@ import * as Base64 from 'js-base64';
 export class MsgWrapper {
     public msgType: string = null;
     public msg: any = null;
+    public retryCount: number = 0;
 }
 
 export interface NetMsgHandler {
@@ -118,10 +119,11 @@ export class NetMsgManager {
     }
 
     public handleMessages() {
-        let mw: MsgWrapper = this.popMessage();
-        while (mw != null) {
+        const count = this.msgQueue.length;
+        for (let i = 0; i < count; i++) {
+            const mw: MsgWrapper = this.popMessage();
+            if (mw == null) break;
             this.onMessage(mw);
-            mw = this.popMessage();
         }
     }
 
@@ -135,6 +137,11 @@ export class NetMsgManager {
                 }
             }
             if (!test && (mw.msgType !== "MsgAvatarConnect")) {
+                if (mw.retryCount < 60) {
+                    mw.retryCount++;
+                    this.msgQueue.push(mw);
+                    return;
+                }
                 console.error("Message(type: ", mw.msgType, ") has no handler");
             }
         }
@@ -144,4 +151,3 @@ export class NetMsgManager {
         }
     }
 }
-

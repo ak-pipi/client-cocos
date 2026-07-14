@@ -3,7 +3,7 @@
  * 两人斗地主客户端协议适配：DouDiZhu.Sync / Call / Play。
  */
 
-import { _decorator, Node, Label, Color, Graphics, Button, EventHandler, UITransform, Vec3 } from 'cc';
+import { _decorator, Node, Label, Color, Graphics, Button, UITransform, Vec3 } from 'cc';
 import { PokerRoomBase, PokerCard, CardPlay, PokerAvailableActions } from '../../GameCommon/PokerRoomBase';
 import { PokerPattern, RoomState } from '../../GameCommon/GameTypes';
 import { GameState } from '../../GameCommon/RoomBase';
@@ -32,11 +32,28 @@ export class DoudizhuRoom extends PokerRoomBase {
     private settlementScoreLabel: Label | null = null;
     private settlementDetailLabel: Label | null = null;
     private settlementRemainLabel: Label | null = null;
+    private controlBarNode: Node | null = null;
+    private customReadyButton: Node | null = null;
+    private customReadyLabel: Label | null = null;
+    private customStartButton: Node | null = null;
+    private customStartLabel: Label | null = null;
+    private tableBackgroundNode: Node | null = null;
+    private roomInfoLabel: Label | null = null;
+    private roundInfoLabel: Label | null = null;
+    private ruleHintLabel: Label | null = null;
+    private playerInfoRoot: Node | null = null;
+    private playerNameLabels: (Label | null)[] = [null, null];
+    private playerGoldLabels: (Label | null)[] = [null, null];
+    private playerStateLabels: (Label | null)[] = [null, null];
+    private playerCardRoots: (Node | null)[] = [null, null];
+    private fallbackBackButton: Node | null = null;
 
     private landlordSeat: number = -1;
+    private bankerSeat: number = -1;
     private highestBid: number = 0;
     private highestBidSeat: number = -1;
     private lastServerPlaySeat: number = -1;
+    private baseScore: number = 1;
 
     protected get pokerMsgPrefix(): string { return 'DouDiZhu.'; }
 
@@ -54,6 +71,13 @@ export class DoudizhuRoom extends PokerRoomBase {
         super.bindPrefabNodes();
         this.hideGuanDanPokerNodes();
         this.ensureDoudizhuUI();
+    }
+
+    protected onSyncGameUIUpdate(isSitting: boolean): void {
+        super.onSyncGameUIUpdate(isSitting);
+        this.refreshDoudizhuHud();
+        this.refreshDoudizhuPlayers();
+        if (isSitting || this.seat !== -1) this.updateReadyButtonState();
     }
 
     public onMessage(msgType: string, msg: any): boolean {
@@ -76,6 +100,7 @@ export class DoudizhuRoom extends PokerRoomBase {
     public onReadyClick(): void {
         if (this.seat === -1) return;
         NetworkManager.Instance.sendInnerMessage('DouDiZhu.Ready');
+        this.markSelfReadyLocally();
     }
 
     public onStartGameClick(): void {
@@ -212,18 +237,46 @@ export class DoudizhuRoom extends PokerRoomBase {
     }
 
     protected updateReadyButtonState(): void {
-        super.updateReadyButtonState();
-        this.updateDoudizhuReadyButtonLabel();
-        if (!this.isAllRoundsFinished()) return;
-        if (this.btnReady) this.btnReady.active = false;
+        const canReady = this.seat !== -1 && this.gameState === GameState.Waiting && !this.isAllRoundsFinished();
+        const selfInfo = this.seat !== -1 ? this.playerInfos[this.seat] : null;
+        const ready = !!selfInfo?.ready;
+        const isOwner = this.seat !== -1 && this.seat === this.ownerSeat;
+
         if (this.readyGroup) this.readyGroup.active = false;
+        if (this.btnReady) this.btnReady.active = false;
+        if (this.btnReadyLabel) this.btnReadyLabel.string = ready ? '已准备' : '准备';
         if (this.btnStartGame) this.btnStartGame.active = false;
-        this.updateStatus('全部对局结束');
+
+        if (this.controlBarNode) this.controlBarNode.active = canReady;
+        if (this.customReadyButton) this.customReadyButton.active = canReady;
+        if (this.customReadyLabel) this.customReadyLabel.string = ready ? '已准备' : '准备';
+        if (this.customStartButton) this.customStartButton.active = canReady && isOwner;
+        if (this.customStartLabel) this.customStartLabel.string = '开始';
+
+        this.refreshDoudizhuPlayers();
+        if (this.isAllRoundsFinished()) this.updateStatus('全部对局结束');
     }
 
     protected onPlayerReadyUIUpdate(seatIndex: number): void {
         super.onPlayerReadyUIUpdate(seatIndex);
         this.updateDoudizhuReadyButtonLabel();
+    }
+
+    protected onPlayerAdded(seatIndex: number, playerInfo: any): void {
+        super.onPlayerAdded(seatIndex, playerInfo);
+        this.refreshDoudizhuPlayers();
+        this.updateReadyButtonState();
+    }
+
+    protected onPlayerRemoved(seatIndex: number): void {
+        super.onPlayerRemoved(seatIndex);
+        this.refreshDoudizhuPlayers();
+        this.updateReadyButtonState();
+    }
+
+    protected onPlayerOfflineChanged(seatIndex: number, offline: boolean): void {
+        super.onPlayerOfflineChanged(seatIndex, offline);
+        this.refreshDoudizhuPlayers();
     }
 
     protected applySelectedStyle(node: Node): void {
@@ -279,10 +332,12 @@ export class DoudizhuRoom extends PokerRoomBase {
         const waitingState = state === DoudizhuState.None || state === DoudizhuState.Ready;
         this.seat = Number(msg.mySeat ?? this.seat);
         this.landlordSeat = Number(msg.landlordSeat ?? -1);
+        this.bankerSeat = Number(msg.banker ?? msg.callStarter ?? this.bankerSeat);
         this.highestBid = Number(msg.highestBid ?? 0);
         this.highestBidSeat = Number(msg.highestBidSeat ?? -1);
         this.currentMultiplier = Number(msg.multiplier ?? 1) || 1;
         this.currentRound = Number(msg.roundNo ?? this.currentRound) || 0;
+        if (msg.baseScore !== undefined) this.baseScore = Number(msg.baseScore) || this.baseScore;
         if (msg.number !== undefined) this.roomNumber = String(msg.number);
         if (msg.level !== undefined) this.level = Number(msg.level) || this.level;
         if (msg.roundCount !== undefined) {
@@ -297,6 +352,7 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.renderBottomCards(msg.bottomCards || []);
         this.updateHandCounts(msg.handCounts);
         this.updateMultiplierLabel();
+        this.refreshDoudizhuHud();
         this.onSyncGameUIUpdate(this.seat === -1);
         this.updateRoomDisplay();
         this.updateReadyButtonState();
@@ -336,14 +392,17 @@ export class DoudizhuRoom extends PokerRoomBase {
             const roundCount = Number(msg.roundCount);
             this.totalRounds = isNaN(roundCount) ? 0 : roundCount;
         }
+        if (msg.baseScore !== undefined) this.baseScore = Number(msg.baseScore) || this.baseScore;
         this.dealCards(this.toPokerCards(msg.cards || []));
         this.updateHandCounts(msg.handCounts);
         this.renderBottomCards([]);
         this.highestBid = 0;
         this.highestBidSeat = -1;
         this.landlordSeat = -1;
+        this.bankerSeat = Number(msg.banker ?? msg.callStarter ?? -1);
         this.currentMultiplier = 1;
         this.updateMultiplierLabel();
+        this.refreshDoudizhuHud();
         this.showCallPanel(Number(msg.callStarter) === this.seat);
         this.updateStatus(Number(msg.callStarter) === this.seat ? '轮到你叫地主' : '等待对手叫地主');
     }
@@ -364,10 +423,12 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     private onDoudizhuLandlord(msg: any): void {
         this.landlordSeat = Number(msg.landlordSeat ?? -1);
+        this.bankerSeat = this.landlordSeat;
         this.currentMultiplier = Number(msg.multiplier ?? 1) || 1;
         this.renderBottomCards(msg.bottomCards || []);
         this.updateHandCounts(msg.handCounts);
         this.updateMultiplierLabel();
+        this.refreshDoudizhuHud();
 
         if (this.landlordSeat === this.seat) {
             const existing = new Set(this.myCards.map(c => c.cardId));
@@ -413,6 +474,7 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.currentMultiplier = Number(msg.multiplier ?? this.currentMultiplier) || 1;
         this.updateHandCounts(msg.handCounts);
         this.updateMultiplierLabel();
+        this.refreshDoudizhuHud();
         this.setTurn(Number(msg.nextPlayer), this.lastPlay === null);
     }
 
@@ -440,7 +502,7 @@ export class DoudizhuRoom extends PokerRoomBase {
         Client.Instance.showPromptTip(`本局${winnerSeat === this.seat ? '胜利' : '失败'}：${myScore >= 0 ? '+' : ''}${myScore}`, 2.5);
         this.gameState = GameState.Waiting;
         this.setLocalReadyFlags(false);
-        if (this.readyGroup) this.readyGroup.active = true;
+        if (this.readyGroup) this.readyGroup.active = false;
         this.updateReadyButtonState();
     }
 
@@ -479,25 +541,41 @@ export class DoudizhuRoom extends PokerRoomBase {
     private ensureDoudizhuUI(): void {
         if (this.overlayRoot) return;
 
-        const parent = this.desktopUILayer || this.node;
+        const parent = this.node;
         if (this.desktopUILayer) this.desktopUILayer.active = true;
+        this.hideGuanDanPokerNodes();
 
         const overlay = new Node('DoudizhuOverlay');
         overlay.layer = 1 << 25;
         overlay.parent = parent;
-        overlay.addComponent(UITransform).setContentSize(1920, 1080);
+        overlay.addComponent(UITransform).setContentSize(1680, 920);
         overlay.setPosition(0, 0, 0);
+        overlay.setSiblingIndex(parent.children.length - 1);
         this.overlayRoot = overlay;
 
-        this.statusLabel = this.createLabel(overlay, 'Status', '', 28, 0, 250, 620, 44, new Color(255, 225, 120, 255));
-        this.multiLabel = this.createLabel(overlay, 'Multiplier', '1倍', 24, -760, 360, 180, 38, new Color(255, 225, 120, 255));
-        this.cardCountLabel = this.createLabel(overlay, 'MyCount', '0张', 22, 0, -292, 180, 36, new Color(240, 240, 240, 255));
-        this.opponentCountLabel = this.createLabel(overlay, 'OpponentCount', '对手 0张', 22, 0, 214, 220, 36, new Color(240, 240, 240, 255));
+        this.tableBackgroundNode = this.createArea(overlay, 'TableBackground', 0, 0, 1680, 920);
+        this.paintRect(this.tableBackgroundNode, 1680, 920, new Color(42, 96, 74, 255), new Color(18, 50, 38, 255), 18);
+
+        const topHud = this.createArea(overlay, 'TopHud', 0, 420, 1240, 74);
+        this.paintRect(topHud, 1240, 74, new Color(14, 31, 44, 210), new Color(214, 182, 116, 255), 18);
+        this.roomInfoLabel = this.createLabel(topHud, 'RoomInfo', '', 22, -380, 0, 360, 40, new Color(255, 240, 202, 255));
+        this.statusLabel = this.createLabel(topHud, 'Status', '', 28, 0, 0, 390, 44, new Color(255, 255, 255, 255));
+        this.roundInfoLabel = this.createLabel(topHud, 'RoundInfo', '', 22, 360, 0, 280, 40, new Color(255, 229, 143, 255));
+
+        const infoPanel = this.createArea(overlay, 'DoudizhuHud', -560, 266, 360, 240);
+        this.paintRect(infoPanel, 360, 240, new Color(29, 35, 52, 214), new Color(238, 198, 116, 255), 18);
+        this.createLabel(infoPanel, 'Title', '斗地主', 26, 0, 92, 280, 32, new Color(255, 236, 198, 255));
+        this.ruleHintLabel = this.createLabel(infoPanel, 'RuleHint', '', 16, 0, 62, 320, 24, new Color(188, 205, 225, 255));
+        this.multiLabel = this.createLabel(infoPanel, 'Multiplier', '1倍', 22, 0, 28, 300, 28, new Color(255, 255, 255, 255));
+        this.cardCountLabel = this.createLabel(infoPanel, 'MyCount', '0张', 18, 0, -8, 320, 24, new Color(255, 219, 144, 255));
+        this.opponentCountLabel = this.createLabel(infoPanel, 'OpponentCount', '对手 0张', 18, 0, -40, 320, 24, new Color(184, 226, 255, 255));
+        this.createLabel(infoPanel, 'Tip', '两人对战 · 叫地主后出牌', 16, 0, -74, 320, 22, new Color(230, 235, 238, 255));
 
         this.bottomCardsArea = this.createArea(overlay, 'BottomCards', 0, 318, 280, 80);
-        this.myHandArea = this.createArea(overlay, 'MyHand', 0, -390, 1240, 140);
-        this.myPlayArea = this.createArea(overlay, 'MyPlay', 0, -118, 720, 96);
-        this.leftPlayArea = this.createArea(overlay, 'OpponentPlay', 0, 112, 720, 96);
+        this.paintRect(this.bottomCardsArea, 280, 80, new Color(19, 24, 35, 120), new Color(214, 182, 116, 180), 14);
+        this.myHandArea = this.createArea(overlay, 'MyHand', 0, -388, 1260, 140);
+        this.myPlayArea = this.createArea(overlay, 'MyPlay', 0, -112, 720, 110);
+        this.leftPlayArea = this.createArea(overlay, 'OpponentPlay', 0, 106, 720, 110);
 
         this.callPanel = this.createArea(overlay, 'CallPanel', 0, -242, 520, 64);
         this.createTextButton(this.callPanel, '不叫', -195, 0, 'call0', new Color(92, 99, 112, 235));
@@ -513,7 +591,51 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.createTextButton(this.playGroup, '出牌', 68, 0, 'playSelectedCards', new Color(46, 139, 87, 235));
         this.showPassAndPlayButtons(false);
 
+        this.ensureDoudizhuPlayerInfo(overlay);
+        this.ensureDoudizhuControls(overlay);
+        this.ensureDoudizhuBackButton(overlay);
         this.ensureSettlementPanel(overlay);
+        this.refreshDoudizhuHud();
+        this.refreshDoudizhuPlayers();
+        this.updateReadyButtonState();
+    }
+
+    private ensureDoudizhuControls(parent: Node): void {
+        if (this.controlBarNode) return;
+
+        this.controlBarNode = this.createArea(parent, 'DoudizhuControlBar', 520, 420, 280, 56);
+        this.customReadyButton = this.createActionButton(this.controlBarNode, 'ReadyBtn', '准备', -68, 0, 120,
+            new Color(46, 128, 88, 255), new Color(133, 231, 174, 255), 'onReadyClick');
+        this.customReadyLabel = this.findChildComponent<Label>(this.customReadyButton, 'Label', Label);
+        this.customStartButton = this.createActionButton(this.controlBarNode, 'StartBtn', '开始', 68, 0, 120,
+            new Color(191, 122, 36, 255), new Color(255, 214, 138, 255), 'onStartGameClick');
+        this.customStartLabel = this.findChildComponent<Label>(this.customStartButton, 'Label', Label);
+    }
+
+    private ensureDoudizhuPlayerInfo(parent: Node): void {
+        if (this.playerInfoRoot) return;
+        this.playerInfoRoot = this.createArea(parent, 'DoudizhuPlayerInfoRoot', 1680, 920, 0, 0);
+        this.createPlayerInfoCard(0, -610, -304, 292, 92);
+        this.createPlayerInfoCard(1, 0, 326, 292, 84);
+    }
+
+    private createPlayerInfoCard(index: number, x: number, y: number, w: number, h: number): void {
+        if (!this.playerInfoRoot) return;
+        const root = this.createArea(this.playerInfoRoot, `PlayerInfo${index}`, x, y, w, h);
+        this.paintRect(root, w, h, new Color(18, 26, 38, 220), new Color(214, 182, 116, 255), 16);
+        this.playerCardRoots[index] = root;
+        this.playerNameLabels[index] = this.createLabel(root, 'Name', '', 22, 0, 22, w - 24, 26, new Color(255, 238, 201, 255));
+        this.playerGoldLabels[index] = this.createLabel(root, 'Gold', '', 18, 0, -4, w - 24, 22, new Color(213, 232, 255, 255));
+        this.playerStateLabels[index] = this.createLabel(root, 'State', '', 18, 0, -28, w - 24, 22, new Color(255, 220, 146, 255));
+        root.active = false;
+    }
+
+    private ensureDoudizhuBackButton(parent: Node): void {
+        if (this.fallbackBackButton) return;
+        const btnBack = this.findChildRecursive(this.node, 'BtnBack');
+        if (btnBack) btnBack.active = false;
+        this.fallbackBackButton = this.createActionButton(parent, 'DoudizhuBackButton', '退出房间', -742, 420, 132,
+            new Color(16, 20, 30, 228), new Color(255, 210, 112, 255), 'onBackClick');
     }
 
     private ensureSettlementPanel(parent: Node): void {
@@ -546,6 +668,19 @@ export class DoudizhuRoom extends PokerRoomBase {
         node.addComponent(UITransform).setContentSize(w, h);
         node.setPosition(x, y, 0);
         return node;
+    }
+
+    private paintRect(node: Node, w: number, h: number, fillColor: Color, strokeColor?: Color, radius: number = 12): void {
+        const bg = node.addComponent(Graphics);
+        bg.fillColor = fillColor;
+        bg.roundRect(-w / 2, -h / 2, w, h, radius);
+        bg.fill();
+        if (strokeColor) {
+            bg.strokeColor = strokeColor;
+            bg.lineWidth = 2;
+            bg.roundRect(-w / 2, -h / 2, w, h, radius);
+            bg.stroke();
+        }
     }
 
     private createLabel(parent: Node, name: string, text: string, size: number, x: number, y: number, w: number, h: number, color: Color): Label {
@@ -581,20 +716,72 @@ export class DoudizhuRoom extends PokerRoomBase {
         const button = node.addComponent(Button);
         button.transition = Button.Transition.SCALE;
         button.zoomScale = 1.05;
-        const evt = new EventHandler();
-        evt.target = this.node;
-        evt.component = 'DoudizhuRoom';
-        evt.handler = handler;
-        button.clickEvents.push(evt);
+        node.on(Node.EventType.TOUCH_END, () => {
+            const fn = (this as any)[handler];
+            if (typeof fn === 'function') fn.call(this);
+        }, this);
+        return node;
+    }
+
+    private createActionButton(
+        parent: Node,
+        name: string,
+        text: string,
+        x: number,
+        y: number,
+        width: number,
+        fillColor: Color,
+        strokeColor: Color,
+        handler: string,
+    ): Node {
+        const node = this.createArea(parent, name, x, y, width, 48);
+        const halfW = width / 2;
+        const g = node.addComponent(Graphics);
+        g.fillColor = fillColor;
+        g.roundRect(-halfW, -24, width, 48, 14);
+        g.fill();
+        g.strokeColor = strokeColor;
+        g.lineWidth = 2;
+        g.roundRect(-halfW, -24, width, 48, 14);
+        g.stroke();
+
+        const labelNode = this.createArea(node, 'Label', 0, 0, width - 12, 30);
+        const label = labelNode.addComponent(Label);
+        label.string = text;
+        label.fontSize = 22;
+        label.lineHeight = 26;
+        label.overflow = Label.Overflow.SHRINK;
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        label.color = new Color(255, 244, 220, 255);
+
+        const button = node.addComponent(Button);
+        button.transition = Button.Transition.SCALE;
+        button.zoomScale = 1.05;
+        node.on(Node.EventType.TOUCH_END, () => {
+            const fn = (this as any)[handler];
+            if (typeof fn === 'function') fn.call(this);
+        }, this);
         return node;
     }
 
     private hideGuanDanPokerNodes(): void {
-        const names = ['CardLayout', 'CardPlayedOut', 'CardBacks'];
+        const names = ['CardLayout', 'CardPlayedOut', 'CardBacks', 'GradePointBoard', 'GradePointGroup', 'RefundTribute', 'ChatDialog'];
         for (const name of names) {
             const node = this.findChildRecursive(this.node, name);
             if (node) node.active = false;
         }
+        const desktop = this.findChildRecursive(this.node, 'Desktop');
+        if (desktop) {
+            for (const child of desktop.children) {
+                if (child.name === 'Desktop' || child.name === 'ChairLeft' || child.name === 'ChairRight' || child.name === 'YouGroup' || child.name === 'ClockArrow') {
+                    child.active = false;
+                }
+                if (child.name.startsWith('Player') && child.getChildByName('BodyPos')) child.active = false;
+            }
+        }
+        const upRightPanel = this.findChildRecursive(this.node, 'UpRightPanel');
+        if (upRightPanel) upRightPanel.active = false;
     }
 
     private renderBottomCards(ids: number[]): void {
@@ -639,11 +826,13 @@ export class DoudizhuRoom extends PokerRoomBase {
             this.opponentCountLabel.string = `对手 ${opponentCount}张`;
         }
         this.updateCardCountDisplay();
+        this.refreshDoudizhuPlayers();
     }
 
     protected updateCardCountDisplay(): void {
         if (this.cardCountLabel) this.cardCountLabel.string = `${this.myCards.length}张`;
         this.playerCardCounts.set(0, this.myCards.length);
+        this.refreshDoudizhuHud();
     }
 
     private updateMultiplierLabel(): void {
@@ -652,6 +841,73 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     private updateStatus(text: string): void {
         if (this.statusLabel) this.statusLabel.string = text;
+    }
+
+    private refreshDoudizhuHud(): void {
+        if (this.roomInfoLabel) {
+            const parts: string[] = [];
+            if (this.roomNumber) parts.push(`房号 ${this.roomNumber}`);
+            if (this.baseScore > 0) parts.push(`底分 ${this.baseScore}`);
+            this.roomInfoLabel.string = parts.length > 0 ? parts.join(' · ') : '斗地主房间';
+        }
+        if (this.roundInfoLabel) {
+            this.roundInfoLabel.string = this.totalRounds > 0
+                ? `第 ${this.currentRound || 0}/${this.totalRounds} 局`
+                : `第 ${this.currentRound || 0} 局`;
+        }
+        if (this.ruleHintLabel) {
+            this.ruleHintLabel.string = '两人对战 · 54张 · 20张手牌 · 3张底牌';
+        }
+        if (this.multiLabel) this.multiLabel.string = `${this.currentMultiplier || 1}倍`;
+        if (this.cardCountLabel) this.cardCountLabel.string = `我的手牌 ${this.myCards.length} 张`;
+        if (this.opponentCountLabel) {
+            const opponentCount = this.playerCardCounts.get(1) ?? 0;
+            const landlordText = this.landlordSeat >= 0
+                ? (this.landlordSeat === this.seat ? ' · 你是地主' : ' · 对手是地主')
+                : (this.bankerSeat >= 0 ? (this.bankerSeat === this.seat ? ' · 你是庄' : ' · 对手是庄') : '');
+            this.opponentCountLabel.string = `对手手牌 ${opponentCount} 张${landlordText}`;
+        }
+    }
+
+    private refreshDoudizhuPlayers(): void {
+        for (let i = 0; i < this.playerCardRoots.length; i++) {
+            if (this.playerCardRoots[i]) this.playerCardRoots[i]!.active = false;
+        }
+        for (let serverSeat = 0; serverSeat < 2; serverSeat++) {
+            const clientSeat = this.server2ClientSeat(serverSeat);
+            const cardIndex = clientSeat === 0 ? 0 : 1;
+            const root = this.playerCardRoots[cardIndex];
+            const info = this.playerInfos[serverSeat];
+            if (!root || !info) continue;
+            root.active = true;
+            const tags: string[] = [];
+            if (serverSeat === this.ownerSeat) tags.push('房主');
+            if (serverSeat === this.seat) tags.push('我');
+            if (serverSeat === this.landlordSeat) tags.push('地主');
+            else if (serverSeat === this.bankerSeat) tags.push('庄');
+            if (this.playerNameLabels[cardIndex]) {
+                this.playerNameLabels[cardIndex]!.string = `${info.nickname || `玩家${serverSeat + 1}`}${tags.length > 0 ? ` · ${tags.join('/')}` : ''}`;
+            }
+            if (this.playerGoldLabels[cardIndex]) {
+                this.playerGoldLabels[cardIndex]!.string = `金币 ${info.gold ?? 0}`;
+            }
+            if (this.playerStateLabels[cardIndex]) {
+                this.playerStateLabels[cardIndex]!.string = this.getDoudizhuPlayerStateText(info, serverSeat, clientSeat);
+            }
+        }
+    }
+
+    private getDoudizhuPlayerStateText(info: any, serverSeat: number, clientSeat: number): string {
+        const states: string[] = [];
+        if (info.offline) states.push('离线');
+        if (info.authorize) states.push('托管');
+        if (info.ready && this.gameState === GameState.Waiting) states.push('已准备');
+        if (this.landlordSeat === serverSeat) states.push('地主');
+        else if (this.bankerSeat === serverSeat) states.push('庄家');
+        const cardCount = clientSeat === 0 ? this.myCards.length : (this.playerCardCounts.get(clientSeat) ?? 0);
+        if (this.gameState !== GameState.Waiting) states.push(`${cardCount}张`);
+        if (states.length === 0) states.push(this.gameState === GameState.Waiting ? '等待中' : '游戏中');
+        return states.join(' · ');
     }
 
     private showSettlementPanel(msg: any, scores: number[], myScore: number, winnerSeat: number): void {
@@ -689,6 +945,19 @@ export class DoudizhuRoom extends PokerRoomBase {
         if (this.settlementPanel) this.settlementPanel.active = false;
     }
 
+    private markSelfReadyLocally(): void {
+        if (this.seat < 0) return;
+        if (this.playerInfos[this.seat]) this.playerInfos[this.seat].ready = true;
+        const clientSeat = this.server2ClientSeat(this.seat);
+        if (this.readyFlags[clientSeat]) this.readyFlags[clientSeat].active = true;
+        const playerView = this.guanDanPlayers[clientSeat] as any;
+        if (playerView && typeof playerView.setReady === 'function') {
+            playerView.setReady(true);
+        }
+        this.refreshDoudizhuPlayers();
+        this.updateReadyButtonState();
+    }
+
     private isAllRoundsFinished(): boolean {
         return this.gameState === GameState.Waiting &&
             this.totalRounds > 0 && this.currentRound >= this.totalRounds;
@@ -704,12 +973,11 @@ export class DoudizhuRoom extends PokerRoomBase {
                 playerView.setReady(ready);
             }
         }
+        this.refreshDoudizhuPlayers();
     }
 
     private updateDoudizhuReadyButtonLabel(): void {
-        if (!this.btnReadyLabel || this.seat < 0) return;
-        const ready = !!this.playerInfos[this.seat]?.ready;
-        this.btnReadyLabel.string = ready ? '已准备' : '准备';
+        this.updateReadyButtonState();
     }
 
     private toPokerCards(ids: number[]): PokerCard[] {
