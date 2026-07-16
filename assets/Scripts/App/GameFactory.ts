@@ -53,7 +53,7 @@ const GAME_REGISTRY: Map<GameId, GameMetaInfo> = new Map([
         id: GameId.HongzhongMahjong,
         name: '红中麻将',
         type: GameType.Mahjong,
-        playerCount: 4,
+        playerCount: 2,
         priority: 0,
     }],
     [GameId.ChangshaMahjong, {

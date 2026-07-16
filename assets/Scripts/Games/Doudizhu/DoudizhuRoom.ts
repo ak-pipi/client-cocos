@@ -3,7 +3,7 @@
  * 两人斗地主客户端协议适配：DouDiZhu.Sync / Call / Play。
  */
 
-import { _decorator, Node, Label, Color, Graphics, Button, UITransform, Vec3 } from 'cc';
+import { _decorator, Node, Label, Color, Graphics, Button, UITransform, Vec3, EventTouch, BlockInputEvents } from 'cc';
 import { PokerRoomBase, PokerCard, CardPlay, PokerAvailableActions } from '../../GameCommon/PokerRoomBase';
 import { PokerPattern, RoomState } from '../../GameCommon/GameTypes';
 import { GameState } from '../../GameCommon/RoomBase';
@@ -11,6 +11,7 @@ import { NetworkManager } from '../../Manager/NetworkManager';
 import { Client } from '../../Game/Client';
 
 const { ccclass } = _decorator;
+const DOUDIZHU_PLAY_COUNTDOWN_SECONDS = 180;
 
 enum DoudizhuState {
     None = 0,
@@ -224,14 +225,15 @@ export class DoudizhuRoom extends PokerRoomBase {
         if (!this.myHandArea) return;
         this.myHandArea.removeAllChildren();
 
-        const gap = this.myCards.length > 16 ? 52 : 62;
-        const startX = -((this.myCards.length - 1) * gap) / 2;
+        const layout = this.getMyHandLayout();
         for (let i = 0; i < this.myCards.length; i++) {
             const cardNode = this.createCardNode(this.myCards[i], true);
+            cardNode.name = `card_${i}`;
             (cardNode as any)._cardIndex = i;
+            (cardNode as any)._cardId = this.myCards[i].cardId;
             cardNode.parent = this.myHandArea;
-            cardNode.setPosition(startX + i * gap, this.selectedIndices.has(i) ? 28 : 0, 0);
-            cardNode.on(Node.EventType.TOUCH_END, () => this.toggleCardSelection(i));
+            cardNode.setPosition(layout.startX + i * layout.gap, this.selectedIndices.has(i) ? 28 : 0, 0);
+            this.attachCardTouchArea(cardNode, i, i === this.myCards.length - 1, layout);
         }
         this.updateCardCountDisplay();
     }
@@ -280,17 +282,23 @@ export class DoudizhuRoom extends PokerRoomBase {
     }
 
     protected applySelectedStyle(node: Node): void {
-        const idx = (node as any)._cardIndex || 0;
-        const gap = this.myCards.length > 16 ? 52 : 62;
-        const startX = -((this.myCards.length - 1) * gap) / 2;
-        node.setPosition(startX + idx * gap, 28, 0);
+        const idx = (node as any)._cardIndex ?? 0;
+        const layout = this.getMyHandLayout();
+        node.setPosition(layout.startX + idx * layout.gap, 28, 0);
     }
 
     protected applyNormalStyle(node: Node): void {
-        const idx = (node as any)._cardIndex || 0;
-        const gap = this.myCards.length > 16 ? 52 : 62;
-        const startX = -((this.myCards.length - 1) * gap) / 2;
-        node.setPosition(startX + idx * gap, 0, 0);
+        const idx = (node as any)._cardIndex ?? 0;
+        const layout = this.getMyHandLayout();
+        node.setPosition(layout.startX + idx * layout.gap, 0, 0);
+    }
+
+    protected showOtherPlay(seatIndex: number, play: CardPlay): void {
+        this.renderPlayCards(this.getPlayAreaBySeat(seatIndex), play, 52, 0.86);
+    }
+
+    protected showMyPlay(play: CardPlay): void {
+        this.renderPlayCards(this.myPlayArea, play, 58, 0.94);
     }
 
     protected createCardNode(card: PokerCard, interactive: boolean): Node {
@@ -483,7 +491,7 @@ export class DoudizhuRoom extends PokerRoomBase {
         Client.Instance.showPromptTip(msg?.errMsg || '出牌失败', 1.8);
         this.isMyTurn = true;
         this.showPassAndPlayButtons(true);
-        this.startCountdown(20);
+        this.startCountdown(DOUDIZHU_PLAY_COUNTDOWN_SECONDS);
     }
 
     private onDoudizhuSettlement(msg: any): void {
@@ -528,7 +536,7 @@ export class DoudizhuRoom extends PokerRoomBase {
             };
             this.pokerActions = actions;
             this.showPassAndPlayButtons(true);
-            this.startCountdown(20);
+            this.startCountdown(DOUDIZHU_PLAY_COUNTDOWN_SECONDS);
             this.updateStatus(isLeader ? '轮到你出牌' : '轮到你跟牌');
         } else {
             this.pokerActions = null;
@@ -614,9 +622,37 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     private ensureDoudizhuPlayerInfo(parent: Node): void {
         if (this.playerInfoRoot) return;
-        this.playerInfoRoot = this.createArea(parent, 'DoudizhuPlayerInfoRoot', 1680, 920, 0, 0);
+        this.playerInfoRoot = this.createArea(parent, 'DoudizhuPlayerInfoRoot', 0, 0, 1680, 920);
         this.createPlayerInfoCard(0, -610, -304, 292, 92);
         this.createPlayerInfoCard(1, 0, 326, 292, 84);
+    }
+
+    private getMyHandLayout(): { gap: number; startX: number; cardWidth: number; cardHeight: number } {
+        const gap = this.myCards.length > 16 ? 52 : 62;
+        return {
+            gap,
+            startX: -((this.myCards.length - 1) * gap) / 2,
+            cardWidth: 78,
+            cardHeight: 108,
+        };
+    }
+
+    private attachCardTouchArea(
+        cardNode: Node,
+        cardIndex: number,
+        isLastCard: boolean,
+        layout: { gap: number; cardWidth: number; cardHeight: number },
+    ): void {
+        const hitWidth = isLastCard ? layout.cardWidth : Math.min(layout.gap, layout.cardWidth);
+        const hitNode = new Node('HitArea');
+        hitNode.layer = cardNode.layer;
+        hitNode.parent = cardNode;
+        hitNode.addComponent(UITransform).setContentSize(hitWidth, layout.cardHeight + 22);
+        hitNode.setPosition(isLastCard ? 0 : -(layout.cardWidth - hitWidth) / 2, 0, 0);
+        hitNode.on(Node.EventType.TOUCH_END, (event: EventTouch) => {
+            event.propagationStopped = true;
+            this.toggleCardSelection(cardIndex);
+        }, this);
     }
 
     private createPlayerInfoCard(index: number, x: number, y: number, w: number, h: number): void {
@@ -642,6 +678,7 @@ export class DoudizhuRoom extends PokerRoomBase {
         if (this.settlementPanel) return;
 
         const panel = this.createArea(parent, 'SettlementPanel', 0, 34, 640, 360);
+        panel.addComponent(BlockInputEvents);
         const bg = panel.addComponent(Graphics);
         bg.fillColor = new Color(18, 29, 42, 244);
         bg.roundRect(-320, -180, 640, 360, 8);
@@ -716,7 +753,8 @@ export class DoudizhuRoom extends PokerRoomBase {
         const button = node.addComponent(Button);
         button.transition = Button.Transition.SCALE;
         button.zoomScale = 1.05;
-        node.on(Node.EventType.TOUCH_END, () => {
+        node.on(Node.EventType.TOUCH_END, (event: EventTouch) => {
+            event.propagationStopped = true;
             const fn = (this as any)[handler];
             if (typeof fn === 'function') fn.call(this);
         }, this);
@@ -758,7 +796,8 @@ export class DoudizhuRoom extends PokerRoomBase {
         const button = node.addComponent(Button);
         button.transition = Button.Transition.SCALE;
         button.zoomScale = 1.05;
-        node.on(Node.EventType.TOUCH_END, () => {
+        node.on(Node.EventType.TOUCH_END, (event: EventTouch) => {
+            event.propagationStopped = true;
             const fn = (this as any)[handler];
             if (typeof fn === 'function') fn.call(this);
         }, this);
@@ -794,6 +833,25 @@ export class DoudizhuRoom extends PokerRoomBase {
             const node = this.createCardNode(card, false);
             node.parent = this.bottomCardsArea!;
             node.setScale(new Vec3(0.82, 0.82, 1));
+            node.setPosition(startX + idx * gap, 0, 0);
+        });
+    }
+
+    private renderPlayCards(area: Node | null, play: CardPlay, preferredGap: number, preferredScale: number): void {
+        if (!area) return;
+        area.removeAllChildren();
+
+        const cards = [...(play.cards || [])].sort((a, b) => b.value - a.value || b.suit - a.suit);
+        if (cards.length === 0) return;
+
+        const maxWidth = 680;
+        const gap = cards.length > 1 ? Math.min(preferredGap, maxWidth / (cards.length - 1)) : preferredGap;
+        const scale = cards.length > 14 ? Math.min(preferredScale, 0.76) : preferredScale;
+        const startX = -((cards.length - 1) * gap) / 2;
+        cards.forEach((card, idx) => {
+            const node = this.createCardNode(card, false);
+            node.parent = area;
+            node.setScale(new Vec3(scale, scale, 1));
             node.setPosition(startX + idx * gap, 0, 0);
         });
     }
@@ -856,7 +914,7 @@ export class DoudizhuRoom extends PokerRoomBase {
                 : `第 ${this.currentRound || 0} 局`;
         }
         if (this.ruleHintLabel) {
-            this.ruleHintLabel.string = '两人对战 · 54张 · 20张手牌 · 3张底牌';
+            this.ruleHintLabel.string = '两人对战 · 初始17张 · 地主20张';
         }
         if (this.multiLabel) this.multiLabel.string = `${this.currentMultiplier || 1}倍`;
         if (this.cardCountLabel) this.cardCountLabel.string = `我的手牌 ${this.myCards.length} 张`;
@@ -870,29 +928,38 @@ export class DoudizhuRoom extends PokerRoomBase {
     }
 
     private refreshDoudizhuPlayers(): void {
-        for (let i = 0; i < this.playerCardRoots.length; i++) {
-            if (this.playerCardRoots[i]) this.playerCardRoots[i]!.active = false;
-        }
-        for (let serverSeat = 0; serverSeat < 2; serverSeat++) {
-            const clientSeat = this.server2ClientSeat(serverSeat);
-            const cardIndex = clientSeat === 0 ? 0 : 1;
-            const root = this.playerCardRoots[cardIndex];
-            const info = this.playerInfos[serverSeat];
-            if (!root || !info) continue;
+        for (let clientSeat = 0; clientSeat < this.playerCardRoots.length; clientSeat++) {
+            const root = this.playerCardRoots[clientSeat];
+            if (!root) continue;
+
+            const serverSeat = this.client2ServerSeat(clientSeat);
+            const info = serverSeat >= 0 ? this.playerInfos[serverSeat] : null;
             root.active = true;
+
+            if (!info) {
+                if (this.playerNameLabels[clientSeat]) {
+                    this.playerNameLabels[clientSeat]!.string = clientSeat === 0 ? '未入座' : '等待对手';
+                }
+                if (this.playerGoldLabels[clientSeat]) this.playerGoldLabels[clientSeat]!.string = '';
+                if (this.playerStateLabels[clientSeat]) {
+                    this.playerStateLabels[clientSeat]!.string = this.gameState === GameState.Waiting ? '等待中' : '空座';
+                }
+                continue;
+            }
+
             const tags: string[] = [];
             if (serverSeat === this.ownerSeat) tags.push('房主');
             if (serverSeat === this.seat) tags.push('我');
             if (serverSeat === this.landlordSeat) tags.push('地主');
             else if (serverSeat === this.bankerSeat) tags.push('庄');
-            if (this.playerNameLabels[cardIndex]) {
-                this.playerNameLabels[cardIndex]!.string = `${info.nickname || `玩家${serverSeat + 1}`}${tags.length > 0 ? ` · ${tags.join('/')}` : ''}`;
+            if (this.playerNameLabels[clientSeat]) {
+                this.playerNameLabels[clientSeat]!.string = `${info.nickname || info.playerId || `玩家${serverSeat + 1}`}${tags.length > 0 ? ` · ${tags.join('/')}` : ''}`;
             }
-            if (this.playerGoldLabels[cardIndex]) {
-                this.playerGoldLabels[cardIndex]!.string = `金币 ${info.gold ?? 0}`;
+            if (this.playerGoldLabels[clientSeat]) {
+                this.playerGoldLabels[clientSeat]!.string = `金币 ${info.gold ?? 0}`;
             }
-            if (this.playerStateLabels[cardIndex]) {
-                this.playerStateLabels[cardIndex]!.string = this.getDoudizhuPlayerStateText(info, serverSeat, clientSeat);
+            if (this.playerStateLabels[clientSeat]) {
+                this.playerStateLabels[clientSeat]!.string = this.getDoudizhuPlayerStateText(info, serverSeat, clientSeat);
             }
         }
     }

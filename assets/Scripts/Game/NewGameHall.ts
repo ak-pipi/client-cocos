@@ -44,13 +44,44 @@ const TAOJIANG_MAX_SCORE_OPTIONS = [
     { text: '36倍', value: 36 },
 ];
 
+const HONGZHONG_DEFAULT_RULES = {
+    base_score: 1,
+    max_score: 0,
+    round_count: 8,
+    player_count: 2,
+    allow_chi: false,
+    allow_peng: true,
+    allow_gang: true,
+    allow_zimo: true,
+    allow_dianpao: true,
+    laizi_enabled: true,
+    hongzhong_enabled: true,
+    bao_ting_enabled: false,
+    dissolve_vote: true,
+};
+
+const HONGZHONG_BASE_OPTIONS = [
+    { text: '1', value: 1 },
+    { text: '2', value: 2 },
+    { text: '3', value: 3 },
+    { text: '5', value: 5 },
+    { text: '10', value: 10 },
+    { text: '20', value: 20 },
+];
+
+const HONGZHONG_ROUND_OPTIONS = [
+    { text: '单局', value: 1 },
+    { text: '8局', value: 8 },
+];
+
 const DOUDIZHU_DEFAULT_RULES = {
     base_score: 1,
     max_score: 0,
     round_count: 8,
     player_count: 2,
-    hand_card_count: 20,
+    hand_card_count: 17,
     bottom_card_count: 3,
+    auto_play_timeout: 180000,
     remove_three_and_four: false,
 };
 
@@ -773,9 +804,13 @@ export class NewGameHall extends Component {
     }
 
     private resetCreateRules(): void {
-        this.createRules = this.gameId === GameId.Doudizhu ?
-            { ...DOUDIZHU_DEFAULT_RULES } :
-            { ...TAOJIANG_DEFAULT_RULES };
+        if (this.gameId === GameId.Doudizhu) {
+            this.createRules = { ...DOUDIZHU_DEFAULT_RULES };
+        } else if (this.gameId === GameId.HongzhongMahjong) {
+            this.createRules = { ...HONGZHONG_DEFAULT_RULES };
+        } else {
+            this.createRules = { ...TAOJIANG_DEFAULT_RULES };
+        }
     }
 
     private createCreateConfigPopup(): void {
@@ -812,18 +847,25 @@ export class NewGameHall extends Component {
         pg.roundRect(-pw / 2, -ph / 2, pw, ph, 12);
         pg.fill();
 
+        const isHongzhong = this.gameId === GameId.HongzhongMahjong;
+        const baseOptions = isHongzhong ? HONGZHONG_BASE_OPTIONS : TAOJIANG_BASE_OPTIONS;
+        const roundOptions = isHongzhong ? HONGZHONG_ROUND_OPTIONS : TAOJIANG_ROUND_OPTIONS;
+
         // 标题
-        this.addLabel(panel, '创建房间 - 规则设置', 24, new Color(255, 220, 100, 255), 0, ph / 2 - 35);
+        this.addLabel(panel, isHongzhong ? '创建房间 - 红中规则' : '创建房间 - 规则设置',
+            24, new Color(255, 220, 100, 255), 0, ph / 2 - 35);
 
         let y = ph / 2 - 80;
         // 台桌分选项
-        y = this.addOptionRow(panel, '台桌分', y, TAOJIANG_BASE_OPTIONS, 'base_score');
+        y = this.addOptionRow(panel, isHongzhong ? '底分' : '台桌分', y, baseOptions, 'base_score');
 
-        // 封顶倍率选项
-        y = this.addOptionRow(panel, '封顶', y, TAOJIANG_MAX_SCORE_OPTIONS, 'max_score');
+        if (!isHongzhong) {
+            // 封顶倍率选项
+            y = this.addOptionRow(panel, '封顶', y, TAOJIANG_MAX_SCORE_OPTIONS, 'max_score');
+        }
 
         // 局数选项
-        y = this.addOptionRow(panel, '局数', y, TAOJIANG_ROUND_OPTIONS, 'round_count');
+        y = this.addOptionRow(panel, '局数', y, roundOptions, 'round_count');
 
         y -= 15;
         // 分割线
@@ -932,7 +974,7 @@ export class NewGameHall extends Component {
 
             btnNode.on(Node.EventType.TOUCH_END, () => {
                 this.createRules[ruleKey] = opt.value;
-                if (this.gameId !== GameId.Doudizhu && (ruleKey === 'base_score' || ruleKey === 'round_count')) {
+                if (this.gameId === GameId.TaojiangMahjong && (ruleKey === 'base_score' || ruleKey === 'round_count')) {
                     this.normalizeTaojiangCreateRules(ruleKey);
                     this.refreshOptionRow(parent, 'base_score', TAOJIANG_BASE_OPTIONS);
                     this.refreshOptionRow(parent, 'round_count', TAOJIANG_ROUND_OPTIONS);

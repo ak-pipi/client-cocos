@@ -13,7 +13,7 @@
  * - MsgTingTile / MsgHuTile / MsgShowTiles         听/胡/亮牌
  */
 
-import { _decorator, Node, Label, Color, UITransform, Vec3 } from 'cc';
+import { _decorator, Node, Label, Color, UITransform, Vec3, Graphics, BlockInputEvents } from 'cc';
 import { MahjongRoomBase, MahjongTile, AvailableActions, MahjongActionOption, MahjongActionType, MeldType, MahjongMeldGroup, tileDisplayText } from '../../GameCommon/MahjongRoomBase';
 import { RoomInfo, RoundSettlementData, FinalSettlementData } from '../../GameCommon/GameTypes';
 import { GameState } from '../../GameCommon/RoomBase';
@@ -50,9 +50,15 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     protected diZhu: number = 1;
     protected allowChi: boolean = false;
     protected allowDianPao: boolean = true;
+    protected playerCount: number = 2;
     protected pendingRoundIncrement: boolean = false;
     protected currentTingTiles: MahjongTile[] = [];
     protected finalSettlementPendingExit: boolean = false;
+    protected settlementNode: Node | null = null;
+    protected birdRevealNode: Node | null = null;
+    protected tingHintNode: Node | null = null;
+    protected tingTitleLabel: Label | null = null;
+    protected tingTilesRoot: Node | null = null;
 
     protected get mjMsgPrefix(): string { return 'MsgHZ'; }
 
@@ -61,10 +67,11 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         super.start();
         this.gameId = 'hongzhong_mahjong';
         this.buildHongzhongHud();
+        this.buildHongzhongTingHint();
         this.refreshHongzhongHud();
     }
 
-    protected getSeatCount(): number { return 4; }
+    protected getSeatCount(): number { return this.playerCount; }
 
     protected isAllRoundsFinished(): boolean {
         const currentRound = Number((this as any).currentRound) || 0;
@@ -88,23 +95,70 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     }
 
     protected updateReadyButtonState(): void {
-        const canReady = (this.seat !== -1 && this.gameState === GameState.Waiting && !this.isAllRoundsFinished());
+        const alreadyReady = !!(this.seat !== -1 && this.playerInfos[this.seat]?.ready);
+        const canReady = (this.seat !== -1 && this.gameState === GameState.Waiting && !this.isAllRoundsFinished() && !alreadyReady);
         if (this.readyGroup) this.readyGroup.active = canReady;
         if (!this.btnReady) return;
         this.btnReady.active = canReady;
-        if (!canReady) return;
 
-        const selfInfo = this.playerInfos[this.seat];
-        const ready = !!selfInfo?.ready;
         if (this.btnReadyLabel) {
-            this.btnReadyLabel.string = ready ? '取消准备' : '准备';
+            this.btnReadyLabel.string = alreadyReady ? '已准备' : '准备';
         }
     }
 
+    protected refreshMahjongControls(): void {
+        const alreadyReady = !!(this.seat !== -1 && this.playerInfos[this.seat]?.ready);
+        const canReadyBase = this.seat !== -1 && this.gameState === GameState.Waiting && !this.isAllRoundsFinished();
+        const canReady = canReadyBase && !alreadyReady;
+
+        if (this.customReadyButton) this.customReadyButton.active = canReady;
+        if (this.customReadyLabel) this.customReadyLabel.string = alreadyReady ? '已准备' : '准备';
+
+        // 红中麻将由所有玩家准备后自动开局，不使用单独“开始”按钮。
+        if (this.customStartButton) this.customStartButton.active = false;
+        if (this.customStartLabel) this.customStartLabel.string = '开始';
+
+        if (this.customSeatButton) this.customSeatButton.active = this.seat !== -1;
+        if (this.customSeatLabel) this.customSeatLabel.string = '旁观';
+    }
+
+    public onReadyClick(): void {
+        if (this.seat === -1 || this.gameState !== GameState.Waiting) return;
+        if (this.playerInfos[this.seat]?.ready) {
+            this.refreshHongzhongRoomUI();
+            return;
+        }
+        super.onReadyClick();
+        this.markSelfReadyLocally();
+    }
+
+    protected onAddAvatar(msg: any): void {
+        this.applyPlayerCountFromAvatars(msg?.avatars);
+        super.onAddAvatar(msg);
+        this.refreshHongzhongRoomUI();
+    }
+
+    protected onPlayerRemoved(seatIndex: number): void {
+        super.onPlayerRemoved(seatIndex);
+        this.refreshHongzhongRoomUI();
+    }
+
+    protected onPlayerReadyUIUpdate(seatIndex: number): void {
+        super.onPlayerReadyUIUpdate(seatIndex);
+        this.refreshHongzhongRoomUI();
+    }
+
+    protected onPlayerOfflineChanged(seatIndex: number, offline: boolean): void {
+        super.onPlayerOfflineChanged(seatIndex, offline);
+        this.refreshHongzhongRoomUI();
+    }
+
     protected onSyncGame(msg: any): void {
+        this.applyPlayerCount(msg);
         super.onSyncGame(msg);
         if (!msg) return;
 
+        this.applyPlayerCount(msg);
         if (msg.roundNo !== undefined) (this as any).currentRound = Number(msg.roundNo) || 0;
         if (msg.roundCount !== undefined) (this as any).totalRounds = Number(msg.roundCount) || 0;
         if (msg.number !== undefined) this.roomNumber = String(msg.number || '');
@@ -212,6 +266,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
 
     protected onHZStartRound(msg: any): void {
         console.log('[HongzhongRoom] Start round:', msg);
+        this.applyPlayerCount(msg);
         this.gameState = GameState.Dealing;
         this.bankerSeat = msg?.banker !== undefined ? Number(msg.banker) : -1;
         if (msg?.roundNo !== undefined) {
@@ -225,6 +280,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         this.stopCountdown();
         this.resetRoundState();
         this.currentTingTiles = [];
+        this.hideHongzhongTingHint();
 
         if (this.btnReady) this.btnReady.active = false;
         if (this.readyGroup) this.readyGroup.active = false;
@@ -242,6 +298,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         this.stopCountdown();
         this.hideActionPanel();
         this.currentTingTiles = [];
+        this.hideHongzhongTingHint();
         this.myScore += this.extractMyRoundDelta(msg);
         this.pendingRoundIncrement = true;
 
@@ -260,6 +317,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         }
 
         this.handleRoundSettlement(msg);
+        this.showBirdReveal(msg, () => this.showSettlementUI(msg, isLastRound));
         this.updateReadyButtonState();
         this.refreshHongzhongHud();
     }
@@ -409,10 +467,12 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     }
 
     protected onServerTingTile(msg: any): void {
-        const rawTiles: any[] = msg?.tiles || msg?.data?.tiles || [];
+        const rawTiles: any[] = msg?.tiles || msg?.tingTiles || msg?.data?.tiles || msg?.data?.tingTiles || [];
+        const rawStyles: any[] = msg?.styles || msg?.data?.styles || [];
         const seen = new Set<string>();
         const tingTiles: MahjongTile[] = [];
-        for (const raw of rawTiles) {
+        for (let i = 0; i < rawTiles.length; i++) {
+            const raw = rawTiles[i];
             const tile = this.parseTileOnly(raw);
             const p = Number(tile.tile.pattern) || 0;
             const n = Number(tile.tile.number) || 0;
@@ -420,14 +480,15 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
             const key = `${p}_${n}`;
             if (seen.has(key)) continue;
             seen.add(key);
-            tingTiles.push(tile);
+            const style = Number(rawStyles[i] ?? raw?.style ?? raw?.huStyle ?? 0) || 0;
+            tingTiles.push({ id: 0, tile: { pattern: p, number: n }, style });
         }
         this.currentTingTiles = tingTiles;
         if (tingTiles.length > 0) {
-            const names = tingTiles.map(t => tileDisplayText(t));
-            const summary = names.length <= 8 ? names.join('、') : `${names.slice(0, 8).join('、')}等`;
-            if (this.hzRuleLabel) this.hzRuleLabel.string = `听牌 ${tingTiles.length} 张：${summary}`;
+            this.showHongzhongTingHint(tingTiles);
+            this.refreshTingSummaryLabel();
         } else {
+            this.hideHongzhongTingHint();
             this.refreshHongzhongHud();
         }
     }
@@ -456,16 +517,43 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         }
     }
 
+    protected getHandAreaBySeat(seatIndex: number): Node | null {
+        if (this.getSeatCount() === 2) {
+            if (seatIndex === 0) return this.myHandArea;
+            if (seatIndex === 1) return this.topHandArea;
+            return null;
+        }
+        return super.getHandAreaBySeat(seatIndex);
+    }
+
+    protected getDiscardAreaBySeat(seatIndex: number): Node | null {
+        if (this.getSeatCount() === 2) {
+            if (seatIndex === 0) return this.myDiscardArea;
+            if (seatIndex === 1) return this.topDiscardArea;
+            return null;
+        }
+        return super.getDiscardAreaBySeat(seatIndex);
+    }
+
+    protected getMeldAreaBySeat(seatIndex: number): Node | null {
+        if (this.getSeatCount() === 2) {
+            if (seatIndex === 0) return this.myMeldArea;
+            if (seatIndex === 1) return this.topMeldArea;
+            return null;
+        }
+        return super.getMeldAreaBySeat(seatIndex);
+    }
+
     protected onServerActorUpdated(msg: any): void {
         const actorSeat = Number(msg.actor);
         if (actorSeat === this.seat) {
             this.isMyTurn = true;
-            if (this.hzRuleLabel) this.hzRuleLabel.string = '轮到你出牌';
+            if (!this.refreshTingSummaryLabel() && this.hzRuleLabel) this.hzRuleLabel.string = '轮到你出牌';
         } else {
             this.isMyTurn = false;
             this.hideActionPanel();
             this.startOtherCountdown(180);
-            if (this.hzRuleLabel) this.hzRuleLabel.string = '等待其他玩家操作';
+            if (!this.refreshTingSummaryLabel() && this.hzRuleLabel) this.hzRuleLabel.string = '等待其他玩家操作';
         }
     }
 
@@ -498,6 +586,62 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
 
     static isHongzhong(tile: MahjongTile): boolean {
         return Number(tile?.tile?.pattern) === 8;
+    }
+
+    protected applyPlayerCount(msg: any): void {
+        const raw = msg?.playerCount ?? msg?.player_count ?? msg?.data?.playerCount ?? msg?.data?.player_count;
+        this.setPlayerCount(raw);
+        this.applyPlayerCountFromAvatars(msg?.avatars ?? msg?.data?.avatars);
+    }
+
+    protected applyPlayerCountFromAvatars(avatars: any): void {
+        if (!Array.isArray(avatars) || avatars.length === 0) return;
+        let inferred = this.playerCount;
+        for (const avatar of avatars) {
+            const seat = Number(avatar?.seat);
+            if (Number.isFinite(seat) && seat >= 0) inferred = Math.max(inferred, Math.floor(seat) + 1);
+        }
+        this.setPlayerCount(inferred);
+    }
+
+    protected setPlayerCount(raw: any): void {
+        const count = Number(raw);
+        if (!Number.isFinite(count)) return;
+        const normalized = Math.floor(count);
+        if (normalized < 2 || normalized > 4 || normalized === this.playerCount) return;
+        this.playerCount = normalized;
+        this.refreshSeatCapacityVisibility();
+    }
+
+    protected refreshSeatCapacityVisibility(): void {
+        const seatCount = this.getSeatCount();
+        for (let i = 0; i < 4; i++) {
+            const visible = i < seatCount;
+            if (this.seatPanels[i]?.node) this.seatPanels[i].node.active = visible;
+            if (!visible && this.guanDanPlayers[i]) {
+                this.guanDanPlayers[i].clear?.();
+                this.guanDanPlayers[i].show?.(false);
+            }
+            if (!visible && this.readyFlags[i]) this.readyFlags[i].active = false;
+        }
+    }
+
+    protected markSelfReadyLocally(): void {
+        if (this.seat === -1) return;
+        if (this.playerInfos[this.seat]) this.playerInfos[this.seat].ready = true;
+        const clientSeat = this.server2ClientSeat(this.seat);
+        if (this.readyFlags[clientSeat]) this.readyFlags[clientSeat].active = true;
+        const playerView = this.guanDanPlayers[clientSeat];
+        if (playerView && typeof playerView.setReady === 'function') {
+            playerView.setReady(true);
+        }
+        this.refreshHongzhongRoomUI();
+    }
+
+    protected refreshHongzhongRoomUI(): void {
+        this.refreshMahjongOverlayUI();
+        this.updateReadyButtonState();
+        this.refreshHongzhongHud();
     }
 
     protected countHongzhongs(): number {
@@ -543,6 +687,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     protected resetRoundState(): void {
         super.resetRoundState();
         this.currentTingTiles = [];
+        this.hideHongzhongTingHint();
         this.refreshHongzhongHud();
     }
 
@@ -588,7 +733,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         area.removeAllChildren();
         if (!tiles || tiles.length === 0) return;
 
-        const vertical = seatIndex === 1 || seatIndex === 2;
+        const vertical = this.getSeatCount() !== 2 && (seatIndex === 1 || seatIndex === 2);
         const step = vertical ? 38 : 42;
         const total = tiles.length * step;
         let start = -total / 2;
@@ -599,6 +744,92 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
             else node.setPosition(start, 0, 0);
             node.setScale(new Vec3(0.62, 0.62, 1));
             start += step;
+        }
+    }
+
+    protected renderDiscardArea(seatIndex: number): void {
+        if (this.getSeatCount() !== 2) {
+            super.renderDiscardArea(seatIndex);
+            return;
+        }
+        const discardArea = this.getDiscardAreaBySeat(seatIndex);
+        if (!discardArea) return;
+        discardArea.removeAllChildren();
+        const discards = this.discardRecords.get(seatIndex) || [];
+        if (discards.length === 0) return;
+
+        const columns = 8;
+        const tileGapY = 8;
+        const lastDiscardId = this.lastDiscardTileId.get(seatIndex);
+        for (let i = 0; i < discards.length; i++) {
+            const row = Math.floor(i / columns);
+            const col = i % columns;
+            const isLast = discards[i].id === lastDiscardId;
+            const tileNode = this.createTileNodeForSeat(discards[i], 0, false);
+            tileNode.parent = discardArea;
+            tileNode.setPosition(col * 44 - ((columns - 1) * 22), -row * (42 + tileGapY), 0);
+            if (isLast) {
+                this.paintHighlightBorder(tileNode, 48, 66, new Color(255, 220, 50, 255), 8);
+            }
+            if (i === discards.length - 1) {
+                tileNode.setScale(new Vec3(0.6, 0.6, 1));
+                const capturedNode = tileNode;
+                const targetScale = isLast ? new Vec3(1.08, 1.08, 1) : Vec3.ONE;
+                this.scheduleOnce(() => {
+                    if (!capturedNode.isValid) return;
+                    capturedNode.setScale(targetScale);
+                }, 0.12);
+            }
+        }
+    }
+
+    protected renderOpponentHandBySeat(seatIndex: number, count: number): void {
+        if (this.getSeatCount() !== 2 || seatIndex !== 1) {
+            super.renderOpponentHandBySeat(seatIndex, count);
+            return;
+        }
+        const area = this.getHandAreaBySeat(seatIndex);
+        if (!area) return;
+        area.removeAllChildren();
+        if (count <= 0) return;
+
+        const step = 34;
+        const gap = 4;
+        const total = count * (step + gap) - gap;
+        let start = -total / 2 + step / 2;
+        for (let i = 0; i < count; i++) {
+            const back = this.createTileBackNodeForSeat(3);
+            back.parent = area;
+            back.setPosition(start + i * (step + gap), 0, 0);
+        }
+    }
+
+    protected renderMeldArea(seatIndex: number): void {
+        if (this.getSeatCount() !== 2 || seatIndex !== 1) {
+            super.renderMeldArea(seatIndex);
+            return;
+        }
+        const area = this.getMeldAreaBySeat(seatIndex);
+        if (!area) return;
+        area.removeAllChildren();
+        const melds = this.meldRecords.get(seatIndex) || [];
+        for (let groupIndex = 0; groupIndex < melds.length; groupIndex++) {
+            const meldGroup = melds[groupIndex];
+            const meld = meldGroup.tiles;
+            const isAnGang = meldGroup.meldType === MeldType.AnGang;
+            const group = new Node(`Meld_${groupIndex}`);
+            group.layer = 1 << 25;
+            group.parent = area;
+            (group.getComponent(UITransform) || group.addComponent(UITransform)).setContentSize(180, 72);
+            group.setPosition(groupIndex * 160, 0, 0);
+            for (let i = 0; i < meld.length; i++) {
+                const useBack = isAnGang && i === 2;
+                const tileNode = useBack
+                    ? this.createTileBackNodeForSeat(3)
+                    : this.createTileNodeForSeat(meld[i], 3, false);
+                tileNode.parent = group;
+                tileNode.setPosition(i * 42 - 42, 0, 0);
+            }
         }
     }
 
@@ -624,6 +855,367 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         this.scheduleOnce(() => {
             if (labelNode.isValid) labelNode.destroy();
         }, 2.4);
+    }
+
+    protected refreshTingSummaryLabel(): boolean {
+        if (!this.hzRuleLabel || this.currentTingTiles.length === 0) return false;
+        const names = this.currentTingTiles.map(t => tileDisplayText(t));
+        const summary = names.length <= 8 ? names.join('、') : `${names.slice(0, 8).join('、')}等`;
+        this.hzRuleLabel.string = `听牌 ${this.currentTingTiles.length} 张：${summary}`;
+        return true;
+    }
+
+    protected buildHongzhongTingHint(): void {
+        if (this.tingHintNode) return;
+        this.tingHintNode = this.createUIChild(this.node, 'HongzhongTingHint', 430, 88, 520, -118, 120);
+        this.paintRect(this.tingHintNode, 430, 88, new Color(19, 24, 35, 214), new Color(117, 186, 255, 255), 16);
+        this.tingTitleLabel = this.createUIChild(this.tingHintNode, 'Title', 100, 24, -150, 30, 1).addComponent(Label);
+        this.tingTitleLabel.fontSize = 20;
+        this.tingTitleLabel.lineHeight = 24;
+        this.tingTitleLabel.color = new Color(255, 222, 135, 255);
+        this.tingTitleLabel.string = '听牌';
+        this.tingTilesRoot = this.createUIChild(this.tingHintNode, 'Tiles', 330, 54, 18, -12, 1);
+        this.tingHintNode.active = false;
+    }
+
+    protected showHongzhongTingHint(tingTiles: MahjongTile[]): void {
+        if (tingTiles.length === 0) return;
+        if (!this.tingHintNode || !this.tingTilesRoot) this.buildHongzhongTingHint();
+        if (!this.tingHintNode || !this.tingTilesRoot) return;
+
+        this.tingHintNode.active = true;
+        this.tingHintNode.setSiblingIndex(220);
+        this.tingTilesRoot.removeAllChildren();
+        if (this.tingTitleLabel) this.tingTitleLabel.string = `可胡 ${tingTiles.length} 张`;
+
+        const tilesPerRow = Math.min(9, Math.max(1, tingTiles.length));
+        const tileSpacing = 42;
+        const hasStyleLabels = tingTiles.some(t => this.getTingStyleShortName(Number(t.style || 0)) !== '');
+        const rowSpacing = hasStyleLabels ? 58 : 44;
+        const rows = Math.ceil(tingTiles.length / tilesPerRow);
+        const tilesContentH = rows * rowSpacing + 4;
+        const panelH = Math.max(tilesContentH + 38, 82);
+        const panelW = Math.min(470, Math.max(330, tilesPerRow * tileSpacing + 88));
+        const panelX = 520;
+        const panelY = -118;
+        const startX = -((tilesPerRow - 1) * tileSpacing) / 2;
+
+        const hintTransform = this.tingHintNode.getComponent(UITransform);
+        if (hintTransform) hintTransform.setContentSize(panelW, panelH);
+        this.tingHintNode.setPosition(panelX, panelY, 0);
+        this.paintRect(this.tingHintNode, panelW, panelH, new Color(19, 24, 35, 214), new Color(117, 186, 255, 255), 16);
+        if (this.tingTitleLabel) this.tingTitleLabel.node.setPosition(-panelW / 2 + 64, panelH / 2 - 22, 0);
+        const rootTransform = this.tingTilesRoot.getComponent(UITransform);
+        if (rootTransform) rootTransform.setContentSize(panelW - 104, tilesContentH);
+        this.tingTilesRoot.setPosition(30, -(panelH / 2 - tilesContentH / 2 - 5), 0);
+
+        for (let idx = 0; idx < tingTiles.length; idx++) {
+            const t = tingTiles[idx];
+            const row = Math.floor(idx / tilesPerRow);
+            const col = idx % tilesPerRow;
+            const tileNode = this.createTileNodeForSeat(t, 0, false);
+            tileNode.setScale(new Vec3(0.64, 0.64, 1));
+            tileNode.parent = this.tingTilesRoot;
+            const x = startX + col * tileSpacing;
+            const y = -(tilesContentH / 2 - rowSpacing / 2) + row * rowSpacing + (hasStyleLabels ? 7 : 0);
+            tileNode.setPosition(x, y, 0);
+
+            const styleName = this.getTingStyleShortName(Number(t.style || 0));
+            if (styleName) {
+                const labelNode = this.createUIChild(this.tingTilesRoot, `Style${idx}`, 44, 16, x, y - 29, 2);
+                const label = labelNode.addComponent(Label);
+                label.string = styleName;
+                label.fontSize = 12;
+                label.lineHeight = 14;
+                label.horizontalAlign = 1;
+                label.verticalAlign = 1;
+                label.overflow = Label.Overflow.SHRINK;
+                label.color = new Color(255, 224, 142, 255);
+            }
+        }
+    }
+
+    protected hideHongzhongTingHint(): void {
+        if (this.tingTilesRoot) this.tingTilesRoot.removeAllChildren();
+        if (this.tingHintNode) this.tingHintNode.active = false;
+    }
+
+    protected getTingStyleShortName(style: number): string {
+        if ((style & 0x020) !== 0) return '清';
+        if ((style & 0x010) !== 0) return '碰';
+        if ((style & 0x080) !== 0) return '七对';
+        return '';
+    }
+
+    protected showBirdReveal(msg: any, onComplete: () => void): void {
+        this.hideBirdReveal();
+        const tile = msg?.birdTile ? this.parseMahjongTile(msg.birdTile) : null;
+        const multiplier = Number(msg?.birdMultiplier) || 1;
+        if (!tile || !tile.tile || Number(tile.tile.pattern) <= 0) {
+            onComplete();
+            return;
+        }
+
+        const overlay = this.createPopupOverlay('HongzhongBirdReveal', 998, 96);
+        const panel = this.createPopupPanel(overlay, 'BirdPanel', 420, 310, '扎鸟', '胡牌后翻一张鸟牌，按牌面倍数结算');
+
+        const slot = this.createUIChild(panel, 'BirdSlot', 116, 154, 0, 18, 1);
+        this.paintRect(slot, 116, 154, new Color(38, 48, 62, 235), new Color(255, 215, 126, 255), 16);
+
+        const hiddenLabel = this.createUIChild(slot, 'Hidden', 84, 34, 0, 0, 1).addComponent(Label);
+        hiddenLabel.string = '?';
+        hiddenLabel.fontSize = 44;
+        hiddenLabel.lineHeight = 48;
+        hiddenLabel.horizontalAlign = 1;
+        hiddenLabel.verticalAlign = 1;
+        hiddenLabel.color = new Color(255, 238, 180, 255);
+
+        const hint = this.createUIChild(panel, 'Hint', 340, 32, 0, -96, 1).addComponent(Label);
+        hint.string = '翻鸟中...';
+        hint.fontSize = 22;
+        hint.lineHeight = 26;
+        hint.horizontalAlign = 1;
+        hint.color = new Color(222, 234, 248, 255);
+
+        this.birdRevealNode = overlay;
+        this.scheduleOnce(() => {
+            if (!overlay.isValid || !slot.isValid) return;
+            slot.removeAllChildren();
+            this.paintRect(slot, 116, 154, new Color(73, 47, 28, 236), new Color(255, 218, 128, 255), 16);
+            const tileNode = this.createTileNodeForSeat(tile, 0, false);
+            tileNode.parent = slot;
+            tileNode.setPosition(0, 10, 0);
+            tileNode.setScale(new Vec3(1.35, 1.35, 1));
+
+            const resultLabel = this.createUIChild(slot, 'Result', 104, 28, 0, -58, 2).addComponent(Label);
+            resultLabel.string = `x${multiplier}`;
+            resultLabel.fontSize = 24;
+            resultLabel.lineHeight = 28;
+            resultLabel.horizontalAlign = 1;
+            resultLabel.color = new Color(255, 238, 180, 255);
+            hint.string = `鸟牌 ${tileDisplayText(tile)}，结算倍数 x${multiplier}`;
+        }, 0.55);
+
+        this.scheduleOnce(() => {
+            this.hideBirdReveal();
+            onComplete();
+        }, 1.85);
+    }
+
+    protected hideBirdReveal(): void {
+        if (this.birdRevealNode && this.birdRevealNode.isValid) {
+            this.birdRevealNode.destroy();
+        }
+        this.birdRevealNode = null;
+    }
+
+    protected findWinnerSeat(data: any): number {
+        const huWays = data?.huWays || [];
+        const huStyles = data?.huStyles || [];
+        const seatCount = this.getSeatCount();
+        for (let i = 0; i < seatCount; i++) {
+            const huWay = Number(huWays[i] || 0);
+            if ((huWay & 0x01) !== 0 || (huWay & 0x02) !== 0) return i;
+        }
+        for (let i = 0; i < seatCount; i++) {
+            if (Number(huStyles[i] || 0) !== 0) return i;
+        }
+        return -1;
+    }
+
+    protected describeHuStyle(data: any, winnerSeat: number): string {
+        if (winnerSeat < 0) return '胡牌';
+        const huStyle = Number(data?.huStyles?.[winnerSeat] || 0);
+        const names: string[] = [];
+        if ((huStyle & 0x020) !== 0) names.push('清一色');
+        if ((huStyle & 0x010) !== 0) names.push('碰碰胡');
+        if ((huStyle & 0x080) !== 0) names.push('七小对');
+        if (names.length === 0 && (huStyle & 0x001) !== 0) names.push('平胡');
+        return names.length > 0 ? names.join(' · ') : '平胡';
+    }
+
+    protected describeHuWay(data: any, winnerSeat: number): string {
+        if (winnerSeat < 0) return '';
+        const huWay = Number(data?.huWays?.[winnerSeat] || 0);
+        const names: string[] = [];
+        if ((huWay & 0x80000) !== 0) names.push('抢杠胡');
+        if ((huWay & 0x8000) !== 0) names.push('杠上炮');
+        if ((huWay & 0x800) !== 0) names.push('杠上花');
+        if ((huWay & 0x02) !== 0) names.push('点炮');
+        if ((huWay & 0x01) !== 0) names.push('自摸');
+        return names.join(' · ');
+    }
+
+    protected showSettlementUI(msg: any, isLastRound: boolean): void {
+        this.hideSettlementUI();
+        const overlay = this.createPopupOverlay('HongzhongSettlementOverlay', 999, 168);
+        const data = msg?.data || {};
+        const isHu = !!data.hu;
+        const seatCount = this.getSeatCount();
+        const panelHeight = 430 + seatCount * 88;
+        const panel = this.createPopupPanel(
+            overlay,
+            'HongzhongSettlementPanel',
+            720,
+            panelHeight,
+            isHu ? '本局结算' : '本局流局',
+            isLastRound ? '一局房已结束' : '点击继续后自动准备下一局',
+        );
+
+        const winnerSeat = this.findWinnerSeat(data);
+        const styleText = this.describeHuStyle(data, winnerSeat);
+        const wayText = this.describeHuWay(data, winnerSeat);
+        const birdText = this.describeBird(msg) || '鸟牌 x1';
+        const delta = this.extractMyRoundDelta(msg);
+
+        let cursorY = panelHeight / 2 - 128;
+        const summary = this.createUIChild(panel, 'Summary', 620, 92, 0, cursorY - 46, 1);
+        this.paintRect(summary, 620, 92, new Color(32, 45, 60, 230), new Color(255, 204, 112, 255), 14);
+        const summaryLabel = summary.addComponent(Label);
+        summaryLabel.string = `${isHu ? `${styleText}${wayText ? ' · ' + wayText : ''}` : '无人胡牌'}\n${birdText}  |  我的变化 ${delta >= 0 ? '+' : ''}${delta}`;
+        summaryLabel.fontSize = 22;
+        summaryLabel.lineHeight = 30;
+        summaryLabel.horizontalAlign = 1;
+        summaryLabel.verticalAlign = 1;
+        summaryLabel.color = new Color(255, 241, 214, 255);
+        cursorY -= 118;
+
+        const golds = msg?.golds || [];
+        const winGolds = msg?.winGolds || [];
+        const scores = data?.scores || [];
+        for (let i = 0; i < seatCount; i++) {
+            const serverSeat = this.client2ServerSeat(i);
+            const info = this.playerInfos[serverSeat];
+            if (!info) continue;
+            const row = this.createUIChild(panel, `PlayerRow${i}`, 620, 72, 0, cursorY - 36, 1);
+            const winGold = Number(winGolds[serverSeat] || 0);
+            const score = Number(scores[serverSeat] || 0);
+            const isWinner = serverSeat === winnerSeat;
+            this.paintRect(
+                row,
+                620,
+                72,
+                isWinner ? new Color(82, 52, 26, 232) : new Color(20, 31, 44, 218),
+                isWinner ? new Color(255, 205, 112, 255) : new Color(80, 111, 150, 210),
+                12,
+            );
+            const name = this.createUIChild(row, 'Name', 230, 28, -184, 12, 1).addComponent(Label);
+            name.string = `${isWinner ? '赢家  ' : ''}${info.nickname || `玩家${serverSeat + 1}`}${serverSeat === this.bankerSeat ? ' [庄]' : ''}`;
+            name.fontSize = 22;
+            name.lineHeight = 26;
+            name.overflow = Label.Overflow.SHRINK;
+            name.horizontalAlign = 0;
+            name.color = new Color(240, 236, 226, 255);
+
+            const scoreLabel = this.createUIChild(row, 'Score', 330, 28, 120, 12, 1).addComponent(Label);
+            scoreLabel.string = `番分 ${score >= 0 ? '+' : ''}${score}   金币 ${winGold >= 0 ? '+' : ''}${winGold}`;
+            scoreLabel.fontSize = 20;
+            scoreLabel.lineHeight = 24;
+            scoreLabel.horizontalAlign = 2;
+            scoreLabel.overflow = Label.Overflow.SHRINK;
+            scoreLabel.color = winGold >= 0 ? new Color(132, 235, 162, 255) : new Color(255, 142, 142, 255);
+
+            const goldLabel = this.createUIChild(row, 'Gold', 300, 22, 135, -18, 1).addComponent(Label);
+            goldLabel.string = `余额 ${Number(golds[serverSeat] || 0)}`;
+            goldLabel.fontSize = 17;
+            goldLabel.lineHeight = 20;
+            goldLabel.horizontalAlign = 2;
+            goldLabel.color = new Color(178, 196, 216, 255);
+            cursorY -= 84;
+        }
+
+        this.createPopupButton(
+            panel,
+            isLastRound ? '返回大厅' : '继续',
+            0,
+            -panelHeight / 2 + 48,
+            178,
+            isLastRound ? new Color(63, 98, 143, 255) : new Color(46, 128, 88, 255),
+            new Color(170, 220, 255, 255),
+            () => {
+                this.hideSettlementUI();
+                if (isLastRound) {
+                    this.finalSettlementPendingExit = false;
+                    this.onBackClick();
+                    return;
+                }
+                this.onReadyClick();
+            },
+        );
+
+        this.settlementNode = overlay;
+    }
+
+    protected hideSettlementUI(): void {
+        if (this.settlementNode && this.settlementNode.isValid) {
+            this.settlementNode.destroy();
+        }
+        this.settlementNode = null;
+    }
+
+    protected createPopupOverlay(name: string, siblingIndex: number, maskOpacity: number): Node {
+        const overlay = new Node(name);
+        overlay.parent = this.node;
+        overlay.layer = 1 << 25;
+        overlay.addComponent(UITransform).setContentSize(1920, 1080);
+        overlay.setPosition(0, 0, 0);
+        overlay.setSiblingIndex(siblingIndex);
+
+        const mask = this.createUIChild(overlay, 'Mask', 1920, 1080, 0, 0, 0);
+        const graphics = mask.addComponent(Graphics);
+        graphics.fillColor = new Color(0, 0, 0, maskOpacity);
+        graphics.rect(-960, -540, 1920, 1080);
+        graphics.fill();
+        mask.addComponent(BlockInputEvents);
+        return overlay;
+    }
+
+    protected createPopupPanel(parent: Node, name: string, width: number, height: number, title: string, subtitle: string): Node {
+        const panel = this.createUIChild(parent, name, width, height, 0, 0, 1);
+        this.paintRect(panel, width, height, new Color(17, 27, 40, 245), new Color(228, 190, 110, 255), 20);
+
+        const titleBar = this.createUIChild(panel, 'TitleBar', width - 56, 66, 0, height / 2 - 48, 1);
+        this.paintRect(titleBar, width - 56, 66, new Color(48, 61, 81, 230), new Color(255, 214, 132, 255), 16);
+
+        const titleNode = this.createUIChild(titleBar, 'Title', width - 120, 28, 0, 10, 1);
+        const titleLabel = titleNode.addComponent(Label);
+        titleLabel.string = title;
+        titleLabel.fontSize = 30;
+        titleLabel.lineHeight = 34;
+        titleLabel.horizontalAlign = 1;
+        titleLabel.color = new Color(255, 238, 201, 255);
+
+        const subtitleNode = this.createUIChild(titleBar, 'Subtitle', width - 120, 22, 0, -16, 1);
+        const subtitleLabel = subtitleNode.addComponent(Label);
+        subtitleLabel.string = subtitle;
+        subtitleLabel.fontSize = 16;
+        subtitleLabel.lineHeight = 20;
+        subtitleLabel.horizontalAlign = 1;
+        subtitleLabel.color = new Color(188, 205, 225, 255);
+        return panel;
+    }
+
+    protected createPopupButton(parent: Node, text: string, x: number, y: number, width: number, color: Color, strokeColor: Color, handler: () => void): void {
+        const btnNode = new Node(text);
+        btnNode.layer = 1 << 25;
+        btnNode.parent = parent;
+        btnNode.addComponent(UITransform).setContentSize(width, 52);
+        btnNode.setPosition(x, y, 0);
+        this.paintRect(btnNode, width, 52, color, strokeColor, 14);
+
+        const labelNode = new Node('Label');
+        labelNode.layer = btnNode.layer;
+        labelNode.parent = btnNode;
+        labelNode.addComponent(UITransform).setContentSize(width - 20, 36);
+        const label = labelNode.addComponent(Label);
+        label.string = text;
+        label.fontSize = 22;
+        label.lineHeight = 28;
+        label.horizontalAlign = 1;
+        label.verticalAlign = 1;
+        label.color = new Color(255, 255, 255, 255);
+
+        btnNode.on(Node.EventType.TOUCH_END, handler, this);
     }
 
     protected clearTableDisplay(): void {
@@ -715,6 +1307,35 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     }
 
     protected parseTileOnly(raw: any): MahjongTile {
+        const toNum = (v: any): number | null => {
+            if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+            if (typeof v === 'string' && v.trim() !== '') {
+                const n = Number(v);
+                return Number.isFinite(n) ? n : null;
+            }
+            return null;
+        };
+        if (!raw) return { id: 0, tile: { pattern: 0, number: 0 } };
+        if (Array.isArray(raw) && raw.length >= 2) {
+            const p = toNum(raw[0] ?? raw['0']);
+            const n = toNum(raw[1] ?? raw['1']);
+            if (p != null && n != null) return { id: 0, tile: { pattern: p, number: n } };
+        }
+        {
+            const p = toNum(raw.pattern ?? raw.Pattern);
+            const n = toNum(raw.number ?? raw.Number);
+            if (p != null && n != null) return { id: 0, tile: { pattern: p, number: n } };
+        }
+        if (raw.tile) {
+            const p0 = toNum(raw.tile.pattern);
+            const n0 = toNum(raw.tile.number);
+            if (p0 != null && n0 != null) return { id: 0, tile: { pattern: p0, number: n0 } };
+            const p = raw.tile[0] ?? raw.tile['0'];
+            const n = raw.tile[1] ?? raw.tile['1'];
+            const pn = toNum(p);
+            const nn = toNum(n);
+            if (pn != null && nn != null) return { id: 0, tile: { pattern: pn, number: nn } };
+        }
         const parsed = this.parseMahjongTile(raw);
         return { id: 0, tile: { pattern: Number(parsed.tile.pattern) || 0, number: Number(parsed.tile.number) || 0 } };
     }
@@ -824,7 +1445,9 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
                 new Color(255, 214, 168, 255), 10);
         }
         if (this.birdLabel) this.birdLabel.string = `底分 ${this.diZhu} · 扎鸟一张`;
-        if (this.hzRuleLabel && this.currentTingTiles.length === 0) {
+        if (this.currentTingTiles.length > 0) {
+            this.refreshTingSummaryLabel();
+        } else if (this.hzRuleLabel) {
             this.hzRuleLabel.string = this.allowDianPao ? '无红中可接炮，红中手牌只自摸/抢杠' : '仅自摸';
         }
     }
