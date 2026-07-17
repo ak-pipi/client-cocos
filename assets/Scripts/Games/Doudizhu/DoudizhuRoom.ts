@@ -48,6 +48,11 @@ export class DoudizhuRoom extends PokerRoomBase {
     private playerStateLabels: (Label | null)[] = [null, null];
     private playerCardRoots: (Node | null)[] = [null, null];
     private fallbackBackButton: Node | null = null;
+    private dragSelectStartIndex: number = -1;
+    private dragSelectCurrentIndex: number = -1;
+    private dragSelectStartX: number = 0;
+    private dragSelectStartY: number = 0;
+    private isDragSelecting: boolean = false;
 
     private landlordSeat: number = -1;
     private bankerSeat: number = -1;
@@ -128,17 +133,27 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     public hint(): void {
         if (!this.isMyTurn) return;
-        this.clearSelection();
-
-        let indices: number[] = [];
-        if (!this.lastPlay) {
-            if (this.myCards.length > 0) indices = [this.myCards.length - 1];
-        } else {
-            const found = this.findSmallestBeatingPlay(this.lastPlay);
-            if (found) indices = found.indices;
+        const currentKey = this.getSelectedIndicesKey();
+        const candidates = this.buildHintCandidates();
+        if (candidates.length === 0) {
+            this.clearSelection();
+            Client.Instance.showPromptTip(this.lastPlay ? '要不起' : '无可提示牌型', 1.2);
+            return;
         }
-        for (const idx of indices) this.selectedIndices.add(idx);
+
+        const currentIndex = candidates.findIndex(item => this.getIndicesKey(item.indices) === currentKey);
+        const next = candidates[(currentIndex + 1) % candidates.length];
+        this.selectedIndices.clear();
+        for (const idx of next.indices) this.selectedIndices.add(idx);
         this.renderMyHand();
+    }
+
+    public toggleCardSelection(cardIndex: number): void {
+        if (!this.isMyTurn) return;
+        if (this.selectedIndices.has(cardIndex)) this.selectedIndices.delete(cardIndex);
+        else this.selectedIndices.add(cardIndex);
+        this.applyHandSelectionVisuals();
+        this.pokerCallbacks.onSelectionChanged?.([...this.selectedIndices]);
     }
 
     public playSelectedCards(): void {
@@ -192,21 +207,11 @@ export class DoudizhuRoom extends PokerRoomBase {
         if (base) return base;
 
         const counts = this.countValues(values);
-        const triples = [...counts.entries()].filter(([, c]) => c === 3).map(([v]) => v).sort((a, b) => a - b);
-        const quads = [...counts.entries()].filter(([, c]) => c === 4).map(([v]) => v);
+        const plane = this.recognizePlane(cards, counts);
+        if (plane) return plane;
 
-        if (triples.length >= 2 && this.isConsecutiveRanks(triples)) {
-            const wingCount = n - triples.length * 3;
-            if (wingCount === 0) return { pattern: PokerPattern.Airplane, cards, weight: triples[0] };
-            if (wingCount === triples.length) return { pattern: PokerPattern.Airplane, cards, weight: triples[0] };
-            if (wingCount === triples.length * 2 && this.remainingArePairs(counts, triples)) {
-                return { pattern: PokerPattern.Airplane, cards, weight: triples[0] };
-            }
-        }
-
-        if (quads.length === 1 && (n === 6 || n === 8)) {
-            return { pattern: PokerPattern.Airplane, cards, weight: quads[0] };
-        }
+        const fourWithTwo = this.recognizeFourWithTwo(cards, counts);
+        if (fourWithTwo) return fourWithTwo;
 
         return null;
     }
@@ -219,6 +224,10 @@ export class DoudizhuRoom extends PokerRoomBase {
         if (play.pattern !== target.pattern) return false;
         if (play.cards.length !== target.cards.length) return false;
         return play.weight > target.weight;
+    }
+
+    protected findSmallestBeatingPlay(target: CardPlay): { indices: number[]; play: CardPlay } | null {
+        return this.buildHintCandidates(target)[0] || null;
     }
 
     protected renderMyHand(): void {
@@ -356,6 +365,7 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.currentState = waitingState ? RoomState.Waiting :
             (state === DoudizhuState.Settling ? RoomState.RoundSettlement : RoomState.Playing);
 
+        this.ingestSyncAvatars(msg);
         if (Array.isArray(msg.myCards)) this.dealCards(this.toPokerCards(msg.myCards));
         this.renderBottomCards(msg.bottomCards || []);
         this.updateHandCounts(msg.handCounts);
@@ -623,8 +633,8 @@ export class DoudizhuRoom extends PokerRoomBase {
     private ensureDoudizhuPlayerInfo(parent: Node): void {
         if (this.playerInfoRoot) return;
         this.playerInfoRoot = this.createArea(parent, 'DoudizhuPlayerInfoRoot', 0, 0, 1680, 920);
-        this.createPlayerInfoCard(0, -610, -304, 292, 92);
-        this.createPlayerInfoCard(1, 0, 326, 292, 84);
+        this.createPlayerInfoCard(0, -610, -252, 318, 92);
+        this.createPlayerInfoCard(1, 610, 278, 318, 92);
     }
 
     private getMyHandLayout(): { gap: number; startX: number; cardWidth: number; cardHeight: number } {
@@ -649,10 +659,364 @@ export class DoudizhuRoom extends PokerRoomBase {
         hitNode.parent = cardNode;
         hitNode.addComponent(UITransform).setContentSize(hitWidth, layout.cardHeight + 22);
         hitNode.setPosition(isLastCard ? 0 : -(layout.cardWidth - hitWidth) / 2, 0, 0);
+        hitNode.on(Node.EventType.TOUCH_START, (event: EventTouch) => {
+            if (!this.isMyTurn) return;
+            event.propagationStopped = true;
+            const location = event.getUILocation();
+            this.dragSelectStartIndex = cardIndex;
+            this.dragSelectCurrentIndex = cardIndex;
+            this.dragSelectStartX = location.x;
+            this.dragSelectStartY = location.y;
+            this.isDragSelecting = false;
+        }, this);
+        hitNode.on(Node.EventType.TOUCH_MOVE, (event: EventTouch) => {
+            if (!this.isMyTurn || this.dragSelectStartIndex < 0) return;
+            event.propagationStopped = true;
+            const location = event.getUILocation();
+            const dx = location.x - this.dragSelectStartX;
+            const dy = location.y - this.dragSelectStartY;
+            if (!this.isDragSelecting && Math.sqrt(dx * dx + dy * dy) < 18) return;
+            this.isDragSelecting = true;
+            const currentIndex = this.getHandIndexByTouch(event);
+            if (currentIndex === null || currentIndex === this.dragSelectCurrentIndex) return;
+            this.dragSelectCurrentIndex = currentIndex;
+            this.applyDragSelection(false);
+        }, this);
         hitNode.on(Node.EventType.TOUCH_END, (event: EventTouch) => {
             event.propagationStopped = true;
-            this.toggleCardSelection(cardIndex);
+            if (this.isDragSelecting) this.applyDragSelection(true);
+            else this.toggleCardSelection(cardIndex);
+            this.resetDragSelection();
         }, this);
+        hitNode.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => {
+            event.propagationStopped = true;
+            this.resetDragSelection();
+        }, this);
+    }
+
+    private getHandIndexByTouch(event: EventTouch): number | null {
+        if (!this.myHandArea || this.myCards.length === 0) return null;
+        const transform = this.myHandArea.getComponent(UITransform);
+        if (!transform) return null;
+        const location = event.getUILocation();
+        const local = transform.convertToNodeSpaceAR(new Vec3(location.x, location.y, 0));
+        const layout = this.getMyHandLayout();
+        const rawIndex = Math.round((local.x - layout.startX) / layout.gap);
+        return Math.max(0, Math.min(this.myCards.length - 1, rawIndex));
+    }
+
+    private applyDragSelection(finalize: boolean): void {
+        if (this.dragSelectStartIndex < 0 || this.dragSelectCurrentIndex < 0) return;
+        const rangeIndices = this.getIndexRange(this.dragSelectStartIndex, this.dragSelectCurrentIndex);
+        const best = this.pickBestDragSelection(rangeIndices);
+        this.selectedIndices.clear();
+        for (const idx of best.indices) this.selectedIndices.add(idx);
+        this.applyHandSelectionVisuals();
+        this.pokerCallbacks.onSelectionChanged?.([...this.selectedIndices]);
+
+        if (finalize && !best.play) {
+            Client.Instance.showPromptTip('未识别有效牌型', 1.0);
+        }
+    }
+
+    private pickBestDragSelection(rangeIndices: number[]): { indices: number[]; play: CardPlay | null } {
+        const exactCards = rangeIndices.map(idx => this.myCards[idx]).filter(Boolean);
+        const exactPlay = this.recognizePattern(exactCards);
+        if (exactPlay && this.isPlayablePattern(exactPlay)) {
+            return { indices: rangeIndices, play: exactPlay };
+        }
+
+        const rangeSet = new Set(rangeIndices);
+        const candidates = this.buildHintCandidates().filter(item => item.indices.every(idx => rangeSet.has(idx)));
+        if (candidates.length === 0) return { indices: rangeIndices, play: null };
+
+        candidates.sort((a, b) => {
+            if (a.indices.length !== b.indices.length) return b.indices.length - a.indices.length;
+            return this.compareHintCandidate(a.play, b.play);
+        });
+        return candidates[0];
+    }
+
+    private isPlayablePattern(play: CardPlay): boolean {
+        if (!this.pokerActions?.isLeader && this.lastPlay) return this.canBeat(play, this.lastPlay);
+        return true;
+    }
+
+    private getIndexRange(a: number, b: number): number[] {
+        const start = Math.max(0, Math.min(a, b));
+        const end = Math.min(this.myCards.length - 1, Math.max(a, b));
+        const indices: number[] = [];
+        for (let i = start; i <= end; i++) indices.push(i);
+        return indices;
+    }
+
+    private applyHandSelectionVisuals(): void {
+        if (!this.myHandArea) return;
+        const layout = this.getMyHandLayout();
+        for (let i = 0; i < this.myCards.length; i++) {
+            const cardNode = this.getCardNodeByIndex(i);
+            if (cardNode) cardNode.setPosition(layout.startX + i * layout.gap, this.selectedIndices.has(i) ? 28 : 0, 0);
+        }
+    }
+
+    private resetDragSelection(): void {
+        this.dragSelectStartIndex = -1;
+        this.dragSelectCurrentIndex = -1;
+        this.dragSelectStartX = 0;
+        this.dragSelectStartY = 0;
+        this.isDragSelecting = false;
+    }
+
+    private findRocketPlay(): { indices: number[]; play: CardPlay } | null {
+        const little = this.myCards.findIndex(card => card.value === 16);
+        const big = this.myCards.findIndex(card => card.value === 17);
+        if (little < 0 || big < 0) return null;
+        const indices = [little, big].sort((a, b) => a - b);
+        const cards = indices.map(idx => this.myCards[idx]);
+        const play = this.recognizePattern(cards);
+        return play ? { indices, play } : null;
+    }
+
+    private buildHintCandidates(target: CardPlay | null = this.lastPlay): Array<{ indices: number[]; play: CardPlay }> {
+        const candidates: Array<{ indices: number[]; play: CardPlay }> = [];
+        const seen = new Set<string>();
+        const add = (indices: number[]): void => {
+            const sorted = [...indices].sort((a, b) => a - b);
+            const cards = sorted.map(idx => this.myCards[idx]).filter(Boolean);
+            const play = this.recognizePattern(cards);
+            if (!play) return;
+            if (target && !this.canBeat(play, target)) return;
+            const key = this.getPlayValueKey(play);
+            if (seen.has(key)) return;
+            seen.add(key);
+            candidates.push({ indices: sorted, play });
+        };
+
+        if (target) {
+            if (target.pattern !== PokerPattern.Rocket) {
+                this.forEachCombination(this.myCards.length, target.cards.length, add);
+                if (target.pattern !== PokerPattern.Bomb) this.addBombCandidates(add);
+                this.addRocketCandidate(add);
+            }
+        } else {
+            this.addLeadHintCandidates(add);
+        }
+
+        candidates.sort((a, b) => this.compareHintCandidate(a.play, b.play));
+        return candidates;
+    }
+
+    private addLeadHintCandidates(add: (indices: number[]) => void): void {
+        const groups = this.groupCardIndicesByValue();
+        const entries = [...groups.entries()].sort((a, b) => a[0] - b[0]);
+
+        for (const [, indices] of entries) add([indices[0]]);
+        for (const [, indices] of entries) if (indices.length >= 2) add(indices.slice(0, 2));
+        for (const [, indices] of entries) if (indices.length >= 3) add(indices.slice(0, 3));
+
+        for (const [tripleValue, tripleIndices] of entries) {
+            if (tripleIndices.length < 3) continue;
+            for (const [singleValue, singleIndices] of entries) {
+                if (singleValue !== tripleValue) add([...tripleIndices.slice(0, 3), singleIndices[0]]);
+            }
+            for (const [pairValue, pairIndices] of entries) {
+                if (pairValue !== tripleValue && pairIndices.length >= 2) add([...tripleIndices.slice(0, 3), ...pairIndices.slice(0, 2)]);
+            }
+        }
+
+        this.addStraightCandidates(entries, add);
+        this.addConsecutivePairCandidates(entries, add);
+        this.addPlaneCandidates(entries, add);
+        this.addFourWithTwoCandidates(entries, add);
+        this.addBombCandidates(add);
+        this.addRocketCandidate(add);
+    }
+
+    private addStraightCandidates(entries: Array<[number, number[]]>, add: (indices: number[]) => void): void {
+        const values = entries.map(([value]) => value).filter(value => value >= 3 && value < 15).sort((a, b) => a - b);
+        for (let start = 0; start < values.length; start++) {
+            for (let end = start + 4; end < values.length; end++) {
+                if (!this.isContinuousValues(values, start, end)) break;
+                add(values.slice(start, end + 1).map(value => entries.find(([v]) => v === value)![1][0]));
+            }
+        }
+    }
+
+    private addConsecutivePairCandidates(entries: Array<[number, number[]]>, add: (indices: number[]) => void): void {
+        const values = entries
+            .filter(([value, indices]) => value >= 3 && value < 15 && indices.length >= 2)
+            .map(([value]) => value)
+            .sort((a, b) => a - b);
+        for (let start = 0; start < values.length; start++) {
+            for (let end = start + 2; end < values.length; end++) {
+                if (!this.isContinuousValues(values, start, end)) break;
+                const indices: number[] = [];
+                for (const value of values.slice(start, end + 1)) {
+                    indices.push(...entries.find(([v]) => v === value)![1].slice(0, 2));
+                }
+                add(indices);
+            }
+        }
+    }
+
+    private addPlaneCandidates(entries: Array<[number, number[]]>, add: (indices: number[]) => void): void {
+        const values = entries
+            .filter(([value, indices]) => value >= 3 && value < 15 && indices.length >= 3)
+            .map(([value]) => value)
+            .sort((a, b) => a - b);
+        for (let start = 0; start < values.length; start++) {
+            for (let end = start + 1; end < values.length; end++) {
+                if (!this.isContinuousValues(values, start, end)) break;
+                const indices: number[] = [];
+                for (const value of values.slice(start, end + 1)) {
+                    indices.push(...entries.find(([v]) => v === value)![1].slice(0, 3));
+                }
+                add(indices);
+
+                const wingCount = end - start + 1;
+                const coreSet = new Set(indices);
+                const wingPool: number[] = [];
+                for (let i = 0; i < this.myCards.length; i++) {
+                    if (!coreSet.has(i)) wingPool.push(i);
+                }
+                this.forEachCombination(wingPool.length, wingCount, wingPositions => {
+                    add([...indices, ...wingPositions.map(pos => wingPool[pos])]);
+                });
+
+                const pairGroups: number[][] = [];
+                for (const [value, groupIndices] of entries) {
+                    const remain = groupIndices.filter(idx => !coreSet.has(idx));
+                    if (value < 16 && remain.length >= 2) pairGroups.push(remain.slice(0, 2));
+                }
+                this.forEachCombination(pairGroups.length, wingCount, pairPositions => {
+                    const pairIndices: number[] = [];
+                    for (const pos of pairPositions) pairIndices.push(...pairGroups[pos]);
+                    add([...indices, ...pairIndices]);
+                });
+            }
+        }
+    }
+
+    private addFourWithTwoCandidates(entries: Array<[number, number[]]>, add: (indices: number[]) => void): void {
+        for (const [fourValue, fourIndices] of entries) {
+            if (fourIndices.length < 4) continue;
+            const core = fourIndices.slice(0, 4);
+            const singlePool: number[] = [];
+            for (let i = 0; i < this.myCards.length; i++) {
+                if (core.indexOf(i) === -1) singlePool.push(i);
+            }
+            this.forEachCombination(singlePool.length, 2, positions => {
+                add([...core, ...positions.map(pos => singlePool[pos])]);
+            });
+
+            const pairGroups: number[][] = [];
+            for (const [value, groupIndices] of entries) {
+                if (value === fourValue || value >= 16) continue;
+                if (groupIndices.length >= 2) pairGroups.push(groupIndices.slice(0, 2));
+            }
+            this.forEachCombination(pairGroups.length, 2, positions => {
+                const pairIndices: number[] = [];
+                for (const pos of positions) pairIndices.push(...pairGroups[pos]);
+                add([...core, ...pairIndices]);
+            });
+        }
+    }
+
+    private addBombCandidates(add: (indices: number[]) => void): void {
+        for (const [, indices] of this.groupCardIndicesByValue()) {
+            if (indices.length >= 4) add(indices.slice(0, 4));
+        }
+    }
+
+    private addRocketCandidate(add: (indices: number[]) => void): void {
+        const rocket = this.findRocketPlay();
+        if (rocket) add(rocket.indices);
+    }
+
+    private forEachCombination(count: number, size: number, visit: (indices: number[]) => void): void {
+        if (size <= 0 || size > count) return;
+        const picked: number[] = [];
+        const dfs = (start: number): void => {
+            if (picked.length === size) {
+                visit([...picked]);
+                return;
+            }
+            const remaining = size - picked.length;
+            for (let i = start; i <= count - remaining; i++) {
+                picked.push(i);
+                dfs(i + 1);
+                picked.pop();
+            }
+        };
+        dfs(0);
+    }
+
+    private groupCardIndicesByValue(): Map<number, number[]> {
+        const groups = new Map<number, number[]>();
+        for (let i = 0; i < this.myCards.length; i++) {
+            const value = this.myCards[i].value;
+            if (!groups.has(value)) groups.set(value, []);
+            groups.get(value)!.push(i);
+        }
+        return groups;
+    }
+
+    private isContinuousValues(values: number[], start: number, end: number): boolean {
+        for (let i = start + 1; i <= end; i++) {
+            if (values[i] !== values[i - 1] + 1) return false;
+        }
+        return true;
+    }
+
+    private compareHintCandidate(a: CardPlay, b: CardPlay): number {
+        const pa = this.getHintPatternOrder(a.pattern);
+        const pb = this.getHintPatternOrder(b.pattern);
+        if (pa !== pb) return pa - pb;
+        if (a.cards.length !== b.cards.length) return a.cards.length - b.cards.length;
+        return a.weight - b.weight;
+    }
+
+    private getHintPatternOrder(pattern: PokerPattern): number {
+        switch (pattern) {
+            case PokerPattern.Single: return 1;
+            case PokerPattern.Pair: return 2;
+            case PokerPattern.Triple: return 3;
+            case PokerPattern.TripleWithOne: return 4;
+            case PokerPattern.TripleWithPair: return 5;
+            case PokerPattern.Straight: return 6;
+            case PokerPattern.ConsecutivePairs: return 7;
+            case PokerPattern.Airplane: return 8;
+            case PokerPattern.AirplaneWithSingles: return 9;
+            case PokerPattern.AirplaneWithPairs: return 10;
+            case PokerPattern.FourWithTwo: return 11;
+            case PokerPattern.FourWithTwoPairs: return 12;
+            case PokerPattern.Bomb: return 90;
+            case PokerPattern.Rocket: return 100;
+            default: return 50;
+        }
+    }
+
+    private getPlayValueKey(play: CardPlay): string {
+        const values = play.cards.map(card => card.value).sort((a, b) => a - b).join(',');
+        return `${play.pattern}:${values}:${play.weight}`;
+    }
+
+    private getSelectedIndicesKey(): string {
+        return this.getIndicesKey([...this.selectedIndices]);
+    }
+
+    private getIndicesKey(indices: number[]): string {
+        return [...indices].sort((a, b) => a - b).join(',');
+    }
+
+    private ingestSyncAvatars(msg: any): void {
+        const lists = [msg?.avatars, msg?.avatarInfos, msg?.players];
+        for (const avatars of lists) {
+            if (Array.isArray(avatars) && avatars.length > 0) {
+                this.onAddAvatar({ avatars });
+                return;
+            }
+        }
     }
 
     private createPlayerInfoCard(index: number, x: number, y: number, w: number, h: number): void {
@@ -1102,11 +1466,54 @@ export class DoudizhuRoom extends PokerRoomBase {
         return true;
     }
 
-    private remainingArePairs(counts: Map<number, number>, tripleValues: number[]): boolean {
-        const triples = new Set(tripleValues);
+    private recognizePlane(cards: PokerCard[], counts: Map<number, number>): CardPlay | null {
+        const n = cards.length;
+        const tripleValues = [...counts.entries()]
+            .filter(([value, count]) => value < 15 && count >= 3)
+            .map(([value]) => value)
+            .sort((a, b) => a - b);
+        if (tripleValues.length < 2) return null;
+
+        for (let len = tripleValues.length; len >= 2; len--) {
+            for (let start = 0; start <= tripleValues.length - len; start++) {
+                const sequence = tripleValues.slice(start, start + len);
+                if (!this.isConsecutiveRanks(sequence)) continue;
+                const rest = new Map<number, number>(counts);
+                for (const value of sequence) rest.set(value, (rest.get(value) || 0) - 3);
+
+                const restCards = [...rest.values()].reduce((sum, count) => sum + count, 0);
+                if (restCards === 0 && n === len * 3) {
+                    return { pattern: PokerPattern.Airplane, cards, weight: sequence[0] };
+                }
+                if (restCards === len && n === len * 4) {
+                    return { pattern: PokerPattern.AirplaneWithSingles, cards, weight: sequence[0] };
+                }
+                if (restCards === len * 2 && n === len * 5 && this.remainingAreNonJokerPairs(rest)) {
+                    return { pattern: PokerPattern.AirplaneWithPairs, cards, weight: sequence[0] };
+                }
+            }
+        }
+        return null;
+    }
+
+    private recognizeFourWithTwo(cards: PokerCard[], counts: Map<number, number>): CardPlay | null {
+        const n = cards.length;
+        if (n !== 6 && n !== 8) return null;
+        const fourValue = [...counts.entries()].find(([, count]) => count === 4)?.[0];
+        if (fourValue === undefined) return null;
+        if (n === 6) return { pattern: PokerPattern.FourWithTwo, cards, weight: fourValue };
+
         for (const [value, count] of counts.entries()) {
-            if (triples.has(value)) continue;
-            if (count !== 2) return false;
+            if (value === fourValue) continue;
+            if (count !== 2 || value >= 16) return null;
+        }
+        return { pattern: PokerPattern.FourWithTwoPairs, cards, weight: fourValue };
+    }
+
+    private remainingAreNonJokerPairs(counts: Map<number, number>): boolean {
+        for (const [value, count] of counts.entries()) {
+            if (count === 0) continue;
+            if (count !== 2 || value >= 16) return false;
         }
         return true;
     }
@@ -1114,9 +1521,13 @@ export class DoudizhuRoom extends PokerRoomBase {
     private patternByGenre(genre: number): PokerPattern {
         if (genre === 14) return PokerPattern.Rocket;
         if (genre === 13) return PokerPattern.Bomb;
+        if (genre === 12) return PokerPattern.FourWithTwoPairs;
+        if (genre === 11) return PokerPattern.FourWithTwo;
+        if (genre === 10) return PokerPattern.AirplaneWithPairs;
+        if (genre === 9) return PokerPattern.AirplaneWithSingles;
+        if (genre === 8) return PokerPattern.Airplane;
         if (genre === 7) return PokerPattern.ConsecutivePairs;
         if (genre === 6) return PokerPattern.Straight;
-        if (genre >= 8) return PokerPattern.Airplane;
         if (genre === 5) return PokerPattern.TripleWithPair;
         if (genre === 4) return PokerPattern.TripleWithOne;
         if (genre === 3) return PokerPattern.Triple;

@@ -74,6 +74,10 @@ export enum PokerPattern {
     Straight = 'straight',
     ConsecutivePairs = 'consecutive_pairs',
     Airplane = 'airplane',
+    AirplaneWithSingles = 'airplane_singles',
+    AirplaneWithPairs = 'airplane_pairs',
+    FourWithTwo = 'four_two',
+    FourWithTwoPairs = 'four_two_pairs',
     Bomb = 'bomb',
     Rocket = 'rocket',
 }

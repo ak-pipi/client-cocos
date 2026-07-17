@@ -7,12 +7,13 @@
  * - 炸弹翻倍，输家一张未出关门/春天翻倍
  */
 
-import { _decorator, Node, Label, Color, Graphics, Button, EventHandler, UITransform, Vec3, BlockInputEvents } from 'cc';
+import { _decorator, Node, Label, Color, Graphics, Button, EventHandler, UITransform, Vec3, BlockInputEvents, EventTouch } from 'cc';
 import { PokerRoomBase, PokerCard, CardPlay } from '../../GameCommon/PokerRoomBase';
 import { RoomInfo, PokerPattern, RoomState } from '../../GameCommon/GameTypes';
 import { GameState } from '../../GameCommon/RoomBase';
 import { NetworkManager } from '../../Manager/NetworkManager';
 import { Client } from '../../Game/Client';
+import { GameManager } from '../../Manager/GameManager';
 
 const { ccclass, property } = _decorator;
 
@@ -68,6 +69,14 @@ export class PaodekuaiRoom extends PokerRoomBase {
     private settlementPlayerLabels: Array<Label | null> = [null, null];
     private settlementContinueLabel: Label | null = null;
     private settlementIsFinalRound: boolean = false;
+    private avatarListRequested: boolean = false;
+    private hintOptions: Array<{ indices: number[]; play: CardPlay }> = [];
+    private hintOptionIndex: number = 0;
+    private hintContextKey: string = '';
+    private dragSelectStartIndex: number = -1;
+    private dragSelectCurrentIndex: number = -1;
+    private dragSelectStartX: number = 0;
+    private dragSelectActive: boolean = false;
 
     protected get pokerMsgPrefix(): string { return 'PaoDeKuai.'; }
 
@@ -197,6 +206,9 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.serverLastPlaySeat = Number(msg?.lastPlaySeat ?? -1);
         this.pdkIsLeader = !!msg?.isFirstPlay;
         this.hasFirstPlayed = false;
+        if (!Array.isArray(msg?.avatars) || msg.avatars.length < this.getSeatCount()) {
+            this.requestAvatarList();
+        }
 
         if (Array.isArray(msg?.myCards)) {
             this.dealCards(msg.myCards.map((id: number) => this.cardFromServerId(Number(id))));
@@ -224,6 +236,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         }
 
         this.updateMultiplierDisplay();
+        this.ensureSelfPlayerInfo();
         this.refreshPaodekuaiHud();
         this.updateTurnState();
     }
@@ -270,6 +283,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         }
 
         this.sendPlay(play);
+        this.resetHintCycle();
         this.isMyTurn = false;
         this.showPassAndPlayButtons(false);
         this.stopCountdown();
@@ -279,6 +293,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         if (!this.isMyTurn || !this.pokerActions?.canPass) return;
         NetworkManager.Instance.sendInnerMessage('PaoDeKuai.Play', { cardIds: [] });
         this.clearSelection();
+        this.resetHintCycle();
         this.isMyTurn = false;
         this.showPassAndPlayButtons(false);
         this.stopCountdown();
@@ -286,11 +301,24 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     public hint(): void {
         if (!this.isMyTurn) return;
-        this.clearSelection();
 
         const target = this.pdkIsLeader ? null : this.lastPlay;
-        const suggestion = target ? this.findSmallestBeatingPlay(target) : this.findFirstLeadPlay();
-        if (!suggestion) return;
+        const contextKey = this.buildHintContextKey(target);
+        if (contextKey !== this.hintContextKey) {
+            this.hintContextKey = contextKey;
+            this.hintOptions = this.enumerateHintPlays(target);
+            this.hintOptionIndex = 0;
+        } else if (this.hintOptions.length > 0) {
+            this.hintOptionIndex = (this.hintOptionIndex + 1) % this.hintOptions.length;
+        }
+
+        const suggestion = this.hintOptions[this.hintOptionIndex];
+        if (!suggestion) {
+            this.clearSelection();
+            this.renderMyHand();
+            return;
+        }
+        this.clearSelection();
         suggestion.indices.forEach(i => this.selectedIndices.add(i));
         this.renderMyHand();
     }
@@ -302,6 +330,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     protected onPdkDeal(msg: any): void {
         this.resetRoundState();
+        this.resetHintCycle();
         this.hideSettlementPanel();
         this.gameState = GameState.Playing;
         this.currentState = RoomState.Playing;
@@ -361,6 +390,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.updatePlayerCardCount(clientSeat, Number(msg?.remainCount) || 0);
         this.serverCurrentPlayer = Number(msg?.nextPlayer ?? -1);
         this.clearSelection();
+        this.resetHintCycle();
         this.renderMyHand();
         this.updateCardCountDisplay();
         this.updateMultiplierDisplay();
@@ -460,8 +490,14 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     private enumerateBestPlay(target: CardPlay | null): { indices: number[]; play: CardPlay } | null {
+        const options = this.enumerateHintPlays(target);
+        return options.length > 0 ? options[0] : null;
+    }
+
+    private enumerateHintPlays(target: CardPlay | null): Array<{ indices: number[]; play: CardPlay }> {
         const n = this.myCards.length;
-        let best: { indices: number[]; play: CardPlay } | null = null;
+        const options: Array<{ indices: number[]; play: CardPlay }> = [];
+        const seen = new Set<string>();
         for (let mask = 1; mask < (1 << n); mask++) {
             const indices: number[] = [];
             const cards: PokerCard[] = [];
@@ -474,11 +510,112 @@ export class PaodekuaiRoom extends PokerRoomBase {
             const play = this.recognizePattern(cards);
             if (!play) continue;
             if (target && !this.canBeat(play, target)) continue;
-            if (!best || this.isBetterSuggestion(play, best.play, !!target)) {
-                best = { indices, play };
-            }
+            const signature = this.getHintPlaySignature(play);
+            if (seen.has(signature)) continue;
+            seen.add(signature);
+            options.push({ indices, play });
         }
-        return best;
+        options.sort((a, b) => this.compareHintSuggestion(a.play, b.play, !!target));
+        return options;
+    }
+
+    private compareHintSuggestion(a: CardPlay, b: CardPlay, beating: boolean): number {
+        if (this.isBetterSuggestion(a, b, beating)) return -1;
+        if (this.isBetterSuggestion(b, a, beating)) return 1;
+        const aValues = a.cards.map(c => c.value).sort((x, y) => x - y).join(',');
+        const bValues = b.cards.map(c => c.value).sort((x, y) => x - y).join(',');
+        return aValues.localeCompare(bValues);
+    }
+
+    private getHintPlaySignature(play: CardPlay): string {
+        const values = play.cards.map(c => c.value).sort((a, b) => a - b).join(',');
+        return `${play.pattern}|${play.weight}|${values}`;
+    }
+
+    private buildHintContextKey(target: CardPlay | null): string {
+        const handKey = this.myCards.map(c => c.cardId).join(',');
+        if (!target) return `${handKey}|lead`;
+        const targetCards = target.cards.map(c => c.cardId).sort().join(',');
+        return `${handKey}|${target.pattern}|${target.weight}|${targetCards}`;
+    }
+
+    private resetHintCycle(): void {
+        this.hintOptions = [];
+        this.hintOptionIndex = 0;
+        this.hintContextKey = '';
+    }
+
+    private findBestDragPlay(rangeIndices: number[]): { indices: number[]; play: CardPlay } | null {
+        const indices = [...new Set(rangeIndices)]
+            .filter(i => i >= 0 && i < this.myCards.length)
+            .sort((a, b) => a - b);
+        if (indices.length === 0) return null;
+
+        const target = this.pdkIsLeader ? null : this.lastPlay;
+        const exact = this.buildPlayFromIndices(indices, target);
+        if (exact) return exact;
+
+        const candidates = this.enumerateHintPlaysFromIndices(indices, target);
+        if (target) return candidates.length > 0 ? candidates[0] : null;
+
+        candidates.sort((a, b) => this.compareDragLeadSuggestion(a.play, b.play));
+        return candidates.length > 0 ? candidates[0] : null;
+    }
+
+    private buildPlayFromIndices(indices: number[], target: CardPlay | null): { indices: number[]; play: CardPlay } | null {
+        const cards = indices.map(i => this.myCards[i]).filter(Boolean);
+        const play = this.recognizePattern(cards);
+        if (!play) return null;
+        if (target && !this.canBeat(play, target)) return null;
+        return { indices: [...indices], play };
+    }
+
+    private enumerateHintPlaysFromIndices(allowedIndices: number[], target: CardPlay | null): Array<{ indices: number[]; play: CardPlay }> {
+        const options: Array<{ indices: number[]; play: CardPlay }> = [];
+        const seen = new Set<string>();
+        const n = allowedIndices.length;
+        for (let mask = 1; mask < (1 << n); mask++) {
+            const indices: number[] = [];
+            const cards: PokerCard[] = [];
+            for (let i = 0; i < n; i++) {
+                if ((mask & (1 << i)) === 0) continue;
+                const cardIndex = allowedIndices[i];
+                indices.push(cardIndex);
+                cards.push(this.myCards[cardIndex]);
+            }
+            const play = this.recognizePattern(cards);
+            if (!play) continue;
+            if (target && !this.canBeat(play, target)) continue;
+            const signature = this.getHintPlaySignature(play);
+            if (seen.has(signature)) continue;
+            seen.add(signature);
+            options.push({ indices: indices.sort((a, b) => a - b), play });
+        }
+        options.sort((a, b) => this.compareHintSuggestion(a.play, b.play, !!target));
+        return options;
+    }
+
+    private compareDragLeadSuggestion(a: CardPlay, b: CardPlay): number {
+        if (a.cards.length !== b.cards.length) return b.cards.length - a.cards.length;
+        const rankDiff = this.getDragPatternRank(b.pattern) - this.getDragPatternRank(a.pattern);
+        if (rankDiff !== 0) return rankDiff;
+        if (a.weight !== b.weight) return a.weight - b.weight;
+        return this.compareHintSuggestion(a, b, false);
+    }
+
+    private getDragPatternRank(pattern: PokerPattern): number {
+        switch (pattern) {
+            case PokerPattern.Airplane: return 90;
+            case PokerPattern.ConsecutivePairs: return 80;
+            case PokerPattern.Straight: return 70;
+            case PokerPattern.TripleWithPair: return 60;
+            case PokerPattern.TripleWithOne: return 50;
+            case PokerPattern.Bomb: return 45;
+            case PokerPattern.Triple: return 40;
+            case PokerPattern.Pair: return 20;
+            case PokerPattern.Single: return 10;
+            default: return 0;
+        }
     }
 
     private isBetterSuggestion(candidate: CardPlay, current: CardPlay, beating: boolean): boolean {
@@ -522,6 +659,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         } else {
             this.pokerActions = null;
             this.showPassAndPlayButtons(false);
+            this.resetHintCycle();
             this.stopCountdown();
             if (this.gameState === GameState.Playing && this.serverCurrentPlayer >= 0) {
                 this.updateStatus('等待对手出牌');
@@ -550,13 +688,20 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.serverLastPlaySeat = -1;
         this.pdkIsLeader = true;
         this.hasFirstPlayed = false;
+        this.resetHintCycle();
     }
 
     protected showPassAndPlayButtons(show: boolean): void {
         const showPass = show && !!this.pokerActions?.canPass;
         const showPlay = show && !showPass && (!!this.pokerActions?.canPlay || !!this.pokerActions?.canHint);
-        if (this.passGroup) this.passGroup.active = showPass;
-        if (this.playGroup) this.playGroup.active = showPlay;
+        if (this.passGroup) {
+            this.passGroup.setPosition(0, this.passGroup.position.y, this.passGroup.position.z);
+            this.passGroup.active = showPass;
+        }
+        if (this.playGroup) {
+            this.playGroup.setPosition(0, this.playGroup.position.y, this.playGroup.position.z);
+            this.playGroup.active = showPlay;
+        }
     }
 
     protected renderMyHand(): void {
@@ -571,9 +716,132 @@ export class PaodekuaiRoom extends PokerRoomBase {
             (cardNode as any)._cardIndex = i;
             cardNode.parent = this.myHandArea;
             cardNode.setPosition(startX + i * gap, this.selectedIndices.has(i) ? 30 : 0, 0);
-            cardNode.on(Node.EventType.TOUCH_END, () => this.toggleCardSelection(i), this);
+            this.bindHandCardTouch(cardNode, i);
         }
         this.updateCardCountDisplay();
+    }
+
+    private bindHandCardTouch(cardNode: Node, cardIndex: number): void {
+        cardNode.on(Node.EventType.TOUCH_START, (event: EventTouch) => this.onHandCardTouchStart(event, cardIndex), this);
+        cardNode.on(Node.EventType.TOUCH_MOVE, (event: EventTouch) => this.onHandCardTouchMove(event), this);
+        cardNode.on(Node.EventType.TOUCH_END, (event: EventTouch) => this.onHandCardTouchEnd(event, cardIndex), this);
+        cardNode.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => this.onHandCardTouchCancel(event), this);
+    }
+
+    private onHandCardTouchStart(event: EventTouch, cardIndex: number): void {
+        if (!this.isMyTurn || !this.pokerActions?.canPlay) return;
+        event.propagationStopped = true;
+        this.dragSelectStartIndex = cardIndex;
+        this.dragSelectCurrentIndex = cardIndex;
+        this.dragSelectStartX = this.getHandTouchLocalX(event);
+        this.dragSelectActive = false;
+    }
+
+    private onHandCardTouchMove(event: EventTouch): void {
+        if (this.dragSelectStartIndex < 0 || !this.isMyTurn || !this.pokerActions?.canPlay) return;
+        event.propagationStopped = true;
+
+        const localX = this.getHandTouchLocalX(event);
+        const cardIndex = this.getHandIndexByLocalX(localX);
+        if (cardIndex < 0) return;
+
+        const movedEnough = Math.abs(localX - this.dragSelectStartX) >= 14 || cardIndex !== this.dragSelectStartIndex;
+        if (!this.dragSelectActive && !movedEnough) return;
+
+        this.dragSelectActive = true;
+        if (cardIndex === this.dragSelectCurrentIndex) return;
+        this.dragSelectCurrentIndex = cardIndex;
+        this.selectRawDragRange();
+    }
+
+    private onHandCardTouchEnd(event: EventTouch, cardIndex: number): void {
+        if (this.dragSelectStartIndex < 0) return;
+        event.propagationStopped = true;
+
+        if (!this.dragSelectActive) {
+            this.resetDragSelectionState();
+            this.toggleCardSelection(cardIndex);
+            return;
+        }
+
+        const localX = this.getHandTouchLocalX(event);
+        const endIndex = this.getHandIndexByLocalX(localX);
+        if (endIndex >= 0) this.dragSelectCurrentIndex = endIndex;
+        this.finalizeDragSelection();
+        this.resetDragSelectionState();
+    }
+
+    private onHandCardTouchCancel(event: EventTouch): void {
+        if (this.dragSelectStartIndex >= 0) event.propagationStopped = true;
+        this.resetDragSelectionState();
+    }
+
+    private getHandTouchLocalX(event: EventTouch): number {
+        if (!this.myHandArea) return 0;
+        const transform = this.myHandArea.getComponent(UITransform);
+        if (!transform) return 0;
+        const pos = event.getUILocation();
+        return transform.convertToNodeSpaceAR(new Vec3(pos.x, pos.y, 0)).x;
+    }
+
+    private getHandIndexByLocalX(localX: number): number {
+        if (this.myCards.length === 0) return -1;
+        const layout = this.getMyHandLayout();
+        const rawIndex = Math.round((localX - layout.startX) / layout.gap);
+        return Math.max(0, Math.min(this.myCards.length - 1, rawIndex));
+    }
+
+    private selectRawDragRange(): void {
+        const range = this.getDragRangeIndices();
+        this.selectedIndices = new Set(range);
+        this.applyCurrentSelectionToHand();
+    }
+
+    private finalizeDragSelection(): void {
+        const range = this.getDragRangeIndices();
+        const best = this.findBestDragPlay(range);
+        if (best) {
+            this.selectedIndices = new Set(best.indices);
+        } else {
+            this.selectedIndices = new Set(range);
+            Client.Instance.showPromptTip('范围内没有可出的牌', 1.1);
+        }
+        this.resetHintCycle();
+        this.applyCurrentSelectionToHand();
+    }
+
+    private getDragRangeIndices(): number[] {
+        if (this.dragSelectStartIndex < 0 || this.dragSelectCurrentIndex < 0) return [];
+        const min = Math.min(this.dragSelectStartIndex, this.dragSelectCurrentIndex);
+        const max = Math.max(this.dragSelectStartIndex, this.dragSelectCurrentIndex);
+        const indices: number[] = [];
+        for (let i = min; i <= max; i++) indices.push(i);
+        return indices;
+    }
+
+    private resetDragSelectionState(): void {
+        this.dragSelectStartIndex = -1;
+        this.dragSelectCurrentIndex = -1;
+        this.dragSelectStartX = 0;
+        this.dragSelectActive = false;
+    }
+
+    private applyCurrentSelectionToHand(): void {
+        for (let i = 0; i < this.myCards.length; i++) {
+            const node = this.getCardNodeByIndex(i);
+            if (!node) continue;
+            if (this.selectedIndices.has(i)) this.applySelectedStyle(node);
+            else this.applyNormalStyle(node);
+        }
+        this.pokerCallbacks.onSelectionChanged?.([...this.selectedIndices]);
+    }
+
+    private getMyHandLayout(): { gap: number; startX: number } {
+        const gap = this.myCards.length > 14 ? 58 : 66;
+        return {
+            gap,
+            startX: -((this.myCards.length - 1) * gap) / 2,
+        };
     }
 
     protected applySelectedStyle(node: Node): void {
@@ -683,8 +951,8 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.leftPlayArea = this.createArea(overlay, 'OpponentPlay', 0, 118, 760, 98);
         this.opponentHandArea = this.createArea(overlay, 'OpponentHand', 0, 302, 760, 82);
 
-        this.passGroup = this.createArea(overlay, 'PassGroup', -92, -242, 120, 52);
-        this.playGroup = this.createArea(overlay, 'PlayGroup', 92, -242, 250, 52);
+        this.passGroup = this.createArea(overlay, 'PassGroup', 0, -242, 120, 52);
+        this.playGroup = this.createArea(overlay, 'PlayGroup', 0, -242, 250, 52);
         this.createTextButton(this.passGroup, '要不起', 0, 0, 'pass', new Color(92, 99, 112, 235));
         this.createTextButton(this.playGroup, '提示', -68, 0, 'hint', new Color(60, 128, 170, 235));
         this.createTextButton(this.playGroup, '出牌', 68, 0, 'playSelectedCards', new Color(46, 139, 87, 235));
@@ -747,7 +1015,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.playerNameLabels[index] = this.createLabel(root, 'Name', '', 22, 0, 22, w - 24, 26, new Color(255, 238, 201, 255));
         this.playerGoldLabels[index] = this.createLabel(root, 'Gold', '', 18, 0, -4, w - 24, 22, new Color(213, 232, 255, 255));
         this.playerStateLabels[index] = this.createLabel(root, 'State', '', 18, 0, -28, w - 24, 22, new Color(255, 220, 146, 255));
-        root.active = false;
+        root.active = true;
     }
 
     private ensureSettlementPanel(): void {
@@ -899,6 +1167,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     private refreshPaodekuaiHud(): void {
         if (!this.overlayRoot) return;
+        this.ensureSelfPlayerInfo();
         if (this.roomInfoLabel) {
             const roomNo = this.roomNumber || this.roomInfo?.roomNo || '--';
             const current = Number(this.currentRound || this.roomInfo?.currentRound || 0);
@@ -916,26 +1185,59 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     private refreshPaodekuaiPlayers(): void {
+        this.ensureSelfPlayerInfo();
         for (let clientSeat = 0; clientSeat < 2; clientSeat++) {
             const root = this.playerCardRoots[clientSeat];
             if (!root) continue;
-            const serverSeat = this.client2ServerSeat(clientSeat);
+            const serverSeat = this.pdkClient2ServerSeat(clientSeat);
             const info = serverSeat >= 0 ? this.playerInfos[serverSeat] : null;
+            root.active = true;
             if (!info) {
-                root.active = clientSeat === 1;
-                if (this.playerNameLabels[clientSeat]) this.playerNameLabels[clientSeat]!.string = clientSeat === 0 ? '未入座' : '等待对手';
+                if (this.playerNameLabels[clientSeat]) this.playerNameLabels[clientSeat]!.string = clientSeat === 0 ? '自己' : '等待对手';
                 if (this.playerGoldLabels[clientSeat]) this.playerGoldLabels[clientSeat]!.string = '';
-                if (this.playerStateLabels[clientSeat]) this.playerStateLabels[clientSeat]!.string = '';
+                if (this.playerStateLabels[clientSeat]) this.playerStateLabels[clientSeat]!.string = clientSeat === 0 ? '资料同步中' : '空座';
                 continue;
             }
-            root.active = true;
             const name = info.nickname || info.playerId || (clientSeat === 0 ? '自己' : '对手');
             const gold = Number(info.gold || 0);
             const readyText = this.gameState === GameState.Playing ? '游戏中' : (info.ready ? '已准备' : '未准备');
-            if (this.playerNameLabels[clientSeat]) this.playerNameLabels[clientSeat]!.string = name;
+            const tags: string[] = [];
+            if (serverSeat === this.seat) tags.push('我');
+            if (serverSeat === this.ownerSeat) tags.push('房主');
+            if (info.offline) tags.push('离线');
+            if (this.playerNameLabels[clientSeat]) {
+                this.playerNameLabels[clientSeat]!.string = `${name}${tags.length > 0 ? ` · ${tags.join('/')}` : ''}`;
+            }
             if (this.playerGoldLabels[clientSeat]) this.playerGoldLabels[clientSeat]!.string = gold > 0 ? `金币 ${gold}` : '';
             if (this.playerStateLabels[clientSeat]) this.playerStateLabels[clientSeat]!.string = `${clientSeat === 0 ? '自己' : '对手'} · ${readyText}`;
         }
+    }
+
+    private ensureSelfPlayerInfo(): void {
+        if (this.seat < 0 || this.playerInfos[this.seat]) return;
+        const playerId = GameManager.Instance.PlayerId;
+        if (!playerId) return;
+        this.playerInfos[this.seat] = {
+            playerId,
+            nickname: GameManager.Instance.NickName || playerId,
+            sex: GameManager.Instance.Sex,
+            gold: GameManager.Instance.Gold,
+            headUrl: GameManager.Instance.Avatar,
+            offline: false,
+            ready: false,
+            authorize: false,
+        };
+    }
+
+    private pdkClient2ServerSeat(clientSeat: number): number {
+        if (this.seat >= 0) return (clientSeat + this.seat) % 2;
+        return clientSeat;
+    }
+
+    private requestAvatarList(): void {
+        if (this.avatarListRequested) return;
+        this.avatarListRequested = true;
+        NetworkManager.Instance.sendInnerMessage('MsgGetAvatars');
     }
 
     private getOpponentInfoText(): string {
@@ -1147,14 +1449,6 @@ export class PaodekuaiRoom extends PokerRoomBase {
         return ret;
     }
 
-    private hasPairExcept(counts: Map<number, number>, exclude: number): boolean {
-        let ok = false;
-        counts.forEach((count, value) => {
-            if (value !== exclude && count === 2) ok = true;
-        });
-        return ok;
-    }
-
     private isTripleWithAnyTwo(counts: Map<number, number>, tripleValue: number): boolean {
         if ((counts.get(tripleValue) || 0) !== 3) return false;
         let mates = 0;
@@ -1190,30 +1484,17 @@ export class PaodekuaiRoom extends PokerRoomBase {
             .sort((a, b) => a - b);
         if (tripleValues.length < 2) return null;
 
+        let bestWeight = -1;
         for (let start = 0; start < tripleValues.length; start++) {
             for (let len = 2; start + len <= tripleValues.length; len++) {
                 const seq = tripleValues.slice(start, start + len);
                 if (!this.isConsecutiveRaw(seq)) break;
-                if (values.length === len * 3) return { pattern: PokerPattern.Airplane, cards, weight: seq[len - 1] };
-                if (values.length === len * 4) return { pattern: PokerPattern.Airplane, cards, weight: seq[len - 1] };
-                if (values.length === len * 5 && this.planeMatesArePairs(counts, seq)) {
-                    return { pattern: PokerPattern.Airplane, cards, weight: seq[len - 1] };
+                if (values.length === len * 3 || values.length === len * 4 || values.length === len * 5) {
+                    bestWeight = Math.max(bestWeight, seq[len - 1]);
                 }
             }
         }
-        return null;
-    }
-
-    private planeMatesArePairs(counts: Map<number, number>, seq: number[]): boolean {
-        const left = new Map(counts);
-        seq.forEach(v => left.set(v, (left.get(v) || 0) - 3));
-        let pairs = 0;
-        for (const [, count] of left) {
-            if (count === 0) continue;
-            if (count !== 2) return false;
-            pairs++;
-        }
-        return pairs === seq.length;
+        return bestWeight > 0 ? { pattern: PokerPattern.Airplane, cards, weight: bestWeight } : null;
     }
 
     private isConsecutiveRaw(values: number[]): boolean {
