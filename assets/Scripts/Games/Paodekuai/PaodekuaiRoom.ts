@@ -53,6 +53,8 @@ export class PaodekuaiRoom extends PokerRoomBase {
     private ruleInfoLabel: Label | null = null;
     private opponentInfoLabel: Label | null = null;
     private opponentCountLabel: Label | null = null;
+    private pdkCountdownRoot: Node | null = null;
+    private pdkCountdownLabel: Label | null = null;
     private opponentHandArea: Node | null = null;
     private overlayRoot: Node | null = null;
     private pdkReadyGroup: Node | null = null;
@@ -114,6 +116,23 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.forcePlayIfCanBeat = roomInfo.ruleConfig?.force_play_if_can_beat !== false;
         this.refreshPaodekuaiHud();
         console.log('[PaodekuaiRoom] Initialized as 2-player 15-card mode');
+    }
+
+    update(deltaTime: number): void {
+        super.update(deltaTime);
+        this.updatePaodekuaiCountdownVisual();
+    }
+
+    public startCountdown(seconds: number): void {
+        this.ensurePaodekuaiCountdown();
+        super.startCountdown(seconds);
+        if (this.pdkCountdownRoot) this.pdkCountdownRoot.active = true;
+        this.updatePaodekuaiCountdownVisual();
+    }
+
+    public stopCountdown(): void {
+        super.stopCountdown();
+        if (this.pdkCountdownRoot) this.pdkCountdownRoot.active = false;
     }
 
     public onMessage(msgType: string, msg: any): boolean {
@@ -751,7 +770,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.dragSelectActive = true;
         if (cardIndex === this.dragSelectCurrentIndex) return;
         this.dragSelectCurrentIndex = cardIndex;
-        this.selectRawDragRange();
+        this.applyDragRuleSelection(false);
     }
 
     private onHandCardTouchEnd(event: EventTouch, cardIndex: number): void {
@@ -767,7 +786,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         const localX = this.getHandTouchLocalX(event);
         const endIndex = this.getHandIndexByLocalX(localX);
         if (endIndex >= 0) this.dragSelectCurrentIndex = endIndex;
-        this.finalizeDragSelection();
+        this.applyDragRuleSelection(true);
         this.resetDragSelectionState();
     }
 
@@ -791,23 +810,17 @@ export class PaodekuaiRoom extends PokerRoomBase {
         return Math.max(0, Math.min(this.myCards.length - 1, rawIndex));
     }
 
-    private selectRawDragRange(): void {
-        const range = this.getDragRangeIndices();
-        this.selectedIndices = new Set(range);
-        this.applyCurrentSelectionToHand();
-    }
-
-    private finalizeDragSelection(): void {
+    private applyDragRuleSelection(finalize: boolean): void {
         const range = this.getDragRangeIndices();
         const best = this.findBestDragPlay(range);
         if (best) {
             this.selectedIndices = new Set(best.indices);
         } else {
             this.selectedIndices = new Set(range);
-            Client.Instance.showPromptTip('范围内没有可出的牌', 1.1);
         }
         this.resetHintCycle();
         this.applyCurrentSelectionToHand();
+        if (finalize && !best) Client.Instance.showPromptTip('范围内没有可出的牌', 1.1);
     }
 
     private getDragRangeIndices(): number[] {
@@ -921,6 +934,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
             this.ensurePaodekuaiReadyButton();
             this.ensurePaodekuaiBackButton();
             this.ensurePaodekuaiPlayerInfo();
+            this.ensurePaodekuaiCountdown();
             this.ensureSettlementPanel();
             return;
         }
@@ -944,6 +958,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.opponentCountLabel = this.createLabel(hud, 'OpponentCount', '对手手牌', 16, 0, -76, 320, 22, new Color(188, 205, 225, 255));
 
         this.statusLabel = this.createLabel(overlay, 'Status', '', 28, 0, 248, 560, 44, new Color(255, 226, 136, 255));
+        this.ensurePaodekuaiCountdown();
         this.cardCountLabel = this.createLabel(overlay, 'MyCount', '0张', 22, 0, -292, 180, 36, new Color(240, 240, 240, 255));
 
         this.myHandArea = this.createArea(overlay, 'MyHand', 0, -390, 1240, 140);
@@ -959,8 +974,36 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.ensurePaodekuaiReadyButton();
         this.ensurePaodekuaiBackButton();
         this.ensurePaodekuaiPlayerInfo();
+        this.ensurePaodekuaiCountdown();
         this.ensureSettlementPanel();
         this.showPassAndPlayButtons(false);
+    }
+
+    private ensurePaodekuaiCountdown(): void {
+        if (!this.overlayRoot) return;
+        if (this.pdkCountdownRoot && this.pdkCountdownLabel) {
+            this.countdownLabel = this.pdkCountdownLabel;
+            return;
+        }
+
+        const root = this.createArea(this.overlayRoot, 'PaodekuaiCountdown', 0, 190, 220, 58);
+        this.paintRect(root, 220, 58, new Color(18, 27, 42, 232), new Color(247, 194, 92, 255), 8);
+        this.createLabel(root, 'Caption', '出牌倒计时', 16, 0, 14, 160, 20, new Color(198, 215, 232, 255));
+        this.pdkCountdownLabel = this.createLabel(root, 'Second', '180', 32, -14, -12, 92, 36, new Color(255, 244, 190, 255));
+        this.createLabel(root, 'Unit', '秒', 18, 48, -12, 34, 28, new Color(255, 230, 150, 255));
+        root.active = false;
+
+        this.pdkCountdownRoot = root;
+        this.countdownLabel = this.pdkCountdownLabel;
+    }
+
+    private updatePaodekuaiCountdownVisual(): void {
+        if (!this.pdkCountdownLabel || !this.pdkCountdownRoot || !this.pdkCountdownRoot.active) return;
+        const remaining = Math.max(0, Math.ceil(this.countdownSeconds - this.countdownElapsed));
+        this.pdkCountdownLabel.string = String(remaining);
+        this.pdkCountdownLabel.color = remaining <= 15
+            ? new Color(255, 92, 92, 255)
+            : new Color(255, 244, 190, 255);
     }
 
     private ensurePaodekuaiReadyButton(): void {

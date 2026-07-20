@@ -48,6 +48,9 @@ export class DoudizhuRoom extends PokerRoomBase {
     private playerStateLabels: (Label | null)[] = [null, null];
     private playerCardRoots: (Node | null)[] = [null, null];
     private fallbackBackButton: Node | null = null;
+    private callScoreButtons: (Node | null)[] = [null, null, null, null];
+    private isBiddingPhase: boolean = false;
+    private lowCardReportCounts: number[] = [0, 0];
     private dragSelectStartIndex: number = -1;
     private dragSelectCurrentIndex: number = -1;
     private dragSelectStartX: number = 0;
@@ -95,6 +98,7 @@ export class DoudizhuRoom extends PokerRoomBase {
 
         if (msgType === 'DouDiZhu.Deal') this.onDoudizhuDeal(msg);
         else if (msgType === 'DouDiZhu.CallNotify') this.onDoudizhuCallNotify(msg);
+        else if (msgType === 'DouDiZhu.CallFailed') this.onDoudizhuCallFailed(msg);
         else if (msgType === 'DouDiZhu.Landlord') this.onDoudizhuLandlord(msg);
         else if (msgType === 'DouDiZhu.PlayNotify') this.onDoudizhuPlayNotify(msg);
         else if (msgType === 'DouDiZhu.PlayFailed') this.onDoudizhuPlayFailed(msg);
@@ -376,9 +380,11 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.updateReadyButtonState();
 
         if (state === DoudizhuState.Bidding) {
+            this.isBiddingPhase = true;
             this.showCallPanel(Number(msg.callTurn) === this.seat);
             this.updateStatus(Number(msg.callTurn) === this.seat ? '轮到你叫地主' : '等待对手叫地主');
         } else if (state === DoudizhuState.Playing) {
+            this.isBiddingPhase = false;
             this.showCallPanel(false);
             const lastCards = Array.isArray(msg.lastPlayCards) ? msg.lastPlayCards : [];
             if (lastCards.length > 0) {
@@ -389,6 +395,7 @@ export class DoudizhuRoom extends PokerRoomBase {
             }
             this.setTurn(Number(msg.currentPlayer), !!msg.isFirstPlay);
         } else {
+            this.isBiddingPhase = false;
             this.showCallPanel(false);
             this.showPassAndPlayButtons(false);
             this.updateStatus(this.isAllRoundsFinished() ? '全部对局结束' : '等待准备');
@@ -397,6 +404,7 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     private onDoudizhuDeal(msg: any): void {
         this.resetRoundState();
+        this.lowCardReportCounts = [0, 0];
         this.hideSettlementPanel();
         this.gameState = GameState.Playing;
         this.currentState = RoomState.Playing;
@@ -411,6 +419,7 @@ export class DoudizhuRoom extends PokerRoomBase {
             this.totalRounds = isNaN(roundCount) ? 0 : roundCount;
         }
         if (msg.baseScore !== undefined) this.baseScore = Number(msg.baseScore) || this.baseScore;
+        this.isBiddingPhase = true;
         this.dealCards(this.toPokerCards(msg.cards || []));
         this.updateHandCounts(msg.handCounts);
         this.renderBottomCards([]);
@@ -433,13 +442,28 @@ export class DoudizhuRoom extends PokerRoomBase {
         const callText = score > 0 ? `${score}分` : '不叫';
         this.updateStatus(`${seat === this.seat ? '你' : '对手'}叫分：${callText}`);
         const nextSeat = Number(msg.nextSeat ?? -1);
+        this.isBiddingPhase = nextSeat >= 0;
         this.showCallPanel(nextSeat === this.seat);
         if (nextSeat === this.seat) {
             this.updateStatus('轮到你叫地主');
         }
     }
 
+    private onDoudizhuCallFailed(msg: any): void {
+        this.playErrorSound();
+        this.highestBid = Number(msg?.highestBid ?? this.highestBid ?? 0);
+        this.highestBidSeat = Number(msg?.highestBidSeat ?? this.highestBidSeat ?? -1);
+        const callTurn = Number(msg?.callTurn ?? this.seat);
+        const myTurn = callTurn === this.seat;
+        this.isBiddingPhase = true;
+        this.showCallPanel(myTurn);
+        this.showPassAndPlayButtons(false);
+        this.updateStatus(myTurn ? '请重新叫分' : '等待对手叫地主');
+        Client.Instance.showPromptTip(msg?.errMsg || '叫分无效', 1.8);
+    }
+
     private onDoudizhuLandlord(msg: any): void {
+        this.isBiddingPhase = false;
         this.landlordSeat = Number(msg.landlordSeat ?? -1);
         this.bankerSeat = this.landlordSeat;
         this.currentMultiplier = Number(msg.multiplier ?? 1) || 1;
@@ -491,12 +515,22 @@ export class DoudizhuRoom extends PokerRoomBase {
 
         this.currentMultiplier = Number(msg.multiplier ?? this.currentMultiplier) || 1;
         this.updateHandCounts(msg.handCounts);
+        if (ids.length > 0) this.showLowCardReport(serverSeat, msg.handCounts);
         this.updateMultiplierLabel();
         this.refreshDoudizhuHud();
         this.setTurn(Number(msg.nextPlayer), this.lastPlay === null);
     }
 
     private onDoudizhuPlayFailed(msg: any): void {
+        if (this.isBiddingPhase) {
+            this.onDoudizhuCallFailed({
+                errMsg: msg?.errMsg || '叫分无效',
+                callTurn: this.seat,
+                highestBid: this.highestBid,
+                highestBidSeat: this.highestBidSeat,
+            });
+            return;
+        }
         this.playErrorSound();
         Client.Instance.showPromptTip(msg?.errMsg || '出牌失败', 1.8);
         this.isMyTurn = true;
@@ -508,6 +542,7 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.isMyTurn = false;
         this.showPassAndPlayButtons(false);
         this.showCallPanel(false);
+        this.isBiddingPhase = false;
         this.stopCountdown();
         this.currentState = RoomState.RoundSettlement;
 
@@ -519,6 +554,7 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.showSettlementPanel(msg, scores, myScore, winnerSeat);
         Client.Instance.showPromptTip(`本局${winnerSeat === this.seat ? '胜利' : '失败'}：${myScore >= 0 ? '+' : ''}${myScore}`, 2.5);
         this.gameState = GameState.Waiting;
+        this.lowCardReportCounts = [0, 0];
         this.setLocalReadyFlags(false);
         if (this.readyGroup) this.readyGroup.active = false;
         this.updateReadyButtonState();
@@ -526,12 +562,27 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     private callScore(score: number): void {
         if (!this.callPanel?.active) return;
+        if (score > 0 && score <= this.highestBid) {
+            this.playErrorSound();
+            Client.Instance.showPromptTip(`必须叫高于${this.highestBid}分`, 1.5);
+            this.showCallPanel(true);
+            return;
+        }
         NetworkManager.Instance.sendInnerMessage('DouDiZhu.Call', { score });
         this.showCallPanel(false);
     }
 
     private showCallPanel(show: boolean): void {
         if (this.callPanel) this.callPanel.active = show;
+        this.updateCallScoreButtons(show);
+    }
+
+    private updateCallScoreButtons(show: boolean): void {
+        for (let score = 0; score < this.callScoreButtons.length; score++) {
+            const button = this.callScoreButtons[score];
+            if (!button) continue;
+            button.active = show && (score === 0 || score > this.highestBid);
+        }
     }
 
     private setTurn(serverSeat: number, isLeader: boolean): void {
@@ -596,10 +647,10 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.leftPlayArea = this.createArea(overlay, 'OpponentPlay', 0, 106, 720, 110);
 
         this.callPanel = this.createArea(overlay, 'CallPanel', 0, -242, 520, 64);
-        this.createTextButton(this.callPanel, '不叫', -195, 0, 'call0', new Color(92, 99, 112, 235));
-        this.createTextButton(this.callPanel, '1分', -65, 0, 'call1', new Color(60, 128, 170, 235));
-        this.createTextButton(this.callPanel, '2分', 65, 0, 'call2', new Color(60, 128, 170, 235));
-        this.createTextButton(this.callPanel, '3分', 195, 0, 'call3', new Color(198, 93, 58, 235));
+        this.callScoreButtons[0] = this.createTextButton(this.callPanel, '不叫', -195, 0, 'call0', new Color(92, 99, 112, 235));
+        this.callScoreButtons[1] = this.createTextButton(this.callPanel, '1分', -65, 0, 'call1', new Color(60, 128, 170, 235));
+        this.callScoreButtons[2] = this.createTextButton(this.callPanel, '2分', 65, 0, 'call2', new Color(60, 128, 170, 235));
+        this.callScoreButtons[3] = this.createTextButton(this.callPanel, '3分', 195, 0, 'call3', new Color(198, 93, 58, 235));
         this.callPanel.active = false;
 
         this.passGroup = this.createArea(overlay, 'PassGroup', -86, -242, 120, 52);
@@ -1251,6 +1302,27 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.refreshDoudizhuPlayers();
     }
 
+    private showLowCardReport(serverSeat: number, countsLike: any): void {
+        const clientSeat = this.server2ClientSeat(serverSeat);
+        if (clientSeat < 0 || clientSeat >= this.lowCardReportCounts.length) return;
+
+        const counts = this.arrayLikeToArray(countsLike);
+        const serverCount = serverSeat >= 0 && serverSeat < counts.length ? Number(counts[serverSeat]) || 0 : 0;
+        const count = clientSeat === 0 ? this.myCards.length : serverCount;
+        if (count !== 1 && count !== 2) {
+            if (count > 2) this.lowCardReportCounts[clientSeat] = 0;
+            return;
+        }
+        if (this.lowCardReportCounts[clientSeat] === count) return;
+        this.lowCardReportCounts[clientSeat] = count;
+
+        const who = clientSeat === 0 ? '你' : '对手';
+        const text = count === 2 ? '报双' : '报单';
+        Client.Instance.showPromptTip(`${who}${text}`, 2.0);
+        this.updateStatus(`${who}${text}`);
+        this.refreshDoudizhuPlayers();
+    }
+
     protected updateCardCountDisplay(): void {
         if (this.cardCountLabel) this.cardCountLabel.string = `${this.myCards.length}张`;
         this.playerCardCounts.set(0, this.myCards.length);
@@ -1336,6 +1408,8 @@ export class DoudizhuRoom extends PokerRoomBase {
         if (this.landlordSeat === serverSeat) states.push('地主');
         else if (this.bankerSeat === serverSeat) states.push('庄家');
         const cardCount = clientSeat === 0 ? this.myCards.length : (this.playerCardCounts.get(clientSeat) ?? 0);
+        if (cardCount === 2) states.push('报双');
+        else if (cardCount === 1) states.push('报单');
         if (this.gameState !== GameState.Waiting) states.push(`${cardCount}张`);
         if (states.length === 0) states.push(this.gameState === GameState.Waiting ? '等待中' : '游戏中');
         return states.join(' · ');
