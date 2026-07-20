@@ -3,6 +3,9 @@
  * 对接 web-server /player/game/* 接口（见 COCOS_API_GUIDE.md）
  */
 
+import { decode } from '@msgpack/msgpack/dist.esm/decode.mjs';
+import { inflate } from 'pako';
+import * as Base64 from 'js-base64';
 import { GameId } from '../App/GameEnums';
 import { GameType as ServerGameType } from '../Common/ConstDefines';
 import { GameManager } from '../Manager/GameManager';
@@ -30,6 +33,29 @@ export const GAME_ID_TO_SERVER_TYPE: Record<string, number> = {
 
 const SUCCESS_CODES = new Set<string | number>(['00000000', 200, '200']);
 
+const GAME_RECORD_API: Record<string, { record: string; playback: string; name: string }> = {
+    [GameId.TaojiangMahjong]: {
+        record: '/player/game/taojiang-mahjong/record',
+        playback: '/player/game/taojiang-mahjong/playback',
+        name: '桃江麻将',
+    },
+    [GameId.HongzhongMahjong]: {
+        record: '/player/game/hongzhong-mahjong/record',
+        playback: '/player/game/hongzhong-mahjong/playback',
+        name: '红中麻将',
+    },
+    [GameId.Paodekuai]: {
+        record: '/player/game/paodekuai/record',
+        playback: '/player/game/paodekuai/playback',
+        name: '跑得快',
+    },
+    [GameId.ChangshaMahjong]: {
+        record: '/player/game/changsha-mahjong/record',
+        playback: '/player/game/changsha-mahjong/playback',
+        name: '长沙麻将',
+    },
+};
+
 export function isGameApiSuccess(code: string | number | undefined | null): boolean {
     return code != null && SUCCESS_CODES.has(code);
 }
@@ -53,6 +79,14 @@ export function parseEnterVenueResponse(dto: any): EnterVenueResult | null {
 
 export function getServerGameType(gameId: GameId | string): number {
     return GAME_ID_TO_SERVER_TYPE[gameId] || 0;
+}
+
+export function getRecordGameName(gameId: GameId | string): string {
+    return GAME_RECORD_API[gameId]?.name || '麻将';
+}
+
+export function isGameRecordSupported(gameId: GameId | string): boolean {
+    return !!GAME_RECORD_API[gameId];
 }
 
 /** 公开房列表项 */
@@ -90,10 +124,38 @@ export interface MahjongRecordItem {
     number: string;
     roundNo: number;
     banker: number;
-    players: Array<{ playerId: string; nickname: string; headUrl?: string }>;
+    gameType?: number;
+    gameName?: string;
+    players: Array<{ playerId: string; nickname: string; headUrl?: string } | null>;
     scores: number[];
     winGolds: number[];
     time: string;
+    hasReplay?: boolean;
+    expireTime?: string;
+}
+
+/** 麻将回放数据 */
+export interface MahjongPlaybackResult {
+    venueId?: string;
+    number?: string;
+    roundNo?: number;
+    banker?: number;
+    gameType?: number;
+    gameName?: string;
+    players?: Array<{ playerId: string; nickname: string; headUrl?: string } | null>;
+    base64?: string;
+    hasReplay: boolean;
+    retentionDays?: number;
+    expireTime?: string;
+    format?: string;
+    codec?: string;
+    time?: string;
+    replay?: any;
+    compressedSize?: number;
+    rawSize?: number;
+    actionCount?: number;
+    actorCount?: number;
+    playerCount?: number;
 }
 
 /** 分页结果 */
@@ -248,12 +310,45 @@ export class GameRoomApi {
             pageNum,
             pageSize,
         });
+        return this.parseRecordPage(dto, pageNum, '查询战绩失败');
+    }
+
+    async getTaojiangMahjongRecords(pageNum = 1, pageSize = 10): Promise<PageResult<MahjongRecordItem> | null> {
+        return this.getGameRecords(GameId.TaojiangMahjong, pageNum, pageSize);
+    }
+
+    async getHongzhongMahjongRecords(pageNum = 1, pageSize = 10): Promise<PageResult<MahjongRecordItem> | null> {
+        return this.getGameRecords(GameId.HongzhongMahjong, pageNum, pageSize);
+    }
+
+    async getPaodekuaiRecords(pageNum = 1, pageSize = 10): Promise<PageResult<MahjongRecordItem> | null> {
+        return this.getGameRecords(GameId.Paodekuai, pageNum, pageSize);
+    }
+
+    async getChangshaMahjongRecords(pageNum = 1, pageSize = 10): Promise<PageResult<MahjongRecordItem> | null> {
+        return this.getGameRecords(GameId.ChangshaMahjong, pageNum, pageSize);
+    }
+
+    async getGameRecords(gameId: GameId | string, pageNum = 1, pageSize = 10): Promise<PageResult<MahjongRecordItem> | null> {
+        const api = GAME_RECORD_API[gameId];
+        if (!api) {
+            Client.Instance.showPromptDialog('当前游戏暂未开放回放战绩');
+            return null;
+        }
+        const dto = await GameManager.Instance.authPost(api.record, {
+            pageNum,
+            pageSize,
+        });
+        return this.parseRecordPage(dto, pageNum, `查询${api.name}战绩失败`);
+    }
+
+    private parseRecordPage(dto: any, pageNum: number, defaultError: string): PageResult<MahjongRecordItem> | null {
         if (!dto) {
-            Client.Instance.showPromptDialog('查询战绩失败，服务器无响应');
+            Client.Instance.showPromptDialog(`${defaultError}，服务器无响应`);
             return null;
         }
         if (!isGameApiSuccess(dto.code)) {
-            Client.Instance.showPromptDialog(`查询战绩失败: ${dto.msg || '未知错误'}`);
+            Client.Instance.showPromptDialog(`${defaultError}: ${dto.msg || '未知错误'}`);
             return null;
         }
         return {
@@ -263,6 +358,79 @@ export class GameRoomApi {
             total: dto.total ?? 0,
             records: (dto.records || []) as MahjongRecordItem[],
         };
+    }
+
+    /**
+     * 麻将牌局回放
+     * GET /player/game/mahjong/playback?id={recordId}
+     */
+    async getMahjongPlayback(recordId: number): Promise<MahjongPlaybackResult | null> {
+        const dto = await GameManager.Instance.authGet(`/player/game/mahjong/playback?id=${recordId}`);
+        return this.parsePlaybackResponse(dto, '加载回放失败');
+    }
+
+    async getTaojiangMahjongPlayback(recordId: number): Promise<MahjongPlaybackResult | null> {
+        return this.getGamePlayback(GameId.TaojiangMahjong, recordId);
+    }
+
+    async getHongzhongMahjongPlayback(recordId: number): Promise<MahjongPlaybackResult | null> {
+        return this.getGamePlayback(GameId.HongzhongMahjong, recordId);
+    }
+
+    async getPaodekuaiPlayback(recordId: number): Promise<MahjongPlaybackResult | null> {
+        return this.getGamePlayback(GameId.Paodekuai, recordId);
+    }
+
+    async getChangshaMahjongPlayback(recordId: number): Promise<MahjongPlaybackResult | null> {
+        return this.getGamePlayback(GameId.ChangshaMahjong, recordId);
+    }
+
+    async getGamePlayback(gameId: GameId | string, recordId: number): Promise<MahjongPlaybackResult | null> {
+        const api = GAME_RECORD_API[gameId];
+        if (!api) {
+            Client.Instance.showPromptDialog('当前游戏暂未开放回放');
+            return null;
+        }
+        const dto = await GameManager.Instance.authGet(`${api.playback}?id=${recordId}`);
+        return this.parsePlaybackResponse(dto, `加载${api.name}回放失败`);
+    }
+
+    private parsePlaybackResponse(dto: any, defaultError: string): MahjongPlaybackResult | null {
+        if (!dto) {
+            Client.Instance.showPromptDialog(`${defaultError}，服务器无响应`);
+            return null;
+        }
+        if (!isGameApiSuccess(dto.code)) {
+            Client.Instance.showPromptDialog(`${defaultError}: ${dto.msg || '未知错误'}`);
+            return null;
+        }
+        const payload = dto.data && typeof dto.data === 'object' ? dto.data : dto;
+        const base64 = payload.base64 ?? dto.base64 ?? (typeof dto.data === 'string' ? dto.data : undefined);
+        const hasReplay = Boolean(payload.hasReplay ?? dto.hasReplay ?? base64);
+        if (!hasReplay || !base64) {
+            const msg = dto.msg && dto.msg !== '操作成功' ? dto.msg : '牌局回放数据不存在或已超过追溯期';
+            Client.Instance.showPromptDialog(msg);
+            return {
+                ...payload,
+                hasReplay: false,
+                retentionDays: payload.retentionDays ?? dto.retentionDays,
+                expireTime: payload.expireTime ?? dto.expireTime,
+                format: payload.format ?? dto.format,
+                codec: payload.codec ?? dto.codec,
+            };
+        }
+        const decoded = this.decodeGameReplay(base64);
+        return {
+            ...payload,
+            base64,
+            hasReplay: true,
+            replay: decoded?.replay,
+            compressedSize: decoded?.compressedSize,
+            rawSize: decoded?.rawSize,
+            actionCount: decoded?.actionCount,
+            actorCount: decoded?.actorCount,
+            playerCount: decoded?.playerCount ?? payload.players?.length,
+        } as MahjongPlaybackResult;
     }
 
     /**
@@ -285,6 +453,41 @@ export class GameRoomApi {
         return (dto.items || []) as PublicRoomItem[];
     }
 
+    private decodeGameReplay(base64: string): {
+        replay: any;
+        compressedSize: number;
+        rawSize: number;
+        actionCount: number;
+        actorCount: number;
+        playerCount: number;
+    } | null {
+        try {
+            const compressed = (Base64 as any).Base64.toUint8Array(base64);
+            const raw = inflate(compressed);
+            const replay = decode(raw);
+            const actions = this.getReplayField(replay, 'actions', 2);
+            const actors = this.getReplayField(replay, 'actors', 3);
+            const dealedTiles = this.getReplayField(replay, 'dealedTiles', 0);
+            return {
+                replay,
+                compressedSize: compressed.length,
+                rawSize: raw.length,
+                actionCount: Array.isArray(actions) ? actions.length : 0,
+                actorCount: Array.isArray(actors) ? actors.length : 0,
+                playerCount: Array.isArray(dealedTiles) ? dealedTiles.length : 0,
+            };
+        } catch (err) {
+            console.error('[GameRoomApi] decode replay failed:', err);
+            return null;
+        }
+    }
+
+    private getReplayField(replay: any, key: string, index: number): any {
+        if (replay == null) return null;
+        if (Array.isArray(replay)) return replay[index];
+        return replay[key] ?? replay[String(index)] ?? replay[index];
+    }
+
     private handleResponse(dto: any, defaultError: string): EnterVenueResult | null {
         if (!dto) {
             Client.Instance.showPromptDialog(`${defaultError}，服务器无响应`);
@@ -304,7 +507,21 @@ export class GameRoomApi {
         if (errCode === '00120001' || errMsg === 'Venue not exist') {
             errMsg = '房间不存在或已解散';
         }
+        if (this.isInsufficientCarryError(errCode, errMsg)) {
+            errMsg = '携带积分不足，保险柜中的积分不参与游戏结算，请先从保险柜取出积分后再加入';
+        }
         Client.Instance.showPromptDialog(`${defaultError}: ${errMsg}`);
         return null;
+    }
+
+    private isInsufficientCarryError(errCode: string, errMsg: string): boolean {
+        if (errCode === '00120002' || errCode === '00120005') return true;
+        const text = String(errMsg || '').toLowerCase();
+        return text.includes('金币不足')
+            || text.includes('余额不足')
+            || text.includes('积分不足')
+            || text.includes('gold insufficient')
+            || text.includes('insufficient gold')
+            || text.includes('insufficient balance');
     }
 }

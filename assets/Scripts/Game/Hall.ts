@@ -7,6 +7,7 @@ import { _decorator, Component, Label, Node, Sprite, sys, AudioClip, SpriteFrame
 import { ResourceLoader } from '../Manager/ResourceLoader';
 import { GameManager } from '../Manager/GameManager';
 import { Client } from './Client';
+import { GameId } from '../App/GameEnums';
 import { DlgPublicRooms } from './Dialogs/DlgPublicRooms';
 import { DlgMahjongRecords } from './Dialogs/DlgMahjongRecords';
 const { ccclass, property } = _decorator;
@@ -208,12 +209,17 @@ export class Hall extends Component {
 
     private showMahjongRecords() {
         if (this.dlgMahjongRecords) {
+            const comp = this.dlgMahjongRecords.getComponent(DlgMahjongRecords);
+            if (comp) comp.setup(GameId.TaojiangMahjong);
             this.dlgMahjongRecords.active = true;
             return;
         }
         this.dlgMahjongRecords = new Node('DlgMahjongRecords');
+        this.dlgMahjongRecords.active = false;
         this.dlgMahjongRecords.parent = this.getDialogParent();
-        this.dlgMahjongRecords.addComponent(DlgMahjongRecords);
+        const comp = this.dlgMahjongRecords.addComponent(DlgMahjongRecords);
+        comp.setup(GameId.TaojiangMahjong);
+        this.dlgMahjongRecords.active = true;
     }
 
     private createShortcutButtons() {
@@ -254,4 +260,3 @@ export class Hall extends Component {
         });
     }
 }
-

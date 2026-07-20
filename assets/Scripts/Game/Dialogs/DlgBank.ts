@@ -65,10 +65,35 @@ export class DlgBank extends DlgBase {
     }
 
     private refresh() {
+        this.refreshLabels();
+        GameManager.Instance.refreshCapital().then(() => {
+            if (this.node && this.node.active) {
+                this.refreshLabels();
+            }
+        });
+    }
+
+    private refreshLabels() {
         this.labelGold1.string = GameManager.Instance.Gold.toString();
         this.labelGold2.string = GameManager.Instance.Gold.toString();
         this.labelDeposit1.string = GameManager.Instance.Deposit.toString();
         this.labelDeposit2.string = GameManager.Instance.Deposit.toString();
+    }
+
+    private isSuccess(dto: any): boolean {
+        return dto?.code === "00000000" || dto?.code === 200 || dto?.code === "200";
+    }
+
+    private async syncCapitalAfterAction(dto: any): Promise<void> {
+        if (dto?.gold !== undefined || dto?.deposit !== undefined || dto?.diamond !== undefined) {
+            if (dto.gold !== undefined) GameManager.Instance.Gold = Number(dto.gold) || 0;
+            if (dto.deposit !== undefined) GameManager.Instance.Deposit = Number(dto.deposit) || 0;
+            if (dto.diamond !== undefined) GameManager.Instance.Diamond = Number(dto.diamond) || 0;
+            GameManager.Instance.updatePlayerInfoTime();
+        } else {
+            await GameManager.Instance.refreshCapital();
+        }
+        this.refreshLabels();
     }
 
     public onDebitToggle(toggle: Toggle) {
@@ -132,7 +157,7 @@ export class DlgBank extends DlgBase {
             return;
         }
         if (num > GameManager.Instance.Deposit) {
-            Client.Instance.showPromptTip("取出数量不能大于存款余额");
+            Client.Instance.showPromptTip("取出数量不能大于保险柜积分");
             return;
         }
         let password: string = null;
@@ -143,17 +168,14 @@ export class DlgBank extends DlgBase {
             amount: num,
             password: password
         };
-        GameManager.Instance.authPost("/player/capital/debit", data).then((dto) => {
-            if (dto.code !== "00000000") {
-                Client.Instance.showPromptTip("取出金币失败: " + dto.msg, 3.0);
-                console.log(dto.msg);
+        GameManager.Instance.authPost("/player/capital/debit", data).then(async (dto) => {
+            if (!this.isSuccess(dto)) {
+                Client.Instance.showPromptTip("从保险柜取出失败: " + (dto?.msg || "未知错误"), 3.0);
+                console.log(dto?.msg);
                 return;
             }
-            GameManager.Instance.Gold = dto.gold;
-            GameManager.Instance.Deposit = dto.deposit;
-            GameManager.Instance.updatePlayerInfoTime();
-            Client.Instance.showPromptTip("取出金币成功", 2.0);
-            this.refresh();
+            await this.syncCapitalAfterAction(dto);
+            Client.Instance.showPromptTip("取出积分成功", 2.0);
         }).catch((err) => {
             console.log("Debit failed: ", err);
         });
@@ -166,23 +188,20 @@ export class DlgBank extends DlgBase {
             return;
         }
         if (num > GameManager.Instance.Gold) {
-            Client.Instance.showPromptTip("存入数量大于当前金币数", 2.0);
+            Client.Instance.showPromptTip("存入数量大于当前携带积分", 2.0);
             return;
         }
         let data = {
             amount: num
         };
-        GameManager.Instance.authPost("/player/capital/deposit", data).then((dto) => {
-            if (dto.code !== "00000000") {
-                Client.Instance.showPromptTip("存入金币成功: " + dto.msg, 3.0);
-                console.log(dto.msg);
+        GameManager.Instance.authPost("/player/capital/deposit", data).then(async (dto) => {
+            if (!this.isSuccess(dto)) {
+                Client.Instance.showPromptTip("存入保险柜失败: " + (dto?.msg || "未知错误"), 3.0);
+                console.log(dto?.msg);
                 return;
             }
-            GameManager.Instance.Gold = dto.gold;
-            GameManager.Instance.Deposit = dto.deposit;
-            GameManager.Instance.updatePlayerInfoTime();
-            Client.Instance.showPromptTip("存入金币成功", 2.0);
-            this.refresh();
+            await this.syncCapitalAfterAction(dto);
+            Client.Instance.showPromptTip("存入保险柜成功", 2.0);
         }).catch((err) => {
             console.log("Deposit failed: ", err);
         });
@@ -210,12 +229,12 @@ export class DlgBank extends DlgBase {
             newPassword: AesUtils.encrypt1(this.editPasswordNew.string),
         };
         GameManager.Instance.authPost("/player/capital/bank/password", data).then((dto) => {
-            if (dto.code !== "00000000") {
-                Client.Instance.showPromptTip("修改密码失败: " + dto.msg, 3.0);
-                console.log(dto.msg);
+            if (!this.isSuccess(dto)) {
+                Client.Instance.showPromptTip("修改保险柜密码失败: " + (dto?.msg || "未知错误"), 3.0);
+                console.log(dto?.msg);
                 return;
             }
-            Client.Instance.showPromptTip("修改密码成功", 2.0);
+            Client.Instance.showPromptTip("修改保险柜密码成功", 2.0);
         }).catch((err) => {
             console.log("Set bank password error: ", err);
         });

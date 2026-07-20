@@ -1,4 +1,4 @@
-import { _decorator, Component, Label, Node, Sprite, SpriteFrame, sys } from 'cc';
+import { _decorator, Component, EditBox, Label, Node, Sprite, SpriteFrame, sys } from 'cc';
 import { Client } from '../Client';
 import { GameManager } from '../../Manager/GameManager';
 import { DlgBase } from './DlgBase';
@@ -32,6 +32,9 @@ export class DlgPersonalCenter extends DlgBase {
 
     @property({ type: Label })
     private labelDiamond: Label = null;
+
+    @property({ type: EditBox })
+    private editInviteCode: EditBox = null;
 
     private playerInfoTime: number = 0;
 
@@ -74,7 +77,27 @@ export class DlgPersonalCenter extends DlgBase {
     }
 
     public onBindClicked(): void {
-        Client.Instance.showPromptTip("未实现", 2.0);
+        if (!this.editInviteCode) {
+            Client.Instance.showPromptTip("请先配置邀请码输入框", 2.0);
+            return;
+        }
+        let inviteCode = this.editInviteCode.string.trim();
+        if (!inviteCode) {
+            Client.Instance.showPromptTip("请输入邀请码", 2.0);
+            return;
+        }
+        GameManager.Instance.authPost("/player/agency/bind-code", { inviteCode: inviteCode }).then((dto) => {
+            if (dto && dto.code === "00000000") {
+                Client.Instance.showPromptTip("绑定成功", 2.0);
+                this.editInviteCode.string = "";
+                this.updatePlayerInfo();
+            }
+            else {
+                Client.Instance.showPromptTip("绑定失败: " + (dto?.msg || "未知错误"), 3.0);
+            }
+        }).catch((err) => {
+            Client.Instance.showPromptTip("绑定失败: " + err.toString(), 3.0);
+        });
     }
 
     public onLogoutClicked(): void {
@@ -90,4 +113,3 @@ export class DlgPersonalCenter extends DlgBase {
         Client.Instance.showPromptTip("未支持", 2.0);
     }
 }
-

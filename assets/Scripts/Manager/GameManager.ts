@@ -216,16 +216,21 @@ export class GameManager {
         this.playerInfoTime = sys.now();
     }
 
+    private toSafeNumber(value: any): number {
+        const num = Number(value);
+        return isFinite(num) ? num : 0;
+    }
+
     public setPlayerInfo(dto: any) {
         this.playerId = dto.playerId;
         this.secret = dto.secret != null ? String(dto.secret).trim() : null;
-        this.nickName = dto.nickname;
+        this.nickName = dto.nickName || dto.nickname;
         this.phone = dto.phone;
         this.sex = dto.sex;
         this.avatar = dto.avatar;
-        this.gold = dto.gold;
-        this.deposit = dto.deposit;
-        this.diamond = dto.diamond;
+        this.gold = this.toSafeNumber(dto.gold);
+        this.deposit = this.toSafeNumber(dto.deposit);
+        this.diamond = this.toSafeNumber(dto.diamond);
         this.isAgency = dto.isAgency;
         this.agencyId = dto.agencyId;
         this.playerInfoTime = sys.now();
@@ -739,18 +744,26 @@ export class GameManager {
         this.handleSessionExpired();
     }
 
-    public getCapital() {
-        this.authGet("/player/capital/get").then((dto) => {
-            if (dto.code === '00000000') {
-                this.gold = dto.gold;
-                this.deposit = dto.deposit;
-                this.diamond = dto.diamond;
+    public refreshCapital(): Promise<boolean> {
+        const request = this.authGet("/player/capital/get");
+        if (!request) return Promise.resolve(false);
+        return request.then((dto) => {
+            if (dto?.code === '00000000') {
+                this.gold = this.toSafeNumber(dto.gold);
+                this.deposit = this.toSafeNumber(dto.deposit);
+                this.diamond = this.toSafeNumber(dto.diamond);
                 this.playerInfoTime = sys.now();
-            } else {
-                console.log("Get capital error: ", dto.msg);
+                return true;
             }
+            console.log("Get capital error: ", dto?.msg);
+            return false;
         }).catch((err) => {
             console.log("Get capital error: ", err);
+            return false;
         });
+    }
+
+    public getCapital() {
+        this.refreshCapital();
     }
 }

@@ -1,6 +1,7 @@
-import { _decorator, Component, Node, Label, UITransform, Color } from 'cc';
+import { _decorator, Component, Node, Label, UITransform, Color, Event } from 'cc';
+import { GameId } from '../../App/GameEnums';
 import { GameManager } from '../../Manager/GameManager';
-import { GameRoomApi, MahjongRecordItem } from '../../Network/GameRoomApi';
+import { GameRoomApi, MahjongRecordItem, getRecordGameName } from '../../Network/GameRoomApi';
 import {
     UI_COLORS, createOverlayRoot, createLabel, createButton,
     createScrollArea, fillRoundRect, resizeScrollContent,
@@ -13,10 +14,13 @@ const PAGE_SIZE = 8;
 @ccclass('DlgMahjongRecords')
 export class DlgMahjongRecords extends Component {
     private panel: Node | null = null;
+    private titleLabel: Label | null = null;
     private listContent: Node | null = null;
     private statusLabel: Label | null = null;
     private pageLabel: Label | null = null;
 
+    private gameId: GameId | string = GameId.TaojiangMahjong;
+    private gameName = '桃江麻将';
     private pageNum = 1;
     private total = 0;
     private records: MahjongRecordItem[] = [];
@@ -30,12 +34,21 @@ export class DlgMahjongRecords extends Component {
         this.loadPage(this.pageNum || 1);
     }
 
+    public setup(gameId: GameId | string): void {
+        this.gameId = gameId || GameId.TaojiangMahjong;
+        this.gameName = getRecordGameName(this.gameId);
+        this.pageNum = 1;
+        if (this.titleLabel) {
+            this.titleLabel.string = `${this.gameName}战绩`;
+        }
+    }
+
     private buildUI(): void {
         const root = createOverlayRoot(this.node, 'MahjongRecordsRoot');
         this.panel = root.getChildByName('Panel');
 
-        createLabel(this.panel, '麻将战绩', 34, UI_COLORS.accent, 300, 48)
-            .node.setPosition(0, 270, 0);
+        this.titleLabel = createLabel(this.panel, `${this.gameName}战绩`, 34, UI_COLORS.accent, 300, 48);
+        this.titleLabel.node.setPosition(0, 270, 0);
 
         this.statusLabel = createLabel(this.panel, '加载中...', 22, UI_COLORS.subText, 800, 36);
         this.statusLabel.node.setPosition(0, 220, 0);
@@ -71,6 +84,31 @@ export class DlgMahjongRecords extends Component {
         this.node.active = false;
     }
 
+    public async onReplayClicked(_event: Event, customEventData: string): Promise<void> {
+        const recordId = Number(customEventData);
+        if (!isFinite(recordId) || recordId <= 0 || this.loading) return;
+        this.loading = true;
+        if (this.statusLabel) this.statusLabel.string = '加载回放中...';
+        try {
+            const playback = await GameRoomApi.Instance.getGamePlayback(this.gameId, recordId);
+            if (!playback || !playback.hasReplay) {
+                if (this.statusLabel) this.statusLabel.string = '回放已超过追溯期';
+                return;
+            }
+            const size = playback.rawSize || playback.compressedSize || playback.base64?.length || 0;
+            const sizeText = size > 0 ? `${Math.ceil(size / 1024)}KB` : '-';
+            const actionText = playback.actionCount != null ? `，${playback.actionCount}步` : '';
+            const playerText = playback.playerCount != null ? `，${playback.playerCount}人` : '';
+            const expireText = playback.expireTime ? `，追溯至 ${playback.expireTime}` : '';
+            if (this.statusLabel) this.statusLabel.string = `回放已加载（${sizeText}${actionText}${playerText}${expireText}）`;
+        } catch (err) {
+            console.error('[DlgMahjongRecords] replay load error:', err);
+            if (this.statusLabel) this.statusLabel.string = '加载回放失败';
+        } finally {
+            this.loading = false;
+        }
+    }
+
     private async loadPage(pageNum: number): Promise<void> {
         if (this.loading) return;
         this.loading = true;
@@ -78,7 +116,7 @@ export class DlgMahjongRecords extends Component {
         this.clearList();
 
         try {
-            const result = await GameRoomApi.Instance.getMahjongRecords(pageNum, PAGE_SIZE);
+            const result = await GameRoomApi.Instance.getGameRecords(this.gameId, pageNum, PAGE_SIZE);
             if (!result) {
                 if (this.statusLabel) this.statusLabel.string = '加载失败';
                 return;
@@ -103,7 +141,7 @@ export class DlgMahjongRecords extends Component {
     private getMyResult(record: MahjongRecordItem): { score: number; gold: number; nickname: string } {
         const playerId = GameManager.Instance.PlayerId;
         const players = record.players || [];
-        const index = players.findIndex((p) => p.playerId === playerId);
+        const index = players.findIndex((p) => !!p && p.playerId === playerId);
         if (index < 0) {
             return { score: 0, gold: 0, nickname: GameManager.Instance.NickName || '我' };
         }
@@ -117,7 +155,7 @@ export class DlgMahjongRecords extends Component {
     private formatPlayers(record: MahjongRecordItem): string {
         const players = record.players || [];
         if (players.length === 0) return '暂无玩家信息';
-        return players.map((p) => p.nickname || p.playerId).join(' / ');
+        return players.map((p) => p ? (p.nickname || p.playerId) : '-').join(' / ');
     }
 
     private renderRecords(): void {
@@ -127,7 +165,7 @@ export class DlgMahjongRecords extends Component {
         this.pageLabel.string = `第 ${this.pageNum} / ${maxPage} 页`;
 
         if (this.records.length === 0) {
-            this.statusLabel.string = this.total === 0 ? '暂无麻将战绩' : '没有更多记录了';
+            this.statusLabel.string = this.total === 0 ? `暂无${this.gameName}战绩` : '没有更多记录了';
             resizeScrollContent(this.listContent, 860, 0, 108, 12);
             return;
         }
@@ -168,6 +206,11 @@ export class DlgMahjongRecords extends Component {
             const gold = createLabel(card, `金币 ${goldText}`, 22, scoreColor, 140, 30);
             gold.node.setPosition(250, -34, 0);
             gold.horizontalAlign = Label.HorizontalAlign.RIGHT;
+
+            const replayColor = record.hasReplay === false ? new Color(86, 92, 104, 255) : UI_COLORS.primary;
+            const replay = createButton(card, '回放', 86, 36, replayColor, this.node, 'DlgMahjongRecords', 'onReplayClicked', String(record.id));
+            replay.setPosition(360, -30, 0);
+            replay.active = record.hasReplay !== false;
         });
 
         resizeScrollContent(this.listContent, width, this.records.length, itemHeight, gap);

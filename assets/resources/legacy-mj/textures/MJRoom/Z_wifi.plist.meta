@@ -1,9 +1,11 @@
 {
   "ver": "1.0.8",
   "importer": "sprite-atlas",
-  "imported": false,
+  "imported": true,
   "uuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31",
-  "files": [],
+  "files": [
+    ".json"
+  ],
   "subMetas": {
     "Z_wifi_1.png": {
       "ver": "1.0.3",
@@ -116,11 +118,196 @@
       "displayName": "",
       "id": "",
       "name": ""
+    },
+    "cc94a": {
+      "importer": "sprite-frame",
+      "uuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31@cc94a",
+      "displayName": "",
+      "id": "cc94a",
+      "name": "Z_wifi_1",
+      "userData": {
+        "trimThreshold": 1,
+        "rotated": false,
+        "offsetX": 0,
+        "offsetY": 0,
+        "trimX": 2,
+        "trimY": 2,
+        "width": 48,
+        "height": 38,
+        "rawWidth": 48,
+        "rawHeight": 38,
+        "borderTop": 0,
+        "borderBottom": 0,
+        "borderLeft": 0,
+        "borderRight": 0,
+        "packable": true,
+        "pixelsToUnit": 100,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "meshType": 0,
+        "vertices": {
+          "rawPosition": [],
+          "indexes": [],
+          "uv": [],
+          "nuv": [],
+          "minPos": [],
+          "maxPos": []
+        },
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "7c576a30-ebc3-427a-9fad-d2778dee535e@6c48a",
+        "atlasUuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31",
+        "trimType": "auto"
+      },
+      "ver": "1.0.12",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "72c25": {
+      "importer": "sprite-frame",
+      "uuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31@72c25",
+      "displayName": "",
+      "id": "72c25",
+      "name": "Z_wifi_2",
+      "userData": {
+        "trimThreshold": 1,
+        "rotated": false,
+        "offsetX": -3,
+        "offsetY": -4,
+        "trimX": 2,
+        "trimY": 42,
+        "width": 42,
+        "height": 30,
+        "rawWidth": 48,
+        "rawHeight": 38,
+        "borderTop": 0,
+        "borderBottom": 0,
+        "borderLeft": 0,
+        "borderRight": 0,
+        "packable": true,
+        "pixelsToUnit": 100,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "meshType": 0,
+        "vertices": {
+          "rawPosition": [],
+          "indexes": [],
+          "uv": [],
+          "nuv": [],
+          "minPos": [],
+          "maxPos": []
+        },
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "7c576a30-ebc3-427a-9fad-d2778dee535e@6c48a",
+        "atlasUuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31",
+        "trimType": "auto"
+      },
+      "ver": "1.0.12",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "6d5d4": {
+      "importer": "sprite-frame",
+      "uuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31@6d5d4",
+      "displayName": "",
+      "id": "6d5d4",
+      "name": "Z_wifi_3",
+      "userData": {
+        "trimThreshold": 1,
+        "rotated": true,
+        "offsetX": 0,
+        "offsetY": -8,
+        "trimX": 2,
+        "trimY": 74,
+        "width": 26,
+        "height": 22,
+        "rawWidth": 48,
+        "rawHeight": 38,
+        "borderTop": 0,
+        "borderBottom": 0,
+        "borderLeft": 0,
+        "borderRight": 0,
+        "packable": true,
+        "pixelsToUnit": 100,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "meshType": 0,
+        "vertices": {
+          "rawPosition": [],
+          "indexes": [],
+          "uv": [],
+          "nuv": [],
+          "minPos": [],
+          "maxPos": []
+        },
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "7c576a30-ebc3-427a-9fad-d2778dee535e@6c48a",
+        "atlasUuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31",
+        "trimType": "auto"
+      },
+      "ver": "1.0.12",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
+    },
+    "0ae23": {
+      "importer": "sprite-frame",
+      "uuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31@0ae23",
+      "displayName": "",
+      "id": "0ae23",
+      "name": "Z_wifi_4",
+      "userData": {
+        "trimThreshold": 1,
+        "rotated": false,
+        "offsetX": 0,
+        "offsetY": -12,
+        "trimX": 46,
+        "trimY": 42,
+        "width": 16,
+        "height": 14,
+        "rawWidth": 48,
+        "rawHeight": 38,
+        "borderTop": 0,
+        "borderBottom": 0,
+        "borderLeft": 0,
+        "borderRight": 0,
+        "packable": true,
+        "pixelsToUnit": 100,
+        "pivotX": 0.5,
+        "pivotY": 0.5,
+        "meshType": 0,
+        "vertices": {
+          "rawPosition": [],
+          "indexes": [],
+          "uv": [],
+          "nuv": [],
+          "minPos": [],
+          "maxPos": []
+        },
+        "isUuid": true,
+        "imageUuidOrDatabaseUri": "7c576a30-ebc3-427a-9fad-d2778dee535e@6c48a",
+        "atlasUuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31",
+        "trimType": "auto"
+      },
+      "ver": "1.0.12",
+      "imported": true,
+      "files": [
+        ".json"
+      ],
+      "subMetas": {}
     }
   },
   "userData": {
     "atlasTextureName": "Z_wifi.png",
     "format": 2,
-    "uuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31"
+    "uuid": "d1ec606d-1a3a-4ebf-a9f1-5391b946cd31",
+    "textureUuid": "7c576a30-ebc3-427a-9fad-d2778dee535e@6c48a"
   }
 }

@@ -40,6 +40,9 @@ export class Login extends Component {
     @property({ type: EditBox })
     private editCodeReg: EditBox = null;
 
+    @property({ type: EditBox })
+    private editInviteCodeReg: EditBox = null;
+
     @property({ type: Sprite })
     private spriteCodeReg: Sprite = null;
 
@@ -214,7 +217,7 @@ export class Login extends Component {
             Client.Instance.showPromptTip(errMsg);
             return;
         }
-        let data = {
+        let data: any = {
             nickname: this.editNicknameReg.string,
             name: AesUtils.encrypt1(this.editNameReg.string),
             password: AesUtils.encrypt1(this.editPasswordReg1.string),
@@ -222,6 +225,10 @@ export class Login extends Component {
             code: this.editCodeReg.string,
             uuid: this.uuidCode
         };
+        let inviteCode = this.editInviteCodeReg ? this.editInviteCodeReg.string.trim() : null;
+        if (!CommonUtils.isStringEmpty(inviteCode)) {
+            data.inviteCode = inviteCode;
+        }
         GameManager.Instance.post("/player/register", data).then((dto) => {
             if (dto.code === '00000000') {
                 GameManager.Instance.Token = dto.token;
@@ -287,5 +294,4 @@ export class Login extends Component {
         });
     }
 }
-
 

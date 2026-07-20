@@ -3,10 +3,12 @@ import { Client } from './Client';
 import { GameFactory } from '../App/GameFactory';
 import { GameId, GameType, StakeOption, GAME_STAKE_OPTIONS } from '../App/GameEnums';
 import { ResourceLoader } from '../Manager/ResourceLoader';
-import { GameRoomApi, EnterVenueResult, getServerGameType, DistrictVenueItem } from '../Network/GameRoomApi';
+import { GameManager } from '../Manager/GameManager';
+import { GameRoomApi, EnterVenueResult, getServerGameType, DistrictVenueItem, isGameRecordSupported } from '../Network/GameRoomApi';
 import { DlgMahjongRecords } from './Dialogs/DlgMahjongRecords';
 
 const { ccclass } = _decorator;
+const MIN_CARRY_SCORE_MULTIPLIER = 8;
 
 // 桃江麻将默认规则配置
 const TAOJIANG_DEFAULT_RULES = {
@@ -349,6 +351,20 @@ export class NewGameHall extends Component {
         cl.color = new Color(180, 200, 220, 255);
         this.tableCardLabels.set(stake.districtId, cl);
 
+        const minCarry = this.getMinCarryScore(stake.baseScore);
+        const minNode = new Node('MinCarryLabel');
+        minNode.parent = card;
+        minNode.addComponent(UITransform).setContentSize(w - 30, 30);
+        minNode.setPosition(0, h / 2 - 112, 0);
+        const ml = minNode.addComponent(Label);
+        ml.string = minCarry > 0 ? `携带≥${minCarry}积分` : '';
+        ml.fontSize = 18;
+        ml.lineHeight = 24;
+        ml.overflow = 2;
+        ml.horizontalAlign = 1;
+        ml.verticalAlign = 1;
+        ml.color = new Color(235, 214, 156, 255);
+
         // 快速游戏按钮
         const quickBtnW = 140;
         const quickBtnH = 40;
@@ -446,8 +462,8 @@ export class NewGameHall extends Component {
             { text: '创建房间(自定规则)', action: 'onCreateRoom', color: new Color(180, 120, 40, 230) },
         ];
         const meta = GameFactory.getGameMeta(this.gameId);
-        if (meta?.type === GameType.Mahjong) {
-            buttons.push({ text: '麻将战绩', action: 'onMahjongRecords', color: new Color(100, 60, 130, 230) });
+        if (isGameRecordSupported(this.gameId)) {
+            buttons.push({ text: `${meta?.name || '游戏'}战绩`, action: 'onMahjongRecords', color: new Color(100, 60, 130, 230) });
         }
 
         const totalWidth = buttons.length * btnWidth + (buttons.length - 1) * btnGap;
@@ -493,7 +509,7 @@ export class NewGameHall extends Component {
 
     // ==================== 快速游戏/选桌 ====================
 
-    public onQuickJoin(_event: Event, customEventData: any | null) {
+    public async onQuickJoin(_event: Event, customEventData: any | null) {
         const districtId = Number(customEventData);
         if (!districtId) return;
 
@@ -502,6 +518,7 @@ export class NewGameHall extends Component {
             Client.Instance.showPromptDialog('不支持的游戏类型');
             return;
         }
+        if (!(await this.ensureEnoughCarryForDistrict(districtId))) return;
 
         Client.Instance.showConnecting(true);
         GameRoomApi.Instance.joinByDistrict(districtId).then((result) => {
@@ -519,9 +536,10 @@ export class NewGameHall extends Component {
 
     // ==================== 选桌进入 ====================
 
-    public onSelectTable(_event: Event, customEventData: any | null) {
+    public async onSelectTable(_event: Event, customEventData: any | null) {
         const districtId = Number(customEventData);
         if (!districtId) return;
+        if (!(await this.ensureEnoughCarryForDistrict(districtId))) return;
         this.showSelectTablePopup(districtId);
     }
 
@@ -763,18 +781,19 @@ export class NewGameHall extends Component {
                     this.selectTablePopup.destroy();
                     this.selectTablePopup = null;
                 }
-                this.joinVenueById(venue.venueId);
+                this.joinVenueById(venue.venueId, venue.baseScore || this.findStakeByDistrictId(districtId)?.baseScore || 0);
             });
         });
     }
 
     /** 通过 venueId 加入房间 */
-    private joinVenueById(venueId: string): void {
+    private async joinVenueById(venueId: string, baseScore = 0): Promise<void> {
         const gameType = getServerGameType(this.gameId);
         if (!gameType) {
             Client.Instance.showPromptDialog('不支持的游戏类型');
             return;
         }
+        if (!(await this.ensureEnoughCarryByBaseScore(baseScore))) return;
         Client.Instance.showConnecting(true);
         GameRoomApi.Instance.joinByVenueId(venueId, gameType).then((result) => {
             if (!result) {
@@ -1239,7 +1258,7 @@ export class NewGameHall extends Component {
         if (this.createConfigPopup) this.createConfigPopup.active = false;
     }
 
-    private doCreateRoom(rules: Record<string, any>): void {
+    private async doCreateRoom(rules: Record<string, any>): Promise<void> {
         const gameType = getServerGameType(this.gameId);
         if (!gameType) {
             Client.Instance.showPromptDialog('不支持的游戏类型');
@@ -1247,6 +1266,7 @@ export class NewGameHall extends Component {
         }
 
         const params: Record<string, any> = { level: 1, ...rules };
+        if (!(await this.ensureEnoughCarryByBaseScore(params.base_score))) return;
         GameRoomApi.Instance.createRoom(gameType, params).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue(result));
@@ -1306,16 +1326,51 @@ export class NewGameHall extends Component {
 
     public onMahjongRecords(_event: Event, _customEventData: any | null) {
         if (this.dlgMahjongRecords) {
+            const comp = this.dlgMahjongRecords.getComponent(DlgMahjongRecords);
+            if (comp) comp.setup(this.gameId);
             this.dlgMahjongRecords.active = true;
             return;
         }
         this.dlgMahjongRecords = new Node('DlgMahjongRecords');
+        this.dlgMahjongRecords.active = false;
         this.dlgMahjongRecords.parent = this.node;
-        this.dlgMahjongRecords.addComponent(DlgMahjongRecords);
+        const comp = this.dlgMahjongRecords.addComponent(DlgMahjongRecords);
+        comp.setup(this.gameId);
+        this.dlgMahjongRecords.active = true;
     }
 
     public onBack(_event: Event, _customEventData: any | null) {
         Client.Instance.backToHall();
+    }
+
+    private findStakeByDistrictId(districtId: number): StakeOption | null {
+        for (const stake of this.stakeOptions) {
+            if (stake.districtId === districtId) return stake;
+        }
+        return null;
+    }
+
+    private getMinCarryScore(baseScore: any): number {
+        const base = Number(baseScore);
+        return isFinite(base) && base > 0 ? Math.ceil(base * MIN_CARRY_SCORE_MULTIPLIER) : 0;
+    }
+
+    private async ensureEnoughCarryForDistrict(districtId: number): Promise<boolean> {
+        const stake = this.findStakeByDistrictId(districtId);
+        return this.ensureEnoughCarryByBaseScore(stake?.baseScore || 0);
+    }
+
+    private async ensureEnoughCarryByBaseScore(baseScore: any): Promise<boolean> {
+        const required = this.getMinCarryScore(baseScore);
+        if (required <= 0) return true;
+        await GameManager.Instance.refreshCapital();
+        const carry = GameManager.Instance.Gold || 0;
+        if (carry >= required) return true;
+        const safeBox = GameManager.Instance.Deposit || 0;
+        Client.Instance.showPromptDialog(
+            `携带积分不足，加入本局至少需要${required}积分。\n当前携带${carry}积分，保险柜${safeBox}积分不参与游戏结算，请先从保险柜取出积分。`
+        );
+        return false;
     }
 
     private onEnterVenue(result: EnterVenueResult): void {
