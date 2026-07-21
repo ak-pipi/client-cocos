@@ -69,8 +69,11 @@ export class PaodekuaiRoom extends PokerRoomBase {
     private settlementScoreLabel: Label | null = null;
     private settlementDetailLabel: Label | null = null;
     private settlementPlayerLabels: Array<Label | null> = [null, null];
+    private settlementReplayLabel: Label | null = null;
     private settlementContinueLabel: Label | null = null;
     private settlementIsFinalRound: boolean = false;
+    private settlementRoundNo: number = 0;
+    private settlementTotalRounds: number = 0;
     private avatarListRequested: boolean = false;
     private hintOptions: Array<{ indices: number[]; play: CardPlay }> = [];
     private hintOptionIndex: number = 0;
@@ -284,6 +287,11 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
         this.updateStatus('已继续，等待对手');
         this.onReadyClick();
+    }
+
+    public onSettlementReplayClick(): void {
+        if (!this.settlementPanel?.active) return;
+        this.openSettlementReplay(this.settlementRoundNo, this.settlementTotalRounds);
     }
 
     public playSelectedCards(): void {
@@ -1084,7 +1092,9 @@ export class PaodekuaiRoom extends PokerRoomBase {
             this.settlementPlayerLabels[i] = this.createLabel(row, 'Text', '', 20, 0, 0, 570, 34, new Color(238, 242, 246, 255));
         }
 
-        const continueButton = this.createTextButton(panel, '继续', 0, -170, 'onSettlementContinueClick', new Color(46, 139, 87, 235), 'SettlementContinueButton');
+        const replayButton = this.createTextButton(panel, '回放', -76, -170, 'onSettlementReplayClick', new Color(63, 98, 143, 235), 'SettlementReplayButton');
+        this.settlementReplayLabel = this.findChildComponent<Label>(replayButton, 'Label', Label);
+        const continueButton = this.createTextButton(panel, '继续', 76, -170, 'onSettlementContinueClick', new Color(46, 139, 87, 235), 'SettlementContinueButton');
         this.settlementContinueLabel = this.findChildComponent<Label>(continueButton, 'Label', Label);
 
         overlay.active = false;
@@ -1103,6 +1113,8 @@ export class PaodekuaiRoom extends PokerRoomBase {
         const springText = msg?.spring ? ' | 春天' : '';
         const settledRound = Number(msg?.roundNo ?? this.currentRound) || this.currentRound || 0;
         const totalRounds = Number(msg?.roundCount ?? this.roundCount ?? this.totalRounds) || 0;
+        this.settlementRoundNo = settledRound;
+        this.settlementTotalRounds = totalRounds;
         const roundText = totalRounds > 0 ? `第 ${settledRound}/${totalRounds} 局` : `第 ${settledRound} 局`;
 
         if (this.settlementTitleLabel) this.settlementTitleLabel.string = isWin ? '本局胜利' : '本局失败';
@@ -1133,6 +1145,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
             }
         }
 
+        if (this.settlementReplayLabel) this.settlementReplayLabel.string = totalRounds > 1 ? '选择回放' : '回放';
         if (this.settlementContinueLabel) this.settlementContinueLabel.string = isFinalRound ? '完成' : '继续';
         if (this.readyGroup) this.readyGroup.active = false;
         if (this.btnReady) this.btnReady.active = false;

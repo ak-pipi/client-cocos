@@ -1986,11 +1986,24 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         }
 
         // --- 底部按钮区 ---
-        const btnAreaTop = startY - seatCount * (rowH + rowGap) - 20;
+        const settledRound = Number(msg?.roundNo ?? (this as any).currentRound) || Number((this as any).currentRound) || 0;
+        const settledTotal = Number(msg?.roundCount ?? (this as any).totalRounds) || Number((this as any).totalRounds) || 0;
+        this.createPopupButton(
+            panel,
+            settledTotal > 1 ? '选择回放' : '本局回放',
+            -112,
+            -panelHeight / 2 + 44,
+            178,
+            new Color(63, 98, 143, 255),
+            new Color(170, 220, 255, 255),
+            () => {
+                this.openSettlementReplay(settledRound, settledTotal);
+            },
+        );
         this.createPopupButton(
             panel,
             isLastRound ? '返回' : '继续',
-            0,
+            112,
             -panelHeight / 2 + 44,
             178,
             new Color(46, 128, 88, 255),

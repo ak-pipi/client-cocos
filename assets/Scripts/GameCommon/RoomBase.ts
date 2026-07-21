@@ -1069,6 +1069,23 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
         NetworkManager.Instance.sendInnerMessage("MsgPlayerReady");
     }
 
+    protected async openSettlementReplay(roundNo?: number, totalRounds?: number): Promise<void> {
+        const replayRound = Number(roundNo || this.currentRound || this.roomInfo?.currentRound || 0);
+        const replayTotal = Number(totalRounds || this.totalRounds || this.roomInfo?.totalRounds || 0);
+        try {
+            const { ReplayDialogManager } = await import('../Game/Dialogs/ReplayDialogManager');
+            await ReplayDialogManager.openSettlementReplay(this.node, this.gameId, {
+                venueId: GameManager.Instance.VenueId || undefined,
+                number: this.roomNumber || this.roomInfo?.roomNo,
+                roundNo: replayRound,
+                totalRounds: replayTotal,
+            });
+        } catch (err) {
+            console.error('[RoomBase] Open settlement replay failed:', err);
+            Client.Instance.showPromptDialog('打开回放失败');
+        }
+    }
+
     protected updateReadyButtonState(): void {
         if (!this.btnReady) return;
         const canReady = (this.seat !== -1 && this.gameState === GameState.Waiting);

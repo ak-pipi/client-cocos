@@ -8,7 +8,7 @@
  * - MsgMahjongTiles / MsgFetchTile / MsgActionOption / MsgPlayTile 等通用麻将消息
  */
 
-import { _decorator, Node, Label, Color } from 'cc';
+import { _decorator, Node, Label, Color, BlockInputEvents } from 'cc';
 import {
     MahjongRoomBase,
     MahjongTile,
@@ -58,6 +58,7 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
     protected scoreLabel: Label = null;
     protected jiangRuleLabel: Label = null;
     protected zhaNiaoLabel: Label = null;
+    protected settlementNode: Node | null = null;
     protected myScore: number = 0;
     protected requireJiang258: boolean = true;
     protected bankerSeat: number = -1;
@@ -248,6 +249,7 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
 
     protected onChangShaStartRound(msg: any): void {
         this.gameState = GameState.Dealing;
+        this.hideSettlementUI();
         this.bankerSeat = Number(msg?.banker) || -1;
         if (msg?.roundNo !== undefined) (this as any).currentRound = Number(msg.roundNo) || 0;
         if (msg?.roundCount !== undefined) (this as any).totalRounds = Number(msg.roundCount) || 0;
@@ -272,6 +274,8 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
         this.stopCountdown();
         this.hideActionPanel();
         this.currentActionOptions = [];
+        if (msg?.roundNo !== undefined) (this as any).currentRound = Number(msg.roundNo) || 0;
+        if (msg?.roundCount !== undefined) (this as any).totalRounds = Number(msg.roundCount) || 0;
 
         const winGolds = Array.isArray(msg?.winGolds) ? msg.winGolds : [];
         const delta = this.seat >= 0 ? Number(winGolds[this.seat] || 0) : 0;
@@ -288,8 +292,166 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
         }
 
         this.handleRoundSettlement(msg);
+        this.showSettlementUI(msg, this.isAllRoundsFinished());
         this.updateReadyButtonState();
         this.refreshChangshaHud();
+    }
+
+    protected showSettlementUI(msg: any, isLastRound: boolean): void {
+        this.hideSettlementUI();
+        const overlay = this.createUIChild(this.node, 'ChangshaSettlementOverlay', 1920, 1080, 0, 0, 999);
+        overlay.addComponent(BlockInputEvents);
+        this.paintRect(overlay, 1920, 1080, new Color(0, 0, 0, 150), undefined, 0);
+
+        const data = msg?.data || {};
+        const seatCount = this.getSeatCount();
+        const panelHeight = 390 + seatCount * 78;
+        const panel = this.createUIChild(overlay, 'ChangshaSettlementPanel', 720, panelHeight, 0, 0, 2);
+        this.paintRect(panel, 720, panelHeight, new Color(17, 27, 40, 246), new Color(228, 190, 110, 255), 18);
+
+        const settledRound = Number(msg?.roundNo ?? (this as any).currentRound) || Number((this as any).currentRound) || 0;
+        const settledTotal = Number(msg?.roundCount ?? (this as any).totalRounds) || Number((this as any).totalRounds) || 0;
+        const roundText = settledTotal > 0 ? `第 ${settledRound}/${settledTotal} 局` : `第 ${settledRound} 局`;
+        const winGolds = this.arrayLikeToArray(msg?.winGolds);
+        const scores = this.arrayLikeToArray(data?.scores || msg?.scores);
+        const winnerSeat = this.findSettlementWinnerSeat(data, winGolds);
+        const myDelta = this.seat >= 0 ? Number(winGolds[this.seat] ?? scores[this.seat] ?? 0) : 0;
+
+        const title = this.createSettlementLabel(panel, 'Title', '本局结算', 32, 0, panelHeight / 2 - 52, 420, 42, new Color(255, 230, 160, 255));
+        title.horizontalAlign = 1;
+        const subtitle = this.createSettlementLabel(panel, 'Subtitle', `${roundText}  |  ${isLastRound ? '全部对局结束' : '点击继续后自动准备下一局'}`, 18, 0, panelHeight / 2 - 84, 580, 28, new Color(186, 207, 225, 255));
+        subtitle.horizontalAlign = 1;
+
+        const summary = this.createUIChild(panel, 'Summary', 620, 86, 0, panelHeight / 2 - 150, 1);
+        this.paintRect(summary, 620, 86, new Color(31, 45, 61, 230), new Color(255, 204, 112, 255), 14);
+        const winnerText = winnerSeat >= 0 ? `${this.getSeatName(winnerSeat)} 胜出` : '本局流局';
+        const birdText = this.describeSettlementBird(msg);
+        const summaryLabel = this.createSettlementLabel(summary, 'SummaryText', `${winnerText}\n${birdText}  |  我的变化 ${myDelta >= 0 ? '+' : ''}${myDelta}`, 22, 0, 0, 560, 62, new Color(255, 241, 214, 255));
+        summaryLabel.horizontalAlign = 1;
+        summaryLabel.verticalAlign = 1;
+
+        const rowStartY = panelHeight / 2 - 235;
+        for (let clientSeat = 0; clientSeat < seatCount; clientSeat++) {
+            const serverSeat = this.client2ServerSeat(clientSeat);
+            const winGold = Number(winGolds[serverSeat] ?? 0);
+            const score = Number(scores[serverSeat] ?? winGold);
+            const isWinner = serverSeat === winnerSeat || winGold > 0;
+            const row = this.createUIChild(panel, `PlayerRow${clientSeat}`, 620, 66, 0, rowStartY - clientSeat * 78, 1);
+            this.paintRect(
+                row,
+                620,
+                66,
+                isWinner ? new Color(82, 52, 26, 232) : new Color(20, 31, 44, 218),
+                isWinner ? new Color(255, 205, 112, 255) : new Color(80, 111, 150, 210),
+                12,
+            );
+
+            const nameLabel = this.createSettlementLabel(row, 'Name', `${isWinner ? '赢家  ' : ''}${this.getSeatName(serverSeat)}${serverSeat === this.bankerSeat ? ' [庄]' : ''}`, 22, -188, 10, 230, 28, new Color(240, 236, 226, 255));
+            nameLabel.horizontalAlign = 0;
+            const scoreLabel = this.createSettlementLabel(row, 'Score', `番分 ${score >= 0 ? '+' : ''}${score}   金币 ${winGold >= 0 ? '+' : ''}${winGold}`, 20, 116, 10, 330, 28, winGold >= 0 ? new Color(132, 235, 162, 255) : new Color(255, 142, 142, 255));
+            scoreLabel.horizontalAlign = 2;
+        }
+
+        this.createSettlementButton(
+            panel,
+            settledTotal > 1 ? '选择回放' : '本局回放',
+            -112,
+            -panelHeight / 2 + 46,
+            178,
+            new Color(63, 98, 143, 255),
+            new Color(170, 220, 255, 255),
+            () => {
+                this.openSettlementReplay(settledRound, settledTotal);
+            },
+        );
+        this.createSettlementButton(
+            panel,
+            isLastRound ? '返回大厅' : '继续',
+            112,
+            -panelHeight / 2 + 46,
+            178,
+            isLastRound ? new Color(63, 98, 143, 255) : new Color(46, 128, 88, 255),
+            isLastRound ? new Color(170, 220, 255, 255) : new Color(133, 231, 174, 255),
+            () => {
+                this.hideSettlementUI();
+                if (isLastRound) {
+                    this.onBackClick();
+                    return;
+                }
+                this.onReadyClick();
+                this.updateReadyButtonState();
+                this.updateFanSummary('已准备，等待下一局');
+            },
+        );
+
+        this.settlementNode = overlay;
+    }
+
+    protected hideSettlementUI(): void {
+        if (this.settlementNode && this.settlementNode.isValid) {
+            this.settlementNode.destroy();
+        }
+        this.settlementNode = null;
+    }
+
+    private createSettlementLabel(parent: Node, name: string, text: string, size: number, x: number, y: number, w: number, h: number, color: Color): Label {
+        const node = this.createUIChild(parent, name, w, h, x, y, 1);
+        const label = node.addComponent(Label);
+        label.string = text;
+        label.fontSize = size;
+        label.lineHeight = size + 6;
+        label.overflow = Label.Overflow.SHRINK;
+        label.verticalAlign = 1;
+        label.color = color;
+        return label;
+    }
+
+    private createSettlementButton(parent: Node, text: string, x: number, y: number, width: number, color: Color, strokeColor: Color, handler: () => void): void {
+        const button = this.createUIChild(parent, text, width, 50, x, y, 2);
+        this.paintRect(button, width, 50, color, strokeColor, 14);
+        const label = this.createSettlementLabel(button, 'Label', text, 22, 0, 0, width - 18, 34, new Color(255, 255, 255, 255));
+        label.horizontalAlign = 1;
+        button.on(Node.EventType.TOUCH_END, handler, this);
+    }
+
+    private findSettlementWinnerSeat(data: any, winGolds: any[]): number {
+        const huWays = this.arrayLikeToArray(data?.huWays);
+        const huStyles = this.arrayLikeToArray(data?.huStyles);
+        for (let i = 0; i < this.getSeatCount(); i++) {
+            if (Number(huWays[i] || 0) > 0 || Number(huStyles[i] || 0) > 0) return i;
+        }
+        let winner = -1;
+        let best = 0;
+        for (let i = 0; i < this.getSeatCount(); i++) {
+            const value = Number(winGolds[i] || 0);
+            if (value > best) {
+                best = value;
+                winner = i;
+            }
+        }
+        return winner;
+    }
+
+    private describeSettlementBird(msg: any): string {
+        const tiles = Array.isArray(msg?.birdTiles) ? msg.birdTiles : [];
+        const hits = Array.isArray(msg?.hitSeats) ? msg.hitSeats : [];
+        const multiple = Number(msg?.birdMultiple ?? msg?.multiple ?? 1) || 1;
+        if (tiles.length === 0) return '未扎鸟';
+        return `鸟牌 ${tiles.length} 张  中鸟 ${hits.length} 张  x${multiple}`;
+    }
+
+    private getSeatName(serverSeat: number): string {
+        const info = this.playerInfos[serverSeat];
+        return info?.nickname || info?.playerId || `玩家${serverSeat + 1}`;
+    }
+
+    private arrayLikeToArray(value: any): any[] {
+        if (Array.isArray(value)) return value;
+        if (!value || typeof value !== 'object') return [];
+        return Object.keys(value)
+            .filter((key) => /^\d+$/.test(key))
+            .sort((a, b) => Number(a) - Number(b))
+            .map((key) => value[key]);
     }
 
     protected onChangShaQiShouHu(msg: any): void {

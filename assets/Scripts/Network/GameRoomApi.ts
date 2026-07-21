@@ -342,6 +342,33 @@ export class GameRoomApi {
         return this.parseRecordPage(dto, pageNum, `查询${api.name}战绩失败`);
     }
 
+    async getGameRecordsForRoom(gameId: GameId | string, venueId?: string, number?: string): Promise<MahjongRecordItem[]> {
+        const records: MahjongRecordItem[] = [];
+        const pageSize = 50;
+        const maxPages = 8;
+        for (let page = 1; page <= maxPages; page++) {
+            const result = await this.getGameRecords(gameId, page, pageSize);
+            if (!result) break;
+            const pageRecords = result.records || [];
+            for (const record of pageRecords) {
+                const sameVenue = !!venueId && String(record.venueId) === String(venueId);
+                const sameNumber = !!number && String(record.number) === String(number);
+                if (sameVenue || sameNumber) records.push(record);
+            }
+            if (page * pageSize >= (result.total || 0) || pageRecords.length === 0) break;
+        }
+        const map = new Map<number, MahjongRecordItem>();
+        for (const record of records) map.set(record.id, record);
+        return Array.from(map.values()).sort((a, b) => (a.roundNo || 0) - (b.roundNo || 0));
+    }
+
+    async findGameRecordForRoomRound(gameId: GameId | string, roundNo: number, venueId?: string, number?: string): Promise<MahjongRecordItem | null> {
+        const records = await this.getGameRecordsForRoom(gameId, venueId, number);
+        if (records.length === 0) return null;
+        const exact = records.find((r) => Number(r.roundNo) === Number(roundNo));
+        return exact || records[records.length - 1] || null;
+    }
+
     private parseRecordPage(dto: any, pageNum: number, defaultError: string): PageResult<MahjongRecordItem> | null {
         if (!dto) {
             Client.Instance.showPromptDialog(`${defaultError}，服务器无响应`);
@@ -429,7 +456,7 @@ export class GameRoomApi {
             rawSize: decoded?.rawSize,
             actionCount: decoded?.actionCount,
             actorCount: decoded?.actorCount,
-            playerCount: decoded?.playerCount ?? payload.players?.length,
+            playerCount: decoded?.playerCount || payload.players?.length,
         } as MahjongPlaybackResult;
     }
 
@@ -466,15 +493,17 @@ export class GameRoomApi {
             const raw = inflate(compressed);
             const replay = decode(raw);
             const actions = this.getReplayField(replay, 'actions', 2);
+            const steps = this.getReplayField(replay, 'steps', 7);
             const actors = this.getReplayField(replay, 'actors', 3);
             const dealedTiles = this.getReplayField(replay, 'dealedTiles', 0);
+            const replayPlayerCount = Number(this.getReplayField(replay, 'playerCount', 3));
             return {
                 replay,
                 compressedSize: compressed.length,
                 rawSize: raw.length,
-                actionCount: Array.isArray(actions) ? actions.length : 0,
+                actionCount: Array.isArray(actions) ? actions.length : (Array.isArray(steps) ? steps.length : 0),
                 actorCount: Array.isArray(actors) ? actors.length : 0,
-                playerCount: Array.isArray(dealedTiles) ? dealedTiles.length : 0,
+                playerCount: Array.isArray(dealedTiles) ? dealedTiles.length : (isFinite(replayPlayerCount) ? replayPlayerCount : 0),
             };
         } catch (err) {
             console.error('[GameRoomApi] decode replay failed:', err);

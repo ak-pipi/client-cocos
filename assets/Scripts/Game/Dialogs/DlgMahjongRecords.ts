@@ -6,6 +6,7 @@ import {
     UI_COLORS, createOverlayRoot, createLabel, createButton,
     createScrollArea, fillRoundRect, resizeScrollContent,
 } from '../../UI/UiKit';
+import { ReplayDialogManager } from './ReplayDialogManager';
 
 const { ccclass } = _decorator;
 
@@ -95,6 +96,7 @@ export class DlgMahjongRecords extends Component {
                 if (this.statusLabel) this.statusLabel.string = '回放已超过追溯期';
                 return;
             }
+            ReplayDialogManager.openPlayback(this.node, playback);
             const size = playback.rawSize || playback.compressedSize || playback.base64?.length || 0;
             const sizeText = size > 0 ? `${Math.ceil(size / 1024)}KB` : '-';
             const actionText = playback.actionCount != null ? `，${playback.actionCount}步` : '';

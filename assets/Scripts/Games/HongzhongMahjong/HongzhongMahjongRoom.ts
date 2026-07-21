@@ -1124,10 +1124,24 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
             cursorY -= 84;
         }
 
+        const settledRound = Number(msg?.roundNo ?? (this as any).currentRound) || Number((this as any).currentRound) || 0;
+        const settledTotal = Number(msg?.roundCount ?? (this as any).totalRounds) || Number((this as any).totalRounds) || 0;
+        this.createPopupButton(
+            panel,
+            settledTotal > 1 ? '选择回放' : '本局回放',
+            -112,
+            -panelHeight / 2 + 48,
+            178,
+            new Color(63, 98, 143, 255),
+            new Color(170, 220, 255, 255),
+            () => {
+                this.openSettlementReplay(settledRound, settledTotal);
+            },
+        );
         this.createPopupButton(
             panel,
             isLastRound ? '返回大厅' : '继续',
-            0,
+            112,
             -panelHeight / 2 + 48,
             178,
             isLastRound ? new Color(63, 98, 143, 255) : new Color(46, 128, 88, 255),
