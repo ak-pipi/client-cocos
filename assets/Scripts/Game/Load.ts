@@ -9,6 +9,10 @@ import { ResourceLoader } from '../Manager/ResourceLoader';
 import { Client } from './Client';
 const { ccclass, property } = _decorator;
 
+interface RuntimeConfig {
+    apiBaseUrl?: string;
+}
+
 @ccclass('Load')
 export class Load extends Component {
     @property({ type: Label })
@@ -19,16 +23,47 @@ export class Load extends Component {
 
     start() {
         console.log("Load start.");
-        this.loadConfig();
+        void this.loadConfig();
     }
 
     update(deltaTime: number) { }
     
-    private loadConfig() {
-        // 本地开发配置，直接使用本地 web_server
-        GameManager.Instance.HttpHost = "http://127.0.0.1:18080";
+    private async loadConfig(): Promise<void> {
+        GameManager.Instance.HttpHost = await this.resolveHttpHost();
         console.log("Http host: ", GameManager.Instance.HttpHost);
         this.loadResources();
+    }
+
+    /**
+     * 浏览器发布包从与 index.html 同级的 config.json 读取 API 地址。
+     * 该文件由 deploy/aws/scripts/publish-web-client.sh 在上传前生成，
+     * 因此可以切换环境而无需重新编译 Cocos 资源。
+     */
+    private async resolveHttpHost(): Promise<string> {
+        const localApiBaseUrl = 'http://127.0.0.1:18080';
+        const productionApiBaseUrl = 'https://api-jinniu-game.com';
+        const isBrowser = typeof window !== 'undefined' && typeof window.fetch === 'function';
+        const hostname = isBrowser ? window.location.hostname : '';
+        const isLocalDevelopment = hostname === 'localhost' || hostname === '127.0.0.1';
+
+        if (!isBrowser || isLocalDevelopment) {
+            return localApiBaseUrl;
+        }
+
+        try {
+            const response = await fetch('./config.json', { cache: 'no-store' });
+            if (response.ok) {
+                const config = await response.json() as RuntimeConfig;
+                if (typeof config.apiBaseUrl === 'string' && /^https:\/\//.test(config.apiBaseUrl)) {
+                    return config.apiBaseUrl.replace(/\/+$/, '');
+                }
+            }
+            console.warn(`[Load] config.json is unavailable or invalid (${response.status}); using production fallback.`);
+        } catch (error) {
+            console.warn('[Load] Failed to load config.json; using production fallback.', error);
+        }
+
+        return productionApiBaseUrl;
     }
 
     private loadResources() {
