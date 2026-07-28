@@ -391,6 +391,9 @@ export class NetworkManager implements NetMsgHandler  {
         else if (msgType === "MsgHeartbeatResp") {
             this.onHeartbeatResp(msg);
         }
+        else if (msgType === "MsgPlayerWalletSync") {
+            GameManager.Instance.onWalletSync(msg);
+        }
         else if (msgType === "MsgPlayerSignatureError") {
             if (!this.isCurrentConnectionMessage()) {
                 console.warn("Ignore stale MsgPlayerSignatureError");

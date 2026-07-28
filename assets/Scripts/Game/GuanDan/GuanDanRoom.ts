@@ -205,6 +205,10 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
     // 玩家信息
     private playerInfos: any[] = new Array(4);
 
+    private capitalChangedHandler: (capital: any) => void = (capital: any) => {
+        this.onCapitalChanged(capital);
+    };
+
     // 玩家身体
     private playerBodies: Node[] = new Array(4);
 
@@ -226,11 +230,13 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
     protected onLoad(): void {
         NetMsgManager.Instance.registerHandler(this);
         NetworkManager.Instance.registerHandler(this);
+        GameManager.Instance.addCapitalListener(this.capitalChangedHandler);
     }
 
     protected onDestroy(): void {
         NetMsgManager.Instance.unregisterHandler(this);
         NetworkManager.Instance.unregisterHandler(this);
+        GameManager.Instance.removeCapitalListener(this.capitalChangedHandler);
     }
 
     start() {
@@ -598,6 +604,69 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
             if (this.players[clientSeat]) this.players[clientSeat].setAuto(msg.authorize);
             if (clientSeat === 0 && this.autoGroup) this.autoGroup.active = msg.authorize;
         }
+    }
+
+    private onCapitalChanged(capital: any): void {
+        if (!capital) return;
+        const playerId = capital.playerId != null ? String(capital.playerId) : GameManager.Instance.PlayerId;
+        const seatIndex = this.findPlayerSeat(playerId);
+        if (seatIndex < 0) return;
+
+        if (!this.playerInfos[seatIndex] && seatIndex === this.seat) {
+            this.playerInfos[seatIndex] = this.createSelfPlayerInfo();
+        }
+        const playerInfo = this.playerInfos[seatIndex];
+        if (!playerInfo) return;
+
+        if (capital.gold !== undefined && capital.gold !== null) {
+            const gold = Number(capital.gold);
+            playerInfo.gold = isFinite(gold) ? gold : 0;
+        } else {
+            return;
+        }
+
+        if (this.gameState === GameState.Sitting) {
+            if (this.seatPanels[seatIndex]) {
+                const isSelf = seatIndex === this.seat;
+                const isOwner = seatIndex === this.ownerSeat;
+                this.seatPanels[seatIndex].setPlayerInfo(playerInfo, isSelf, isOwner);
+            }
+            return;
+        }
+
+        const clientSeat = this.server2ClientSeat(seatIndex);
+        if (this.players[clientSeat]) {
+            this.players[clientSeat].show(true);
+            this.players[clientSeat].setPlayerInfo(playerInfo);
+        }
+    }
+
+    private findPlayerSeat(playerId: string): number {
+        if (playerId) {
+            for (let i: number = 0; i < 4; i++) {
+                if (this.playerInfos[i]?.playerId != null && String(this.playerInfos[i].playerId) === playerId) {
+                    return i;
+                }
+            }
+        }
+        if (this.seat >= 0 && (!playerId || playerId === GameManager.Instance.PlayerId)) {
+            return this.seat;
+        }
+        return -1;
+    }
+
+    private createSelfPlayerInfo(): any {
+        return {
+            playerId: GameManager.Instance.PlayerId,
+            nickname: GameManager.Instance.NickName || GameManager.Instance.PlayerId,
+            sex: GameManager.Instance.Sex,
+            gold: GameManager.Instance.Gold,
+            headUrl: GameManager.Instance.Avatar,
+            offline: false,
+            ready: false,
+            authorize: false,
+            winRate: 100.0,
+        };
     }
 
     public showPlayerInfo(seat: number) {

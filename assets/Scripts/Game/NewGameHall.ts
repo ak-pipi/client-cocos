@@ -65,10 +65,10 @@ const HONGZHONG_DEFAULT_RULES = {
 const HONGZHONG_BASE_OPTIONS = [
     { text: '1', value: 1 },
     { text: '2', value: 2 },
-    { text: '3', value: 3 },
     { text: '5', value: 5 },
     { text: '10', value: 10 },
     { text: '20', value: 20 },
+    { text: '25', value: 25 },
 ];
 
 const HONGZHONG_ROUND_OPTIONS = [
@@ -876,7 +876,7 @@ export class NewGameHall extends Component {
 
         let y = ph / 2 - 80;
         // 台桌分选项
-        y = this.addOptionRow(panel, isHongzhong ? '底分' : '台桌分', y, baseOptions, 'base_score');
+        y = this.addOptionRow(panel, '台桌分', y, baseOptions, 'base_score');
 
         if (!isHongzhong) {
             // 封顶倍率选项
@@ -993,8 +993,8 @@ export class NewGameHall extends Component {
 
             btnNode.on(Node.EventType.TOUCH_END, () => {
                 this.createRules[ruleKey] = opt.value;
-                if (this.gameId === GameId.TaojiangMahjong && (ruleKey === 'base_score' || ruleKey === 'round_count')) {
-                    this.normalizeTaojiangCreateRules(ruleKey);
+                if (this.usesRegionalRoomOptions() && (ruleKey === 'base_score' || ruleKey === 'round_count')) {
+                    this.normalizeRegionalCreateRules(ruleKey);
                     this.refreshOptionRow(parent, 'base_score', TAOJIANG_BASE_OPTIONS);
                     this.refreshOptionRow(parent, 'round_count', TAOJIANG_ROUND_OPTIONS);
                 } else {
@@ -1022,7 +1022,14 @@ export class NewGameHall extends Component {
         });
     }
 
-    private normalizeTaojiangCreateRules(changedKey: string): void {
+    private usesRegionalRoomOptions(): boolean {
+        return this.gameId === GameId.TaojiangMahjong ||
+            this.gameId === GameId.HongzhongMahjong ||
+            this.gameId === GameId.ChangshaMahjong ||
+            this.gameId === GameId.Paodekuai;
+    }
+
+    private normalizeRegionalCreateRules(changedKey: string): void {
         const baseScore = Number(this.createRules.base_score) || 1;
         const roundCount = Number(this.createRules.round_count) || 8;
         const singleScores = [5, 10, 25];

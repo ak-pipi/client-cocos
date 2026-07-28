@@ -24,9 +24,23 @@ export class Load extends Component {
 
     update(deltaTime: number) { }
     
-    private loadConfig() {
-        // 本地开发配置，直接使用本地 web_server
-        GameManager.Instance.HttpHost = "http://127.0.0.1:18080";
+    private async loadConfig() {
+        let httpHost = "http://127.0.0.1:18080";
+        if (typeof fetch !== 'undefined') {
+            try {
+                const response = await fetch("config.json", { cache: "no-store" });
+                if (response.ok) {
+                    const config = await response.json();
+                    const apiBaseUrl = typeof config?.apiBaseUrl === 'string' ? config.apiBaseUrl.trim() : '';
+                    if (apiBaseUrl.length > 0) {
+                        httpHost = apiBaseUrl.replace(/\/+$/, '');
+                    }
+                }
+            } catch (err) {
+                console.warn("Load runtime config failed: ", err);
+            }
+        }
+        GameManager.Instance.HttpHost = httpHost;
         console.log("Http host: ", GameManager.Instance.HttpHost);
         this.loadResources();
     }

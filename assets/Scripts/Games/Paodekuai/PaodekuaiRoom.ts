@@ -145,6 +145,10 @@ export class PaodekuaiRoom extends PokerRoomBase {
         else if (msgType === 'PaoDeKuai.PlayNotify') this.onPdkPlayNotify(msg);
         else if (msgType === 'PaoDeKuai.PlayFailed') this.onPdkPlayFailed(msg);
         else if (msgType === 'PaoDeKuai.Settlement') this.onPdkSettlement(msg);
+        else if (msgType === 'PaoDeKuai.DisbandVote') this.onPdkDisbandVote(msg);
+        else if (msgType === 'MsgDisbandChoice') this.onPdkDisbandChoice(msg);
+        else if (msgType === 'MsgDisbandObsolete') this.onPdkDisbandObsolete();
+        else if (msgType === 'MsgDisband') this.onPdkDisband();
         else return false;
         return true;
     }
@@ -169,6 +173,28 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.hideGuanDanPokerNodes();
         this.renderOpponentHandBacks(0);
         this.refreshPaodekuaiHud();
+    }
+
+    protected onPlayerCapitalChanged(seatIndex: number, capital: any): void {
+        super.onPlayerCapitalChanged(seatIndex, capital);
+        this.refreshPaodekuaiHud();
+    }
+
+    private onPdkDisbandVote(msg: any): void {
+        this.showDissolveVote(String(msg?.disbander ?? ''));
+    }
+
+    private onPdkDisbandChoice(_msg: any): void {
+    }
+
+    private onPdkDisbandObsolete(): void {
+        if (this.dissolvePanel) this.dissolvePanel.active = false;
+        Client.Instance.showPromptTip('解散申请未通过', 2.0);
+    }
+
+    private onPdkDisband(): void {
+        if (this.dissolvePanel) this.dissolvePanel.active = false;
+        this.exitRoom();
     }
 
     protected updateReadyButtonState(): void {

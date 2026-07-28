@@ -216,9 +216,63 @@ export class GameManager {
         this.playerInfoTime = sys.now();
     }
 
+    private capitalListeners: Array<(capital: any) => void> = [];
+
+    public addCapitalListener(listener: (capital: any) => void): void {
+        if (!listener) return;
+        if (this.capitalListeners.indexOf(listener) !== -1) return;
+        this.capitalListeners.push(listener);
+    }
+
+    public removeCapitalListener(listener: (capital: any) => void): void {
+        const index = this.capitalListeners.indexOf(listener);
+        if (index !== -1) this.capitalListeners.splice(index, 1);
+    }
+
+    private notifyCapitalChanged(payload: any): void {
+        const capital = {
+            ...(payload || {}),
+            playerId: payload?.playerId != null ? String(payload.playerId) : this.playerId,
+            gold: this.gold,
+            deposit: this.deposit,
+            diamond: this.diamond,
+        };
+        const listeners = this.capitalListeners.slice();
+        for (const listener of listeners) {
+            try {
+                listener(capital);
+            } catch (err) {
+                console.log("Notify capital change error: ", err);
+            }
+        }
+    }
+
     private toSafeNumber(value: any): number {
         const num = Number(value);
         return isFinite(num) ? num : 0;
+    }
+
+    private applyCapital(dto: any): boolean {
+        const payload = dto?.data && typeof dto.data === 'object' ? dto.data : dto;
+        if (!payload || typeof payload !== 'object') return false;
+        let changed = false;
+        if (payload.gold !== undefined && payload.gold !== null) {
+            this.gold = this.toSafeNumber(payload.gold);
+            changed = true;
+        }
+        if (payload.deposit !== undefined && payload.deposit !== null) {
+            this.deposit = this.toSafeNumber(payload.deposit);
+            changed = true;
+        }
+        if (payload.diamond !== undefined && payload.diamond !== null) {
+            this.diamond = this.toSafeNumber(payload.diamond);
+            changed = true;
+        }
+        if (changed) {
+            this.playerInfoTime = sys.now();
+            this.notifyCapitalChanged(payload);
+        }
+        return changed;
     }
 
     public setPlayerInfo(dto: any) {
@@ -228,9 +282,7 @@ export class GameManager {
         this.phone = dto.phone;
         this.sex = dto.sex;
         this.avatar = dto.avatar;
-        this.gold = this.toSafeNumber(dto.gold);
-        this.deposit = this.toSafeNumber(dto.deposit);
-        this.diamond = this.toSafeNumber(dto.diamond);
+        this.applyCapital(dto);
         this.isAgency = dto.isAgency;
         this.agencyId = dto.agencyId;
         this.playerInfoTime = sys.now();
@@ -280,6 +332,7 @@ export class GameManager {
             return response.json().catch(() => null);
         }).then((dto: any) => {
             if (!dto) return;
+            this.applyCapital(dto);
             this.tryAutoReenterFromHeartbeat(dto);
         }).catch((err) => {
             console.log("Heartbeat error: ", err);
@@ -293,6 +346,7 @@ export class GameManager {
         this.lastAutoReenterTry = now;
         this.authGet("/player/heartbeat").then((dto) => {
             if (!dto) return;
+            this.applyCapital(dto);
             this.tryAutoReenterFromHeartbeat(dto);
         }).catch(() => {});
     }
@@ -744,15 +798,19 @@ export class GameManager {
         this.handleSessionExpired();
     }
 
+    public onWalletSync(msg: any): void {
+        const playerId = msg?.playerId != null ? String(msg.playerId) : '';
+        if (playerId && this.playerId && playerId !== this.playerId)
+            return;
+        this.applyCapital(msg);
+    }
+
     public refreshCapital(): Promise<boolean> {
         const request = this.authGet("/player/capital/get");
         if (!request) return Promise.resolve(false);
         return request.then((dto) => {
             if (dto?.code === '00000000') {
-                this.gold = this.toSafeNumber(dto.gold);
-                this.deposit = this.toSafeNumber(dto.deposit);
-                this.diamond = this.toSafeNumber(dto.diamond);
-                this.playerInfoTime = sys.now();
+                this.applyCapital(dto);
                 return true;
             }
             console.log("Get capital error: ", dto?.msg);

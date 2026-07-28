@@ -354,6 +354,11 @@ export class MahjongRoomBase extends RoomBase {
         this.refreshMahjongOverlayUI();
     }
 
+    protected onPlayerCapitalChanged(seatIndex: number, capital: any): void {
+        super.onPlayerCapitalChanged(seatIndex, capital);
+        this.refreshMahjongOverlayUI();
+    }
+
     protected onPlayerAuthorizeUIUpdate(seatIndex: number, authorize: boolean): void {
         super.onPlayerAuthorizeUIUpdate(seatIndex, authorize);
         this.refreshMahjongOverlayUI();

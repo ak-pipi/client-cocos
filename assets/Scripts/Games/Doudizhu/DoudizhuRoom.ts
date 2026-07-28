@@ -103,8 +103,29 @@ export class DoudizhuRoom extends PokerRoomBase {
         else if (msgType === 'DouDiZhu.PlayNotify') this.onDoudizhuPlayNotify(msg);
         else if (msgType === 'DouDiZhu.PlayFailed') this.onDoudizhuPlayFailed(msg);
         else if (msgType === 'DouDiZhu.Settlement') this.onDoudizhuSettlement(msg);
+        else if (msgType === 'DouDiZhu.DisbandVote') this.onDoudizhuDisbandVote(msg);
+        else if (msgType === 'MsgDisbandChoice') this.onDoudizhuDisbandChoice(msg);
+        else if (msgType === 'MsgDisbandObsolete') this.onDoudizhuDisbandObsolete();
+        else if (msgType === 'MsgDisband') this.onDoudizhuDisband();
         else return false;
         return true;
+    }
+
+    private onDoudizhuDisbandVote(msg: any): void {
+        this.showDissolveVote(String(msg?.disbander ?? ''));
+    }
+
+    private onDoudizhuDisbandChoice(_msg: any): void {
+    }
+
+    private onDoudizhuDisbandObsolete(): void {
+        if (this.dissolvePanel) this.dissolvePanel.active = false;
+        Client.Instance.showPromptTip('解散申请未通过', 2.0);
+    }
+
+    private onDoudizhuDisband(): void {
+        if (this.dissolvePanel) this.dissolvePanel.active = false;
+        this.exitRoom();
     }
 
     public onReadyClick(): void {
@@ -291,6 +312,11 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     protected onPlayerOfflineChanged(seatIndex: number, offline: boolean): void {
         super.onPlayerOfflineChanged(seatIndex, offline);
+        this.refreshDoudizhuPlayers();
+    }
+
+    protected onPlayerCapitalChanged(seatIndex: number, capital: any): void {
+        super.onPlayerCapitalChanged(seatIndex, capital);
         this.refreshDoudizhuPlayers();
     }
 

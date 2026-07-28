@@ -87,14 +87,14 @@ export enum DistrictId {
     GuanDanMaster = 8,
 
     // 桃江麻将
-    TaojiangB1R4 = 9,
-    TaojiangB1R8 = 10,
-    TaojiangB2R8 = 11,
-    TaojiangB2R16 = 12,
-    TaojiangB5R8 = 13,
-    TaojiangB5R16 = 14,
+    TaojiangB5R1 = 9,
+    TaojiangB10R1 = 10,
+    TaojiangB25R1 = 11,
+    TaojiangB1R8 = 12,
+    TaojiangB2R8 = 13,
+    TaojiangB5R8 = 14,
     TaojiangB10R8 = 15,
-    TaojiangB10R16 = 16,
+    TaojiangB20R8 = 16,
 
     // 红中麻将
     HongzhongB1R8 = 17,

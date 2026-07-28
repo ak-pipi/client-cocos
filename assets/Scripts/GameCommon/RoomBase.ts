@@ -196,16 +196,22 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     /** 玩家信息列表 */
     protected playerInfos: any[] = [];
 
+    private capitalChangedHandler: (capital: any) => void = (capital: any) => {
+        this.onCapitalChanged(capital);
+    };
+
     // ==================== 生命周期 ====================
 
     onLoad(): void {
         NetMsgManager.Instance.registerHandler(this);
         NetworkManager.Instance.registerHandler(this);
+        GameManager.Instance.addCapitalListener(this.capitalChangedHandler);
     }
 
     onDestroy(): void {
         NetMsgManager.Instance.unregisterHandler(this);
         NetworkManager.Instance.unregisterHandler(this);
+        GameManager.Instance.removeCapitalListener(this.capitalChangedHandler);
     }
 
     start(): void {
@@ -576,6 +582,77 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
                 this.autoGroup.active = authorize;
             }
         }
+    }
+
+    protected onCapitalChanged(capital: any): void {
+        if (!capital) return;
+        const playerId = capital.playerId != null ? String(capital.playerId) : GameManager.Instance.PlayerId;
+        const seatIndex = this.findPlayerSeat(playerId);
+        if (seatIndex < 0) return;
+
+        if (!this.playerInfos[seatIndex] && seatIndex === this.seat) {
+            this.playerInfos[seatIndex] = this.createSelfPlayerInfo();
+        }
+        const info = this.playerInfos[seatIndex];
+        if (!info) return;
+
+        let changed = false;
+        if (capital.gold !== undefined && capital.gold !== null) {
+            const gold = Number(capital.gold);
+            info.gold = isFinite(gold) ? gold : 0;
+            changed = true;
+        }
+        if (!changed) return;
+        this.onPlayerCapitalChanged(seatIndex, capital);
+    }
+
+    protected onPlayerCapitalChanged(seatIndex: number, _capital: any): void {
+        const playerInfo = this.playerInfos[seatIndex];
+        if (!playerInfo) return;
+        if (this.gameState === GameState.Sitting) {
+            if (this.seatPanels[seatIndex]) {
+                const isSelf = (seatIndex === this.seat);
+                const isOwner = (seatIndex === this.ownerSeat);
+                this.seatPanels[seatIndex].setPlayerInfo(playerInfo, isSelf, isOwner);
+            }
+            return;
+        }
+        const clientSeat = this.server2ClientSeat(seatIndex);
+        if (this.guanDanPlayers[clientSeat]) {
+            this.guanDanPlayers[clientSeat].show(true);
+            this.guanDanPlayers[clientSeat].setPlayerInfo(playerInfo);
+            if (this.gameState === GameState.Waiting) {
+                this.guanDanPlayers[clientSeat].setReady(playerInfo.ready);
+            }
+        }
+    }
+
+    private findPlayerSeat(playerId: string): number {
+        const seatCount = this.getSeatCount();
+        if (playerId) {
+            for (let i = 0; i < seatCount; i++) {
+                if (this.playerInfos[i]?.playerId != null && String(this.playerInfos[i].playerId) === playerId) {
+                    return i;
+                }
+            }
+        }
+        if (this.seat >= 0 && (!playerId || playerId === GameManager.Instance.PlayerId)) {
+            return this.seat;
+        }
+        return -1;
+    }
+
+    private createSelfPlayerInfo(): any {
+        return {
+            playerId: GameManager.Instance.PlayerId,
+            nickname: GameManager.Instance.NickName || GameManager.Instance.PlayerId,
+            sex: GameManager.Instance.Sex,
+            gold: GameManager.Instance.Gold,
+            headUrl: GameManager.Instance.Avatar,
+            offline: false,
+            ready: false,
+            authorize: false,
+        };
     }
 
     protected onLeaveVenueResp(msg: any): void {
@@ -1168,9 +1245,9 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     }
 
     public voteDissolve(agree: boolean): void {
-        NetworkManager.Instance.sendMessage("MsgDisbandChoice", {
+        NetworkManager.Instance.sendMessage("MsgDisbandChoose", {
             venueId: GameManager.Instance.VenueId,
-            agree
+            choice: agree ? 1 : 2
         }, true);
         if (this.dissolvePanel) {
             this.dissolvePanel.active = false;
