@@ -118,7 +118,10 @@ export class GameFactory {
      * 获取所有支持的游戏列表
      */
     public static getAllGames(): GameMetaInfo[] {
-        return [...GAME_REGISTRY.values()].sort((a, b) => a.priority - b.priority);
+        // Cocos 3.8 的网页构建器会将 Map 迭代器的展开语法错误地转为
+        // [].concat(iterator)，从而生成只含一个 iterator 的数组。
+        // Array.from 会被保留为标准运行时调用，确保获得七个游戏配置。
+        return Array.from(GAME_REGISTRY.values()).sort((a, b) => a.priority - b.priority);
     }
 
     /**
