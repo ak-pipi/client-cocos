@@ -40,6 +40,9 @@ export class DlgPersonalCenter extends DlgBase {
 
     start() {
         super.start();
+        if (this.labelDiamond) {
+            this.labelDiamond.node.active = false;
+        }
     }
 
     update(deltaTime: number) {
@@ -53,7 +56,6 @@ export class DlgPersonalCenter extends DlgBase {
         this.labelNickname.string = GameManager.Instance.NickName;
         this.labelPlayerId.string = GameManager.Instance.PlayerId;
         this.labelGold.string = GameManager.Instance.Gold.toString();
-        this.labelDiamond.string = GameManager.Instance.Diamond.toString();
         if (!GameManager.Instance.Avatar) return;
         GameManager.Instance.loadSpriteFrame(GameManager.Instance.Avatar, (spriteFrame: SpriteFrame) => {
             this.spriteHead.spriteFrame = spriteFrame;

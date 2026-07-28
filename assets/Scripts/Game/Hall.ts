@@ -60,6 +60,7 @@ export class Hall extends Component {
 
     start() {
         this.playBackgroundMusic();
+        this.hideDiamondFeature();
         this.loadGameList();
         this.createShortcutButtons();
     }
@@ -89,7 +90,6 @@ export class Hall extends Component {
         this.labelName.string = GameManager.Instance.NickName;
         this.labelPlayerId.string = GameManager.Instance.PlayerId;
         this.labelGold.string = GameManager.Instance.Gold.toString();
-        this.labelDiamond.string = GameManager.Instance.Diamond.toString();
         if (!GameManager.Instance.Avatar) return;
         GameManager.Instance.loadSpriteFrame(GameManager.Instance.Avatar, (spriteFrame: SpriteFrame) => {
             this.spriteHead.spriteFrame = spriteFrame;
@@ -119,14 +119,13 @@ export class Hall extends Component {
     }
 
     public onShopClicked() {
-        if (this.dlgShop) {
-            this.dlgShop.active = true;
-            return;
+        Client.Instance.showPromptTip("钻石功能已下线", 2.0);
+    }
+
+    private hideDiamondFeature() {
+        if (this.labelDiamond) {
+            this.labelDiamond.node.active = false;
         }
-        ResourceLoader.Instance.loadAsset("Shop", "DlgShop", Prefab, (prefab: Prefab) => {
-            this.dlgShop = instantiate(prefab);
-            this.dlgShop.parent = this.popup;
-        });
     }
 
     public onUpClicked() {

@@ -77,7 +77,6 @@ export class Load extends Component {
             { bundleName: "Dialog", assetList: [{ assetType: Prefab, paths: ["DlgEmail", "DlgService"] }] },
             { bundleName: "PersonalCenter", assetList: [{ assetType: Prefab, paths: ["DlgPersonalCenter"] }] },
             { bundleName: "Setting", assetList: [{ assetType: Prefab, paths: ["DlgSetting"] }] },
-            { bundleName: "Shop", assetList: [{ assetType: Prefab, paths: ["DlgShop"] }] },
         ];
         ResourceLoader.Instance.loadAssets(assets, (current: number, total: number) => {
             let percent = current / total;
