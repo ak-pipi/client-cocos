@@ -317,8 +317,8 @@ export class GameManager {
         if (!this.loggedIn || CommonUtils.isStringEmpty(this.token)) return;
         let nowTime: number = sys.now();
         let delta: number = nowTime - this.lastHeartbeat;
-        if (delta < 30000) return;
-        // 每30秒发送一次心跳
+        if (delta < 15000) return;
+        // 每15秒发送一次心跳
         this.lastHeartbeat = nowTime;
         let url = this.getUrl("/player/heartbeat");
         fetch(url, {

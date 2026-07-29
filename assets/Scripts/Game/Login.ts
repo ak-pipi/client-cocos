@@ -64,6 +64,8 @@ export class Login extends Component {
 
     private captchaLoading: boolean = false;
 
+    private loginSubmitting: boolean = false;
+
     start() {
         let text = sys.localStorage.getItem('userData');
         let userData = null;
@@ -139,6 +141,10 @@ export class Login extends Component {
     }
 
     public onLoginClicked() {
+        if (this.loginSubmitting) {
+            Client.Instance.showPromptTip("正在登录，请稍候");
+            return;
+        }
         if (CommonUtils.isStringEmpty(this.editName.string)) {
             Client.Instance.showPromptTip("请输入登录用户名");
             //Client.Instance.showPromptDialog("请输入登录用户名");
@@ -158,6 +164,7 @@ export class Login extends Component {
             code: this.editCode.string,
             uuid: this.uuidCode
         };
+        this.loginSubmitting = true;
         GameManager.Instance.post("/player/login", data).then((dto) => {
             if (dto.code === '00000000') {
                 GameManager.Instance.Token = dto.token;
@@ -171,14 +178,29 @@ export class Login extends Component {
                 sys.localStorage.setItem('userData', text);
                 this.getPlayerInfo();
             } else {
+                const errMsg = this.getLoginErrorMessage(dto);
+                console.warn("Login failed: ", dto);
                 this.getCaptchaCode1();
-                Client.Instance.showPromptDialog("登录失败：" + dto.msg);
+                Client.Instance.showPromptDialog("登录失败：" + errMsg);
             }
         }).catch((err) => {
+            const errMsg = this.getLoginErrorMessage(err);
             this.getCaptchaCode1();
-            console.log(err);
-            Client.Instance.showPromptDialog("登录失败：" + err.toString());
+            console.warn("Login request error: ", err);
+            Client.Instance.showPromptDialog("登录失败：" + errMsg);
+        }).finally(() => {
+            this.loginSubmitting = false;
         });
+    }
+
+    private getLoginErrorMessage(err: any): string {
+        if (!err) return "未知错误";
+        if (typeof err === "string") return err;
+        const msg = err.msg || err.message;
+        if (msg === "Player already logined" || msg === "Player already logged in") {
+            return "当前账号仍在线，请稍等几秒后重试，或先退出当前游戏";
+        }
+        return msg || "未知错误";
     }
     
     public onRegisterClicked1() {
@@ -294,4 +316,3 @@ export class Login extends Component {
         });
     }
 }
-
