@@ -4856,7 +4856,7 @@
       "__id__": 105
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 201
@@ -4996,7 +4996,7 @@
         "__id__": 207
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 227
@@ -5634,7 +5634,7 @@
       "__id__": 105
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 233
@@ -5725,7 +5725,7 @@
       "b": 45,
       "a": 255
     },
-    "_string": "（未设置则不填，建议设置取款密码，保障资金安全）",
+    "_string": "",
     "_horizontalAlign": 0,
     "_verticalAlign": 0,
     "_actualFontSize": 20,
@@ -6151,7 +6151,7 @@
         "__id__": 254
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 260
@@ -9571,7 +9571,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "旧密码:",
+    "_string": "",
     "_horizontalAlign": 2,
     "_verticalAlign": 1,
     "_actualFontSize": 24,
@@ -10375,7 +10375,7 @@
       "b": 45,
       "a": 255
     },
-    "_string": "（未设置则不填）",
+    "_string": "",
     "_horizontalAlign": 0,
     "_verticalAlign": 1,
     "_actualFontSize": 20,
@@ -10537,7 +10537,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "新密码:",
+    "_string": "",
     "_horizontalAlign": 2,
     "_verticalAlign": 1,
     "_actualFontSize": 24,
@@ -11341,7 +11341,7 @@
       "b": 45,
       "a": 255
     },
-    "_string": "（<=16位）",
+    "_string": "",
     "_horizontalAlign": 0,
     "_verticalAlign": 1,
     "_actualFontSize": 20,
@@ -11503,7 +11503,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "确认密码:",
+    "_string": "",
     "_horizontalAlign": 2,
     "_verticalAlign": 1,
     "_actualFontSize": 24,

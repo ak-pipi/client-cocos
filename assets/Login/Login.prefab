@@ -6737,7 +6737,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "Password2",
+    "_name": "UnusedRegisterField",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": {
@@ -6754,7 +6754,7 @@
         "__id__": 281
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 301
@@ -6895,7 +6895,7 @@
       "b": 6,
       "a": 255
     },
-    "_string": "确认密码：",
+    "_string": "",
     "_horizontalAlign": 2,
     "_verticalAlign": 1,
     "_actualFontSize": 32,
@@ -7712,7 +7712,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": -40,
-      "y": -120,
+      "y": -20,
       "z": 0
     },
     "_lrot": {
@@ -9155,7 +9155,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": -40,
-      "y": -220,
+      "y": -120,
       "z": 0
     },
     "_lrot": {
@@ -10465,7 +10465,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": -200,
-      "y": -360,
+      "y": -260,
       "z": 0
     },
     "_lrot": {
@@ -10676,7 +10676,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 200,
-      "y": -360,
+      "y": -260,
       "z": 0
     },
     "_lrot": {

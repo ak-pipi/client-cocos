@@ -17,6 +17,8 @@ import { _decorator, Node, Label, Color, UITransform, Vec3, Graphics, BlockInput
 import { MahjongRoomBase, MahjongTile, AvailableActions, MahjongActionOption, MahjongActionType, MeldType, MahjongMeldGroup, tileDisplayText } from '../../GameCommon/MahjongRoomBase';
 import { RoomInfo, RoundSettlementData, FinalSettlementData } from '../../GameCommon/GameTypes';
 import { GameState } from '../../GameCommon/RoomBase';
+import { NetworkManager } from '../../Manager/NetworkManager';
+import { GameManager } from '../../Manager/GameManager';
 import { Client } from '../../Game/Client';
 
 const { ccclass } = _decorator;
@@ -59,6 +61,9 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     protected tingHintNode: Node | null = null;
     protected tingTitleLabel: Label | null = null;
     protected tingTilesRoot: Node | null = null;
+    protected disbandVoteNode: Node | null = null;
+    protected disbandVotesNode: Node | null = null;
+    protected currentDisbandChoices: number[] = [];
 
     protected get mjMsgPrefix(): string { return 'MsgHZ'; }
 
@@ -281,6 +286,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         this.resetRoundState();
         this.currentTingTiles = [];
         this.hideHongzhongTingHint();
+        this.hideDisbandVoteUI();
 
         if (this.btnReady) this.btnReady.active = false;
         if (this.readyGroup) this.readyGroup.active = false;
@@ -299,6 +305,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         this.hideActionPanel();
         this.currentTingTiles = [];
         this.hideHongzhongTingHint();
+        this.hideDisbandVoteUI();
         this.myScore += this.extractMyRoundDelta(msg);
         this.pendingRoundIncrement = true;
 
@@ -306,7 +313,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
             if (this.playerInfos[seat]) this.playerInfos[seat].ready = false;
         }
 
-        const isLastRound = this.isAllRoundsFinished();
+        const isLastRound = this.isAllRoundsFinished() || this.hasFinalFeeSettlement(msg);
         this.finalSettlementPendingExit = isLastRound;
         const birdText = this.describeBird(msg);
         const delta = this.extractMyRoundDelta(msg);
@@ -322,9 +329,16 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         this.refreshHongzhongHud();
     }
 
+    protected hasFinalFeeSettlement(msg: any): boolean {
+        return Number(msg?.roomFeeTotal || 0) > 0 || Number(msg?.shuffleFeeTotal || 0) > 0;
+    }
+
     protected onHZDisbandVote(msg: any): void {
+        console.log('[HongzhongRoom] Disband vote:', msg);
         const disbander = Number(msg?.disbander) || 0;
         const elapsed = Number(msg?.elapsed) || 0;
+        if (Array.isArray(msg?.choices)) this.currentDisbandChoices = [...msg.choices];
+        this.showDisbandVoteUI(msg);
         Client.Instance.showPromptTip(`玩家${disbander + 1}发起解散投票 (${elapsed}s)`, 2.5);
     }
 
@@ -568,10 +582,19 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     }
 
     protected onDisbandChoice(msg: any): void {
+        const seat = Number(msg?.seat);
+        const choice = Number(msg?.choice);
+        if (Number.isFinite(seat) && seat >= 0 && seat < 4) {
+            if (!Array.isArray(this.currentDisbandChoices) || this.currentDisbandChoices.length < 4)
+                this.currentDisbandChoices = [0, 0, 0, 0];
+            this.currentDisbandChoices[seat] = choice;
+        }
+        this.updateDisbandVoteUI();
         Client.Instance.showPromptTip(`玩家${Number(msg?.seat) + 1}${Number(msg?.choice) === 1 ? '同意' : '拒绝'}解散`, 2.0);
     }
 
     protected onDisband(_msg: any): void {
+        this.hideDisbandVoteUI();
         if (this.finalSettlementPendingExit || this.isAllRoundsFinished()) {
             Client.Instance.showPromptTip('全部对局结束，请手动返回', 2.5);
             return;
@@ -581,7 +604,95 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     }
 
     protected onDisbandObsolete(): void {
+        this.hideDisbandVoteUI();
         Client.Instance.showPromptTip('解散投票已取消', 2.0);
+    }
+
+    protected showDisbandVoteUI(msg: any): void {
+        this.hideDisbandVoteUI();
+        const overlay = this.createPopupOverlay('HongzhongDisbandVoteOverlay', 998, 136);
+        const panel = this.createPopupPanel(
+            overlay,
+            'DisbandPanel',
+            620,
+            334,
+            '解散投票',
+            '请确认是否同意解散房间',
+        );
+
+        const disbanderSeat = Number(msg?.disbander) || 0;
+        const disbanderInfo = this.playerInfos[disbanderSeat];
+        const initiatorNode = this.createUIChild(panel, 'Initiator', 540, 44, 0, 74, 1);
+        this.paintRect(initiatorNode, 540, 44, new Color(63, 40, 39, 228), new Color(240, 177, 144, 255), 14);
+        const initiator = initiatorNode.addComponent(Label);
+        initiator.string = `${disbanderInfo?.nickname || `玩家${disbanderSeat + 1}`} 发起了解散投票`;
+        initiator.fontSize = 22;
+        initiator.lineHeight = 28;
+        initiator.color = new Color(255, 230, 214, 255);
+        initiator.horizontalAlign = 1;
+        initiator.verticalAlign = 1;
+
+        const votesNode = this.createUIChild(panel, 'Votes', 540, 116, 0, -8, 1);
+        this.paintRect(votesNode, 540, 116, new Color(19, 28, 42, 212), new Color(118, 145, 180, 255), 16);
+        this.disbandVotesNode = votesNode;
+
+        const votesLabel = votesNode.addComponent(Label);
+        if (Array.isArray(msg?.choices)) this.currentDisbandChoices = [...msg.choices];
+        votesLabel.string = this.buildDisbandVoteText(this.currentDisbandChoices || []);
+        votesLabel.fontSize = 20;
+        votesLabel.lineHeight = 30;
+        votesLabel.color = new Color(230, 236, 245, 255);
+        votesLabel.horizontalAlign = 1;
+        votesLabel.verticalAlign = 1;
+
+        this.createPopupButton(
+            panel,
+            '同意',
+            -108,
+            -116,
+            170,
+            new Color(46, 128, 88, 255),
+            new Color(133, 231, 174, 255),
+            () => NetworkManager.Instance.sendMessage('MsgDisbandChoose', { venueId: GameManager.Instance.VenueId, choice: 1 }, true),
+        );
+        this.createPopupButton(
+            panel,
+            '拒绝',
+            108,
+            -116,
+            170,
+            new Color(138, 71, 46, 255),
+            new Color(255, 178, 138, 255),
+            () => NetworkManager.Instance.sendMessage('MsgDisbandChoose', { venueId: GameManager.Instance.VenueId, choice: 2 }, true),
+        );
+
+        this.disbandVoteNode = overlay;
+    }
+
+    protected updateDisbandVoteUI(): void {
+        if (!this.disbandVotesNode) return;
+        const label = this.disbandVotesNode.getComponent(Label);
+        if (label) label.string = this.buildDisbandVoteText(this.currentDisbandChoices || []);
+    }
+
+    protected hideDisbandVoteUI(): void {
+        if (this.disbandVoteNode && this.disbandVoteNode.isValid)
+            this.disbandVoteNode.destroy();
+        this.disbandVoteNode = null;
+        this.disbandVotesNode = null;
+        this.currentDisbandChoices = [];
+    }
+
+    protected buildDisbandVoteText(choices: any[]): string {
+        const lines: string[] = [];
+        const seatCount = this.getSeatCount();
+        for (let i = 0; i < seatCount; i++) {
+            const info = this.playerInfos[i];
+            const choice = Number(choices[i] || 0);
+            const choiceText = choice === 1 ? '已同意' : (choice === 2 ? '已拒绝' : '等待回应');
+            lines.push(`${info?.nickname || `玩家${i + 1}`}  ·  ${choiceText}`);
+        }
+        return lines.join('\n');
     }
 
     static isHongzhong(tile: MahjongTile): boolean {
@@ -1052,7 +1163,9 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         const data = msg?.data || {};
         const isHu = !!data.hu;
         const seatCount = this.getSeatCount();
-        const panelHeight = 430 + seatCount * 88;
+        const roomFeeText = isLastRound ? this.getRoomFeeSettlementText(msg) : '';
+        const settlementStatsHeight = 64;
+        const panelHeight = 430 + seatCount * 88 + settlementStatsHeight;
         const panel = this.createPopupPanel(
             overlay,
             'HongzhongSettlementPanel',
@@ -1083,13 +1196,17 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         const golds = msg?.golds || [];
         const winGolds = msg?.winGolds || [];
         const scores = data?.scores || [];
+        const huScores = msg?.huScores || [];
+        const gangScores = msg?.gangScores || [];
         for (let i = 0; i < seatCount; i++) {
             const serverSeat = this.client2ServerSeat(i);
             const info = this.playerInfos[serverSeat];
             if (!info) continue;
             const row = this.createUIChild(panel, `PlayerRow${i}`, 620, 72, 0, cursorY - 36, 1);
-            const winGold = Number(winGolds[serverSeat] || 0);
             const score = Number(scores[serverSeat] || 0);
+            const pointDelta = Number(winGolds[serverSeat] ?? score) || 0;
+            const gangScore = Number(gangScores[serverSeat] || 0);
+            const huScore = Number(huScores[serverSeat] ?? (pointDelta - gangScore)) || 0;
             const isWinner = serverSeat === winnerSeat;
             this.paintRect(
                 row,
@@ -1108,28 +1225,42 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
             name.color = new Color(240, 236, 226, 255);
 
             const scoreLabel = this.createUIChild(row, 'Score', 330, 28, 120, 12, 1).addComponent(Label);
-            scoreLabel.string = `番分 ${score >= 0 ? '+' : ''}${score}   金币 ${winGold >= 0 ? '+' : ''}${winGold}`;
+            scoreLabel.string = `番分 ${score >= 0 ? '+' : ''}${score}   积分 ${pointDelta >= 0 ? '+' : ''}${pointDelta}`;
             scoreLabel.fontSize = 20;
             scoreLabel.lineHeight = 24;
             scoreLabel.horizontalAlign = 2;
             scoreLabel.overflow = Label.Overflow.SHRINK;
-            scoreLabel.color = winGold >= 0 ? new Color(132, 235, 162, 255) : new Color(255, 142, 142, 255);
+            scoreLabel.color = pointDelta >= 0 ? new Color(132, 235, 162, 255) : new Color(255, 142, 142, 255);
 
-            const goldLabel = this.createUIChild(row, 'Gold', 300, 22, 135, -18, 1).addComponent(Label);
-            goldLabel.string = `余额 ${Number(golds[serverSeat] || 0)}`;
-            goldLabel.fontSize = 17;
-            goldLabel.lineHeight = 20;
-            goldLabel.horizontalAlign = 2;
-            goldLabel.color = new Color(178, 196, 216, 255);
+            const detailLabel = this.createUIChild(row, 'ScoreDetail', 360, 22, 105, -18, 1).addComponent(Label);
+            const gangText = gangScore === 0 ? '' : `   杠分 ${gangScore >= 0 ? '+' : ''}${gangScore}`;
+            detailLabel.string = `胡分 ${huScore >= 0 ? '+' : ''}${huScore}${gangText}   积分余额 ${Number(golds[serverSeat] || 0)}`;
+            detailLabel.fontSize = 17;
+            detailLabel.lineHeight = 20;
+            detailLabel.horizontalAlign = 2;
+            detailLabel.overflow = Label.Overflow.SHRINK;
+            detailLabel.color = new Color(178, 196, 216, 255);
             cursorY -= 84;
         }
 
+        const statsLabel = this.createUIChild(panel, 'SettlementStatsInfo', 620, 56, 0, -panelHeight / 2 + 112, 1).addComponent(Label);
+        statsLabel.string = roomFeeText || '收益箱统计加载中';
+        statsLabel.fontSize = 18;
+        statsLabel.lineHeight = 23;
+        statsLabel.horizontalAlign = 1;
+        statsLabel.verticalAlign = 1;
+        statsLabel.overflow = Label.Overflow.SHRINK;
+        statsLabel.color = new Color(255, 207, 128, 255);
+        this.updateSettlementIncomeBoxSummary(statsLabel, roomFeeText);
+
         const settledRound = Number(msg?.roundNo ?? (this as any).currentRound) || Number((this as any).currentRound) || 0;
         const settledTotal = Number(msg?.roundCount ?? (this as any).totalRounds) || Number((this as any).totalRounds) || 0;
+        const replayButtonX = isLastRound ? -112 : -214;
+        const continueButtonX = isLastRound ? 112 : 214;
         this.createPopupButton(
             panel,
             settledTotal > 1 ? '选择回放' : '本局回放',
-            -112,
+            replayButtonX,
             -panelHeight / 2 + 48,
             178,
             new Color(63, 98, 143, 255),
@@ -1138,10 +1269,24 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
                 this.openSettlementReplay(settledRound, settledTotal);
             },
         );
+        if (!isLastRound) {
+            this.createPopupButton(
+                panel,
+                '洗牌',
+                0,
+                -panelHeight / 2 + 48,
+                178,
+                new Color(135, 93, 40, 255),
+                new Color(255, 211, 128, 255),
+                () => {
+                    this.onShuffleCardsClick();
+                },
+            );
+        }
         this.createPopupButton(
             panel,
             isLastRound ? '返回大厅' : '继续',
-            112,
+            continueButtonX,
             -panelHeight / 2 + 48,
             178,
             isLastRound ? new Color(63, 98, 143, 255) : new Color(46, 128, 88, 255),
@@ -1394,7 +1539,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
 
     protected extractMyRoundDelta(msg: any): number {
         if (Array.isArray(msg?.winGolds) && this.seat >= 0) return Number(msg.winGolds[this.seat]) || 0;
-        const raw = msg?.winGolds?.[this.seat] ?? msg?.data?.winGolds?.[this.seat] ?? 0;
+        const raw = msg?.winGolds?.[this.seat] ?? msg?.data?.winGolds?.[this.seat] ?? msg?.data?.scores?.[this.seat] ?? 0;
         return Number(raw) || 0;
     }
 

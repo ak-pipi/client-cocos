@@ -4,14 +4,27 @@
 // Date 2025.10.22
 
 import { _decorator, Component, Label, Node, Prefab, Sprite, ProgressBar, sys, assetManager, AudioClip } from 'cc';
+import { PREVIEW } from 'cc/env';
 import { GameManager } from '../Manager/GameManager';
 import { ResourceLoader } from '../Manager/ResourceLoader';
 import { Client } from './Client';
 const { ccclass, property } = _decorator;
 
 interface RuntimeConfig {
+    environment?: string;
     apiBaseUrl?: string;
 }
+
+const LOCAL_API_BASE_URL = 'http://127.0.0.1:18080';
+const AWS_API_BASE_URL = 'https://api-jinniu-game.com';
+const LOCAL_RUNTIME_CONFIG: RuntimeConfig = {
+    environment: 'local',
+    apiBaseUrl: LOCAL_API_BASE_URL,
+};
+const AWS_RUNTIME_CONFIG: RuntimeConfig = {
+    environment: 'aws',
+    apiBaseUrl: AWS_API_BASE_URL,
+};
 
 @ccclass('Load')
 export class Load extends Component {
@@ -29,8 +42,9 @@ export class Load extends Component {
     update(deltaTime: number) { }
     
     private async loadConfig(): Promise<void> {
-        GameManager.Instance.HttpHost = await this.resolveHttpHost();
-        console.log("Http host: ", GameManager.Instance.HttpHost);
+        const runtimeConfig = await this.resolveRuntimeConfig();
+        GameManager.Instance.HttpHost = this.resolveApiBaseUrl(runtimeConfig, LOCAL_API_BASE_URL);
+        console.log(`[Load] environment: ${runtimeConfig.environment || 'unknown'}, http host: `, GameManager.Instance.HttpHost);
         this.loadResources();
     }
 
@@ -39,31 +53,52 @@ export class Load extends Component {
      * 该文件由 deploy/aws/scripts/publish-web-client.sh 在上传前生成，
      * 因此可以切换环境而无需重新编译 Cocos 资源。
      */
-    private async resolveHttpHost(): Promise<string> {
-        const localApiBaseUrl = 'http://127.0.0.1:18080';
-        const productionApiBaseUrl = 'https://api-jinniu-game.com';
+    private async resolveRuntimeConfig(): Promise<RuntimeConfig> {
         const isBrowser = typeof window !== 'undefined' && typeof window.fetch === 'function';
         const hostname = isBrowser ? window.location.hostname : '';
-        const isLocalDevelopment = hostname === 'localhost' || hostname === '127.0.0.1';
+        const isLocalDevelopment = this.isLocalDevelopmentHost(hostname);
 
-        if (!isBrowser || isLocalDevelopment) {
-            return localApiBaseUrl;
+        if (PREVIEW || !isBrowser || isLocalDevelopment) {
+            return LOCAL_RUNTIME_CONFIG;
         }
 
         try {
             const response = await fetch('./config.json', { cache: 'no-store' });
             if (response.ok) {
                 const config = await response.json() as RuntimeConfig;
-                if (typeof config.apiBaseUrl === 'string' && /^https:\/\//.test(config.apiBaseUrl)) {
-                    return config.apiBaseUrl.replace(/\/+$/, '');
+                if (this.isValidApiBaseUrl(config.apiBaseUrl)) {
+                    return config;
                 }
             }
-            console.warn(`[Load] config.json is unavailable or invalid (${response.status}); using production fallback.`);
+            console.warn(`[Load] config.json is unavailable or invalid (${response.status}); using aws fallback.`);
         } catch (error) {
-            console.warn('[Load] Failed to load config.json; using production fallback.', error);
+            console.warn('[Load] Failed to load config.json; using aws fallback.', error);
         }
 
-        return productionApiBaseUrl;
+        return AWS_RUNTIME_CONFIG;
+    }
+
+    private resolveApiBaseUrl(config: RuntimeConfig, fallback: string): string {
+        const apiBaseUrl = typeof config.apiBaseUrl === 'string' ? config.apiBaseUrl.trim() : '';
+        if (this.isValidApiBaseUrl(apiBaseUrl)) {
+            return apiBaseUrl.replace(/\/+$/, '');
+        }
+
+        return fallback;
+    }
+
+    private isValidApiBaseUrl(apiBaseUrl: string | undefined): boolean {
+        return typeof apiBaseUrl === 'string' && /^https?:\/\//.test(apiBaseUrl);
+    }
+
+    private isLocalDevelopmentHost(hostname: string): boolean {
+        return hostname === ''
+            || hostname === 'localhost'
+            || hostname === '127.0.0.1'
+            || hostname === '0.0.0.0'
+            || /^10\./.test(hostname)
+            || /^192\.168\./.test(hostname)
+            || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
     }
 
     private loadResources() {

@@ -3,7 +3,6 @@ import { DlgBase } from './DlgBase';
 import { GameManager } from '../../Manager/GameManager';
 import { SliderFill } from '../SliderFill';
 import { Client } from '../Client';
-import { AesUtils } from '../../Utils/AesUtils';
 const { ccclass, property } = _decorator;
 
 @ccclass('DlgBank')
@@ -55,13 +54,27 @@ export class DlgBank extends DlgBase {
 
     start() {
         super.start();
+        this.hidePasswordFeatures();
     }
 
     update(deltaTime: number) {}
 
     protected onActiveChanged(): void {
         if (!this.node.active) return;
+        this.hidePasswordFeatures();
         this.refresh();
+    }
+
+    private hidePasswordFeatures(): void {
+        if (this.passwordNode) {
+            this.passwordNode.active = false;
+        }
+        if (this.debitNode) {
+            ['Password1', 'Password2', 'Tip', 'BtnPassword'].forEach((name) => {
+                const node = this.debitNode.getChildByName(name);
+                if (node) node.active = false;
+            });
+        }
     }
 
     private refresh() {
@@ -160,13 +173,8 @@ export class DlgBank extends DlgBase {
             Client.Instance.showPromptTip("取出数量不能大于保险柜积分");
             return;
         }
-        let password: string = null;
-        if (this.editPassword.string) {
-            password = AesUtils.encrypt1(this.editPassword.string);
-        }
         let data = {
-            amount: num,
-            password: password
+            amount: num
         };
         GameManager.Instance.authPost("/player/capital/debit", data).then(async (dto) => {
             if (!this.isSuccess(dto)) {
@@ -208,39 +216,14 @@ export class DlgBank extends DlgBase {
     }
 
     public onPasswordClicked() {
-        this.passwordNode.active = true;
+        this.hidePasswordFeatures();
     }
 
     public onPwdOkClicked() {
-        if (this.editPasswordNew.string !== this.editPasswordVerify.string) {
-            Client.Instance.showPromptTip("两次输入的密码不相同", 2.0);
-            return;
-        }
-        if (!this.editPasswordNew.string) {
-            Client.Instance.showPromptTip("请输入新密码", 2.0);
-            return;
-        }
-        let oldPwd: string = null;
-        if (this.editPasswordOld.string) {
-            oldPwd = AesUtils.encrypt1(this.editPasswordOld.string);
-        }
-        let data = {
-            oldPassword: oldPwd,
-            newPassword: AesUtils.encrypt1(this.editPasswordNew.string),
-        };
-        GameManager.Instance.authPost("/player/capital/bank/password", data).then((dto) => {
-            if (!this.isSuccess(dto)) {
-                Client.Instance.showPromptTip("修改保险柜密码失败: " + (dto?.msg || "未知错误"), 3.0);
-                console.log(dto?.msg);
-                return;
-            }
-            Client.Instance.showPromptTip("修改保险柜密码成功", 2.0);
-        }).catch((err) => {
-            console.log("Set bank password error: ", err);
-        });
+        this.hidePasswordFeatures();
     }
 
     public onPwdCancelClicked() {
-        this.passwordNode.active = false;
+        this.hidePasswordFeatures();
     }
 }

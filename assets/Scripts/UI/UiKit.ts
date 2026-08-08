@@ -2,9 +2,11 @@
  * 轻量 UI 构建工具（纯代码生成面板，无需预制体）
  */
 import {
-    Node, Label, Color, Graphics, UITransform, Button, EventHandler,
-    ScrollView, Mask,
+    _decorator, Component, Node, Label, Color, Graphics, UITransform, Button, EventHandler,
+    ScrollView, Mask, BlockInputEvents, EditBox,
 } from 'cc';
+
+const { ccclass } = _decorator;
 
 export const UI_COLORS = {
     overlay: new Color(0, 0, 0, 150),
@@ -52,6 +54,137 @@ export function createLabel(
     return label;
 }
 
+export function sanitizeEditBoxDefaultLabels(editBox: EditBox, keepLabels: Array<Label | null | undefined> = []): void {
+    installEditBoxLabelScrubber(editBox?.node || null);
+    scrubEditBoxDefaultLabels(editBox, keepLabels, true);
+}
+
+function scrubEditBoxDefaultLabels(editBox: EditBox, keepLabels: Array<Label | null | undefined> = [], repeat = false): void {
+    const explicitKeep = new Set<Label>();
+    keepLabels.forEach((label) => {
+        if (label) explicitKeep.add(label);
+    });
+
+    const buildKeep = () => {
+        const keep = new Set<Label>(explicitKeep);
+        if (editBox.textLabel && !isDefaultEditBoxLabel(editBox.textLabel)) keep.add(editBox.textLabel);
+        if (editBox.placeholderLabel && !isDefaultEditBoxLabel(editBox.placeholderLabel)) keep.add(editBox.placeholderLabel);
+        return keep;
+    };
+
+    const scrub = () => {
+        if (!editBox || !editBox.node || !editBox.node.isValid) {
+            return;
+        }
+        const keep = buildKeep();
+        const preferredText = keepLabels[0];
+        const preferredPlaceholder = keepLabels[1];
+        if (preferredText && preferredText.node && preferredText.node.isValid) {
+            editBox.textLabel = preferredText;
+        }
+        if (preferredPlaceholder && preferredPlaceholder.node && preferredPlaceholder.node.isValid) {
+            editBox.placeholderLabel = preferredPlaceholder;
+            editBox.placeholder = '';
+        }
+        if ((editBox.string || '').trim().toLowerCase() === 'label') {
+            editBox.string = '';
+        }
+        keep.forEach((label) => {
+            if (!label || !label.node || !label.node.isValid) {
+                return;
+            }
+            if ((label.string || '').trim().toLowerCase() === 'label') {
+                label.string = '';
+            }
+        });
+        stripDefaultLabelNodes(editBox.node, keep);
+    };
+
+    scrub();
+    if (repeat) {
+        setTimeout(scrub, 0);
+        setTimeout(scrub, 50);
+        setTimeout(scrub, 100);
+        setTimeout(scrub, 500);
+        setTimeout(scrub, 1000);
+        setTimeout(scrub, 2000);
+    }
+}
+
+export function sanitizeAllEditBoxDefaultLabels(root: Node): void {
+    installEditBoxLabelScrubber(root);
+    scrubDefaultEditBoxLabels(root);
+}
+
+function scrubDefaultEditBoxLabels(root: Node): void {
+    const walk = (node: Node) => {
+        const editBox = node.getComponent(EditBox);
+        if (editBox) {
+            scrubEditBoxDefaultLabels(editBox);
+        }
+        stripDefaultLabelNodes(node, new Set<Label>());
+        node.children.forEach(walk);
+    };
+    if (root && root.isValid) {
+        walk(root);
+    }
+}
+
+function installEditBoxLabelScrubber(root: Node | null): void {
+    if (!root || !root.isValid || root.getComponent(EditBoxLabelScrubber)) {
+        return;
+    }
+    root.addComponent(EditBoxLabelScrubber);
+}
+
+@ccclass('EditBoxLabelScrubber')
+class EditBoxLabelScrubber extends Component {
+    protected onEnable(): void {
+        this.scrub();
+        this.schedule(this.scrub, 0.1);
+    }
+
+    protected onDisable(): void {
+        this.unschedule(this.scrub);
+    }
+
+    protected onDestroy(): void {
+        this.unschedule(this.scrub);
+    }
+
+    public scrubNow(): void {
+        this.scrub();
+    }
+
+    private scrub = (): void => {
+        if (!this.node || !this.node.isValid) {
+            return;
+        }
+        scrubDefaultEditBoxLabels(this.node);
+    };
+}
+
+function isDefaultEditBoxLabel(label: Label): boolean {
+    return (label.string || '').trim().toLowerCase() === 'label';
+}
+
+function stripDefaultLabelNodes(node: Node, keep: Set<Label>): void {
+    const label = node.getComponent(Label);
+    if (label && !keep.has(label) && isDefaultEditBoxLabel(label)) {
+        label.string = '';
+        label.fontSize = 0;
+        label.lineHeight = 0;
+        label.enabled = false;
+        label.node.active = false;
+        label.color = new Color(0, 0, 0, 0);
+        const transform = label.node.getComponent(UITransform);
+        if (transform) {
+            transform.setContentSize(0, 0);
+        }
+    }
+    node.children.forEach((child) => stripDefaultLabelNodes(child, keep));
+}
+
 export function createButton(
     parent: Node,
     text: string,
@@ -93,6 +226,7 @@ export function createOverlayRoot(parent: Node, name: string): Node {
     const mask = new Node('Mask');
     mask.parent = root;
     mask.addComponent(UITransform).setContentSize(1920, 1080);
+    mask.addComponent(BlockInputEvents);
     fillRoundRect(mask, 1920, 1080, UI_COLORS.overlay, 0);
 
     const panel = new Node('Panel');

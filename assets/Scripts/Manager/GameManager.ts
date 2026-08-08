@@ -199,6 +199,30 @@ export class GameManager {
         return this.isAgency;
     }
 
+    // 是否为超级管理员玩家态
+    private isSuperAdmin: boolean = false;
+    public get IsSuperAdmin(): boolean {
+        return this.isSuperAdmin;
+    }
+
+    // 是否已经被邀请绑定
+    private isBound: boolean = false;
+    public get IsBound(): boolean {
+        return this.isBound;
+    }
+
+    // 是否可进入游戏房间创建/游戏列表
+    private canCreateRoom: boolean = false;
+    public get CanCreateRoom(): boolean {
+        return this.canCreateRoom;
+    }
+
+    // 是否可使用成员/邀请/统计等代理管理功能
+    private canAgencyManage: boolean = false;
+    public get CanAgencyManage(): boolean {
+        return this.canAgencyManage;
+    }
+
     // 代理玩家id
     private agencyId: string = null;
     public get AgencyId(): string {
@@ -252,6 +276,10 @@ export class GameManager {
         return isFinite(num) ? num : 0;
     }
 
+    private toSafeBoolean(value: any): boolean {
+        return value === true || value === 1 || value === '1' || value === 'true';
+    }
+
     private applyCapital(dto: any): boolean {
         const payload = dto?.data && typeof dto.data === 'object' ? dto.data : dto;
         if (!payload || typeof payload !== 'object') return false;
@@ -275,6 +303,26 @@ export class GameManager {
         return changed;
     }
 
+    private applyPlayerPermissions(dto: any): boolean {
+        const payload = dto?.data && typeof dto.data === 'object' ? dto.data : dto;
+        if (!payload || typeof payload !== 'object') return false;
+        const hasPermissionFields = payload.isAgency !== undefined
+            || payload.isSuperAdmin !== undefined
+            || payload.isBound !== undefined
+            || payload.canCreateRoom !== undefined
+            || payload.canAgencyManage !== undefined
+            || payload.agencyId !== undefined;
+        if (!hasPermissionFields) return false;
+        this.agencyId = payload.agencyId;
+        this.isAgency = this.toSafeBoolean(payload.isAgency);
+        this.isSuperAdmin = this.toSafeBoolean(payload.isSuperAdmin);
+        this.isBound = this.toSafeBoolean(payload.isBound) || !CommonUtils.isStringEmpty(payload.agencyId);
+        this.canCreateRoom = this.toSafeBoolean(payload.canCreateRoom) || this.isSuperAdmin || this.isAgency || this.isBound;
+        this.canAgencyManage = this.toSafeBoolean(payload.canAgencyManage) || this.isSuperAdmin || this.isAgency;
+        this.playerInfoTime = sys.now();
+        return true;
+    }
+
     public setPlayerInfo(dto: any) {
         this.playerId = dto.playerId;
         this.secret = dto.secret != null ? String(dto.secret).trim() : null;
@@ -283,8 +331,7 @@ export class GameManager {
         this.sex = dto.sex;
         this.avatar = dto.avatar;
         this.applyCapital(dto);
-        this.isAgency = dto.isAgency;
-        this.agencyId = dto.agencyId;
+        this.applyPlayerPermissions(dto);
         this.playerInfoTime = sys.now();
         this.loggedIn = true;
         this.lastHeartbeat = sys.now();
@@ -304,6 +351,10 @@ export class GameManager {
         this.deposit = 0;
         this.diamond = 0;
         this.isAgency = false;
+        this.isSuperAdmin = false;
+        this.isBound = false;
+        this.canCreateRoom = false;
+        this.canAgencyManage = false;
         this.agencyId = null;
         this.playerInfoTime = 0;
     }
@@ -333,6 +384,7 @@ export class GameManager {
         }).then((dto: any) => {
             if (!dto) return;
             this.applyCapital(dto);
+            this.applyPlayerPermissions(dto);
             this.tryAutoReenterFromHeartbeat(dto);
         }).catch((err) => {
             console.log("Heartbeat error: ", err);
@@ -347,6 +399,7 @@ export class GameManager {
         this.authGet("/player/heartbeat").then((dto) => {
             if (!dto) return;
             this.applyCapital(dto);
+            this.applyPlayerPermissions(dto);
             this.tryAutoReenterFromHeartbeat(dto);
         }).catch(() => {});
     }
@@ -409,7 +462,6 @@ export class GameManager {
             case ServerGameType.TaojiangMahjong: return GameId.TaojiangMahjong;
             case ServerGameType.HongzhongMahjong: return GameId.HongzhongMahjong;
             case ServerGameType.ChangShaMahjong: return GameId.ChangshaMahjong;
-            case ServerGameType.DouDiZhu: return GameId.Doudizhu;
             case ServerGameType.PaoDeKuai: return GameId.Paodekuai;
             case ServerGameType.YiYangWaiHuZi: return GameId.Waihuzi;
             case ServerGameType.YuanJiangQianFen: return GameId.Qianfen;
@@ -622,6 +674,15 @@ export class GameManager {
         this.enterVenueSigningSecret = null;
     }
 
+    private normalizeWebSocketAddress(address: string): string {
+        if (CommonUtils.isStringEmpty(address)) return address;
+        const normalized = String(address).trim();
+        if (normalized.toLowerCase().startsWith('ws://')) {
+            return `wss://${normalized.substring(5)}`;
+        }
+        return normalized;
+    }
+
     /**
      * 进入场地
      * @param address 服务器地址
@@ -630,7 +691,8 @@ export class GameManager {
      * @param onEnterVenue 进入成功回调
      */
     public enterVenue(address: string, venueId: string, gameType: number, onEnterVenue: (() => void)) {
-        console.log("Enter venue, server address: ", address, ", game type: ", gameType, ", id: ", venueId);
+        const wsAddress = this.normalizeWebSocketAddress(address);
+        console.log("Enter venue, server address: ", wsAddress, ", game type: ", gameType, ", id: ", venueId);
         this.enteringVenueId = venueId;
         this.enteringGameType = gameType;
         this.enterCallback = onEnterVenue;
@@ -642,7 +704,7 @@ export class GameManager {
             }
             this.beginEnterVenueSigning();
             console.log("Message secret synced, length: ", this.secret?.length ?? 0);
-            NetworkManager.Instance.connect(address, false);
+            NetworkManager.Instance.connect(wsAddress, false);
         });
     }
 

@@ -142,7 +142,7 @@ export class DlgPublicRooms extends Component {
         if (!this.listContent || !this.statusLabel) return;
 
         if (this.rooms.length === 0) {
-            this.statusLabel.string = '暂无公开房，创建一个吧';
+            this.statusLabel.string = '暂无数据';
             resizeScrollContent(this.listContent, 860, 0, 96, 12);
             return;
         }
@@ -159,7 +159,7 @@ export class DlgPublicRooms extends Component {
             card.addComponent(UITransform).setContentSize(width, itemHeight);
             fillRoundRect(card, width, itemHeight, UI_COLORS.card, 12);
 
-            const title = createLabel(card, `房间 ${room.number}`, 26, UI_COLORS.accent, 220, 34);
+            const title = createLabel(card, `${room.gameName || TAB_CONFIG[this.currentTab].title} · 房间 ${room.number}`, 26, UI_COLORS.accent, 260, 34);
             title.node.setPosition(-300, 22, 0);
 
             const owner = createLabel(card, `房主: ${room.ownerName || '未知'}`, 22, UI_COLORS.text, 260, 30);
@@ -170,7 +170,9 @@ export class DlgPublicRooms extends Component {
             playerLabel.node.setPosition(300, 22, 0);
             playerLabel.horizontalAlign = Label.HorizontalAlign.RIGHT;
 
-            const detail = `底注 ${room.diZhu ?? 0}  ·  ${room.mode ?? 0}局  ·  押金 ${room.deposit ?? 0}`;
+            const modeText = room.gameModeText || `${room.mode ?? 0}局 · 底注 ${room.diZhu ?? 0}`;
+            const typeText = room.gameTypeText ? `${room.gameTypeText} · ` : '';
+            const detail = `${typeText}${modeText}  ·  押金 ${room.deposit ?? 0}`;
             const detailLabel = createLabel(card, detail, 20, UI_COLORS.subText, 520, 28);
             detailLabel.node.setPosition(-220, -18, 0);
 

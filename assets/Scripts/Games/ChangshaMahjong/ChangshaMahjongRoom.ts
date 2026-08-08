@@ -286,15 +286,20 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
         for (const seat of Object.keys(this.playerInfos)) {
             if (this.playerInfos[seat]) this.playerInfos[seat].ready = false;
         }
-        if (msg?.kick) {
+        const isLastRound = this.isAllRoundsFinished() || this.hasFinalFeeSettlement(msg);
+        if (msg?.kick && !isLastRound) {
             Client.Instance.showPromptTip('金币不足，稍后将离开房间', 3.0);
             this.scheduleOnce(() => this.exitRoom(), 3);
         }
 
         this.handleRoundSettlement(msg);
-        this.showSettlementUI(msg, this.isAllRoundsFinished());
+        this.showSettlementUI(msg, isLastRound);
         this.updateReadyButtonState();
         this.refreshChangshaHud();
+    }
+
+    protected hasFinalFeeSettlement(msg: any): boolean {
+        return Number(msg?.roomFeeTotal || 0) > 0 || Number(msg?.shuffleFeeTotal || 0) > 0;
     }
 
     protected showSettlementUI(msg: any, isLastRound: boolean): void {
@@ -305,7 +310,9 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
 
         const data = msg?.data || {};
         const seatCount = this.getSeatCount();
-        const panelHeight = 390 + seatCount * 78;
+        const roomFeeText = isLastRound ? this.getRoomFeeSettlementText(msg) : '';
+        const settlementStatsHeight = 64;
+        const panelHeight = 390 + seatCount * 78 + settlementStatsHeight;
         const panel = this.createUIChild(overlay, 'ChangshaSettlementPanel', 720, panelHeight, 0, 0, 2);
         this.paintRect(panel, 720, panelHeight, new Color(17, 27, 40, 246), new Color(228, 190, 110, 255), 18);
 
@@ -352,10 +359,19 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
             scoreLabel.horizontalAlign = 2;
         }
 
+        const statsLabel = this.createSettlementLabel(panel, 'SettlementStatsInfo', roomFeeText || '收益箱统计加载中', 18, 0, -panelHeight / 2 + 112, 620, 56, new Color(255, 207, 128, 255));
+        statsLabel.lineHeight = 23;
+        statsLabel.horizontalAlign = 1;
+        statsLabel.verticalAlign = 1;
+        statsLabel.overflow = Label.Overflow.SHRINK;
+        this.updateSettlementIncomeBoxSummary(statsLabel, roomFeeText);
+
+        const replayButtonX = isLastRound ? -112 : -214;
+        const continueButtonX = isLastRound ? 112 : 214;
         this.createSettlementButton(
             panel,
             settledTotal > 1 ? '选择回放' : '本局回放',
-            -112,
+            replayButtonX,
             -panelHeight / 2 + 46,
             178,
             new Color(63, 98, 143, 255),
@@ -364,10 +380,24 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
                 this.openSettlementReplay(settledRound, settledTotal);
             },
         );
+        if (!isLastRound) {
+            this.createSettlementButton(
+                panel,
+                '洗牌',
+                0,
+                -panelHeight / 2 + 46,
+                178,
+                new Color(135, 93, 40, 255),
+                new Color(255, 211, 128, 255),
+                () => {
+                    this.onShuffleCardsClick();
+                },
+            );
+        }
         this.createSettlementButton(
             panel,
             isLastRound ? '返回大厅' : '继续',
-            112,
+            continueButtonX,
             -panelHeight / 2 + 46,
             178,
             isLastRound ? new Color(63, 98, 143, 255) : new Color(46, 128, 88, 255),
@@ -663,6 +693,10 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
     }
 
     protected onDisband(): void {
+        if (this.settlementNode && this.settlementNode.isValid) {
+            this.updateFanSummary('房间已解散，请点击返回');
+            return;
+        }
         Client.Instance.showPromptTip('房间已解散', 2.0);
         this.exitRoom();
     }

@@ -103,6 +103,9 @@ export interface RoundSettlementData {
     players: PlayerSettlementInfo[];
     baseScore: number;           // 基础分
     multiplier: number;          // 番数/倍率
+    roomFeeTotal?: number;
+    roomFeePlayerIds?: string[];
+    roomFeeAmounts?: number[];
 }
 
 /** 总结算数据 */
@@ -110,6 +113,9 @@ export interface FinalSettlementData {
     roomId: string;
     roomNo: string;
     totalRounds: number;
+    roomFeeTotal?: number;
+    roomFeePlayerIds?: string[];
+    roomFeeAmounts?: number[];
     players: Array<{
         playerId: string;
         nickname: string;

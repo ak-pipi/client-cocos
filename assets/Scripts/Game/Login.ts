@@ -40,9 +40,6 @@ export class Login extends Component {
     @property({ type: EditBox })
     private editCodeReg: EditBox = null;
 
-    @property({ type: EditBox })
-    private editInviteCodeReg: EditBox = null;
-
     @property({ type: Sprite })
     private spriteCodeReg: Sprite = null;
 
@@ -122,10 +119,10 @@ export class Login extends Component {
                 onGetaptchaCode(spriteFrame);
             }
             image.src = base64Img;
-        }).catch((err) => {
+        }, (err) => {
             console.log("获取验证码失败: ", err);
             Client.Instance.showPromptTip("获取验证码失败，请检查网络或稍后重试");
-        }).finally(() => {
+        }).then(() => {
             this.captchaLoading = false;
         });
     }
@@ -145,12 +142,14 @@ export class Login extends Component {
             Client.Instance.showPromptTip("正在登录，请稍候");
             return;
         }
-        if (CommonUtils.isStringEmpty(this.editName.string)) {
+        const username = this.editName.string.trim();
+        const password = this.editPassword.string;
+        if (CommonUtils.isStringEmpty(username)) {
             Client.Instance.showPromptTip("请输入登录用户名");
             //Client.Instance.showPromptDialog("请输入登录用户名");
             return;
         }
-        if (CommonUtils.isStringEmpty(this.editPassword.string)) {
+        if (CommonUtils.isStringEmpty(password)) {
             Client.Instance.showPromptTip("请输入密码");
             return;
         }
@@ -159,8 +158,8 @@ export class Login extends Component {
             return;
         }
         let data = {
-            name: AesUtils.encrypt1(this.editName.string),
-            password: AesUtils.encrypt1(this.editPassword.string),
+            name: AesUtils.encrypt1(username),
+            password: AesUtils.encrypt1(password),
             code: this.editCode.string,
             uuid: this.uuidCode
         };
@@ -169,8 +168,8 @@ export class Login extends Component {
             if (dto.code === '00000000') {
                 GameManager.Instance.Token = dto.token;
                 let userData = {
-                    username: this.editName.string,
-                    password: this.editPassword.string,
+                    username: username,
+                    password: password,
                     token: dto.token
                 };
                 let text: string = JSON.stringify(userData);
@@ -183,12 +182,12 @@ export class Login extends Component {
                 this.getCaptchaCode1();
                 Client.Instance.showPromptDialog("登录失败：" + errMsg);
             }
-        }).catch((err) => {
+        }, (err) => {
             const errMsg = this.getLoginErrorMessage(err);
             this.getCaptchaCode1();
             console.warn("Login request error: ", err);
             Client.Instance.showPromptDialog("登录失败：" + errMsg);
-        }).finally(() => {
+        }).then(() => {
             this.loginSubmitting = false;
         });
     }
@@ -222,14 +221,6 @@ export class Login extends Component {
             Client.Instance.showPromptTip("请输入密码");
             return;
         }
-        if (CommonUtils.isStringEmpty(this.editPasswordReg2.string)) {
-            Client.Instance.showPromptTip("请输入确认密码");
-            return;
-        }
-        if (this.editPasswordReg1.string !== this.editPasswordReg2.string) {
-            Client.Instance.showPromptTip("两次输入的密码不一致");
-            return;
-        }
         if (CommonUtils.isStringEmpty(this.editCodeReg.string)) {
             Client.Instance.showPromptTip("请输入验证码");
             return;
@@ -247,10 +238,6 @@ export class Login extends Component {
             code: this.editCodeReg.string,
             uuid: this.uuidCode
         };
-        let inviteCode = this.editInviteCodeReg ? this.editInviteCodeReg.string.trim() : null;
-        if (!CommonUtils.isStringEmpty(inviteCode)) {
-            data.inviteCode = inviteCode;
-        }
         GameManager.Instance.post("/player/register", data).then((dto) => {
             if (dto.code === '00000000') {
                 GameManager.Instance.Token = dto.token;

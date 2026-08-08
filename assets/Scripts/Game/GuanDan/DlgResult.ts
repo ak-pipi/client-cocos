@@ -1,9 +1,10 @@
-import { _decorator, Component, Label, Node } from 'cc';
+import { _decorator, Color, Component, Label, Node, UITransform } from 'cc';
 import { DlgResultPlayer } from './DlgResultPlayer';
 import { GuanDanRoom } from './GuanDanRoom';
 import { NetworkManager } from '../../Manager/NetworkManager';
 import { GameManager } from '../../Manager/GameManager';
 import { Client } from '../Client';
+import { createButton } from '../../UI/UiKit';
 
 const { ccclass, property } = _decorator;
 
@@ -27,6 +28,10 @@ export class DlgResult extends Component {
 
     @property({ type: Label })
     private gradePointText: Label = null;
+
+    private roomFeeText: Label = null;
+    private shuffleButton: Node = null;
+    private shuffleVisible = false;
 
     private room: GuanDanRoom = null;
 
@@ -57,6 +62,7 @@ export class DlgResult extends Component {
 
     public show(s: boolean) {
         this.node.active = s;
+        if (!s) this.setShuffleVisible(false);
     }
 
     public setOwner(flag: boolean) {
@@ -67,6 +73,9 @@ export class DlgResult extends Component {
         if (isSelf) {
             if (this.btnNextGroup) {
                 this.btnNextGroup.active = !playerData.isKicked;
+            }
+            if (this.shuffleButton) {
+                this.shuffleButton.active = this.shuffleVisible && !playerData.isKicked;
             }
         }
         let player: DlgResultPlayer = this.players[idx];
@@ -109,6 +118,52 @@ export class DlgResult extends Component {
         }
     }
 
+    public setRoomFeeInfo(text: string) {
+        this.ensureRoomFeeText();
+        if (!this.roomFeeText) return;
+        this.roomFeeText.string = text || '';
+        this.roomFeeText.node.active = !!text;
+    }
+
+    public setShuffleVisible(flag: boolean) {
+        this.shuffleVisible = flag;
+        this.ensureShuffleButton();
+        if (!this.shuffleButton) return;
+        this.shuffleButton.active = flag && (!this.btnNextGroup || this.btnNextGroup.active);
+    }
+
+    private ensureRoomFeeText() {
+        if (this.roomFeeText) return;
+        const node = new Node('RoomFeeInfo');
+        node.layer = this.node.layer;
+        node.parent = this.node;
+        node.setPosition(0, -238, 0);
+        node.addComponent(UITransform).setContentSize(760, 56);
+        const label = node.addComponent(Label);
+        label.fontSize = 20;
+        label.lineHeight = 24;
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        label.overflow = Label.Overflow.SHRINK;
+        label.color = new Color(255, 207, 128, 255);
+        node.active = false;
+        this.roomFeeText = label;
+    }
+
+    private ensureShuffleButton() {
+        if (this.shuffleButton) return;
+        const parent = this.btnNextGroup?.parent || this.node;
+        const button = createButton(parent, '洗牌', 132, 48, new Color(135, 93, 40, 255), this.node, 'DlgResult', 'onShuffleClick');
+        if (this.btnNextGroup && this.btnNextGroup.parent === parent) {
+            const pos = this.btnNextGroup.position;
+            button.setPosition(pos.x - 150, pos.y, pos.z);
+        } else {
+            button.setPosition(-150, -292, 0);
+        }
+        button.active = false;
+        this.shuffleButton = button;
+    }
+
     public startCountDown() {
         this.countDown = 10.99;
     }
@@ -129,5 +184,9 @@ export class DlgResult extends Component {
         NetworkManager.Instance.sendInnerMessage("MsgGuanDanSync");
         // 准备就绪
         NetworkManager.Instance.sendInnerMessage("MsgPlayerReady");
+    }
+
+    public onShuffleClick() {
+        NetworkManager.Instance.sendInnerMessage("MsgShuffleCards");
     }
 }

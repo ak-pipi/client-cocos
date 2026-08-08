@@ -2,6 +2,7 @@ import { _decorator, Component, EditBox, Label, Node, Sprite, SpriteFrame, sys }
 import { Client } from '../Client';
 import { GameManager } from '../../Manager/GameManager';
 import { DlgBase } from './DlgBase';
+import { sanitizeEditBoxDefaultLabels } from '../../UI/UiKit';
 const { ccclass, property } = _decorator;
 
 @ccclass('DlgPersonalCenter')
@@ -36,6 +37,8 @@ export class DlgPersonalCenter extends DlgBase {
     @property({ type: EditBox })
     private editInviteCode: EditBox = null;
 
+    private bindButton: Node = null;
+
     private playerInfoTime: number = 0;
 
     start() {
@@ -43,6 +46,7 @@ export class DlgPersonalCenter extends DlgBase {
         if (this.labelDiamond) {
             this.labelDiamond.node.active = false;
         }
+        this.ensureInviteInput();
     }
 
     update(deltaTime: number) {
@@ -63,12 +67,14 @@ export class DlgPersonalCenter extends DlgBase {
         GameManager.Instance.authGet("/player/personal/data").then((dto) => {
             this.labelLoginDate.string = dto.loginDate;
             this.labelLoginIp.string = dto.loginIp;
-            if (dto.agencyId) {
+            const hasAgency = !!dto.agencyId;
+            if (hasAgency) {
                 this.labelAgencyId.string = dto.agencyId;
             }
             else {
-                this.labelAgencyId.string = null;
+                this.labelAgencyId.string = "";
             }
+            this.setInviteInputEnabled(!hasAgency);
             if (dto.agencyName) {
                 this.labelAgencyName.string = dto.agencyName;
             }
@@ -79,26 +85,23 @@ export class DlgPersonalCenter extends DlgBase {
     }
 
     public onBindClicked(): void {
-        if (!this.editInviteCode) {
-            Client.Instance.showPromptTip("请先配置邀请码输入框", 2.0);
-            return;
-        }
-        let inviteCode = this.editInviteCode.string.trim();
+        this.ensureInviteInput();
+        const inviteCode = this.editInviteCode ? this.editInviteCode.string.trim() : "";
         if (!inviteCode) {
-            Client.Instance.showPromptTip("请输入邀请码", 2.0);
+            Client.Instance.showPromptTip("请输入邀请码");
             return;
         }
-        GameManager.Instance.authPost("/player/agency/bind-code", { inviteCode: inviteCode }).then((dto) => {
-            if (dto && dto.code === "00000000") {
-                Client.Instance.showPromptTip("绑定成功", 2.0);
-                this.editInviteCode.string = "";
-                this.updatePlayerInfo();
+        GameManager.Instance.authPost("/player/agency/bind-code", { inviteCode }).then((dto) => {
+            if (dto && dto.code !== "00000000") {
+                Client.Instance.showPromptDialog("绑定失败：" + (dto.msg || "邀请码不可用"));
+                return;
             }
-            else {
-                Client.Instance.showPromptTip("绑定失败: " + (dto?.msg || "未知错误"), 3.0);
-            }
+            Client.Instance.showPromptTip("绑定成功");
+            GameManager.Instance.requestHeartbeatAndAutoReenter();
+            this.updatePlayerInfo();
         }).catch((err) => {
-            Client.Instance.showPromptTip("绑定失败: " + err.toString(), 3.0);
+            const msg = err && (err.msg || err.message) ? (err.msg || err.message) : String(err);
+            Client.Instance.showPromptDialog("绑定失败：" + msg);
         });
     }
 
@@ -113,5 +116,33 @@ export class DlgPersonalCenter extends DlgBase {
 
     public onCopyAgencyIdClicked() {
         Client.Instance.showPromptTip("未支持", 2.0);
+    }
+
+    private ensureInviteInput(): void {
+        if (this.editInviteCode || !this.labelAgencyId) {
+            return;
+        }
+        const inputNode = this.labelAgencyId.node;
+        this.editInviteCode = inputNode.getComponent(EditBox) || inputNode.addComponent(EditBox);
+        this.editInviteCode.textLabel = this.labelAgencyId;
+        this.editInviteCode.maxLength = 32;
+        sanitizeEditBoxDefaultLabels(this.editInviteCode, [this.labelAgencyId]);
+        this.bindButton = inputNode.parent?.getChildByName("BtnBind") || null;
+    }
+
+    private setInviteInputEnabled(enabled: boolean): void {
+        this.ensureInviteInput();
+        if (!this.editInviteCode || !this.labelAgencyId) {
+            return;
+        }
+        const titleNode = this.labelAgencyId.node.parent?.getChildByName("LabelAgencyId");
+        const title = titleNode ? titleNode.getComponent(Label) : null;
+        if (title) {
+            title.string = enabled ? "邀请码：" : "代理ID：";
+        }
+        this.editInviteCode.enabled = enabled;
+        if (this.bindButton) {
+            this.bindButton.active = enabled;
+        }
     }
 }

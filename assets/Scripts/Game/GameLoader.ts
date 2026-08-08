@@ -2,8 +2,7 @@
  * 游戏加载器 (GameLoader) - v2 完整版
  *
  * 统一的游戏加载入口，支持：
- * - GuanDan（惯蛋）- 旧版，使用独立 Bundle 加载流程
- * - 6款新游戏（桃江麻将/红中麻将/长沙麻将/跑得快/千分/歪胡子）
+ * - 新游戏（桃江麻将/红中麻将/长沙麻将/跑得快/千分/歪胡子）
  *   - 复用 GuanDan 的资源 Bundle 作为默认资源
  *   - 通过动态 import() 加载 Room 模块 + GameFactory 创建房间实例
  *   - 统一的 HTTP API 创建/加入房间
@@ -27,7 +26,6 @@ const GAME_DISPLAY_NAMES: Record<string, string> = {
     [GameId.TaojiangMahjong]: '桃江麻将',
     [GameId.HongzhongMahjong]: '红中麻将',
     [GameId.ChangshaMahjong]: '长沙麻将',
-    [GameId.Doudizhu]: '斗地主',
     [GameId.Paodekuai]: '跑得快',
     [GameId.Waihuzi]: '益阳歪胡子',
     [GameId.Qianfen]: '沅江千分',
@@ -70,11 +68,6 @@ export class GameLoader extends Component {
      * 加载游戏（统一入口）
      */
     public loadGame(name: string): void {
-        if (name === "GuanDan") {
-            this.loadGuanDan();
-            return;
-        }
-
         const gameMeta = GameFactory.getGameMeta(name as GameId);
         if (!gameMeta) {
             Client.Instance.showPromptTip("游戏尚未开放", 2.0);
@@ -119,46 +112,6 @@ export class GameLoader extends Component {
         console.log(`[GameLoader] Showing game hall for ${displayName}`);
         Client.Instance.showNewGameHall(gameId, displayName);
         this.backToHall();
-    }
-
-    /**
-     * 加载惯蛋游戏（原有逻辑不变）
-     */
-    private loadGuanDan(): void {
-        ResourceLoader.Instance.loadAsset("GameLoader", "guan_dan/spriteFrame", SpriteFrame, (sf: SpriteFrame) => {
-            if (!sf) return;
-            if (this.bg) this.bg.spriteFrame = sf;
-        });
-
-        let assets: any[] = [
-            { bundleName: "GuanDanCommon", assetList: [{ assetType: SpriteFrame, paths: ["bottom_bar/spriteFrame"] }] },
-            { bundleName: "GuanDanHall", assetList: [{ assetType: Prefab, paths: ["Hall"] }] },
-            { bundleName: "GuanDanAudio", assetList: [{ assetType: AudioClip, paths: ["bg"] }] },
-            { bundleName: "GuanDanRoomBackground", assetList: [{ assetType: SpriteFrame, paths: ["bg/spriteFrame"] }] },
-            { bundleName: "GuanDanRoomMain", assetList: [{ assetType: Prefab, paths: ["PlayerBoy", "PlayerGirl", "CardColumn", "CardPlayedOut", "CardSlot", "SignPass", "Room"] }] },
-        ];
-
-        ResourceLoader.Instance.loadAssets(assets, (current: number, total: number) => {
-            let percent = current / total;
-            if (this.progressBar) this.progressBar.progress = percent;
-            percent *= 100;
-            if (this.progress) {
-                this.progress.string = "加载进度：" + percent.toFixed(2); + "%";
-            }
-        }, () => {
-            this.onLoadGuanDanComplete();
-        });
-    }
-
-    private onLoadGuanDanComplete(): void {
-        ResourceLoader.Instance.loadAsset("GuanDanHall", "Hall", Prefab, (prefab: Prefab) => {
-            if (!prefab) {
-                Client.Instance.showPromptDialog("游戏加载失败", this.backToHall, this.backToHall);
-                return;
-            }
-            Client.Instance.initGameHall(prefab);
-            this.backToHall();
-        });
     }
 
     private backToHall(): void {

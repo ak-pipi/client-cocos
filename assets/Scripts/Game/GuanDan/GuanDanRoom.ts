@@ -337,6 +337,7 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
         else if (msgType === "MsgGuanDanOwnerSeat") this.onOwnerSeat(msg);
         else if (msgType === "MsgJoinGameResp") this.onJoinGame(msg);
         else if (msgType === "MsgBecomeSpectatorResp") this.onBecomeSpectator(msg);
+        else if (msgType === "MsgShuffleCardsResp") this.onShuffleCardsResp(msg);
         else if (msgType === "MsgChatServer") this.onChatServer(msg);
         else if (msgType === "MsgVoiceServer") this.onVoiceServer(msg);
         else if (msgType === "MsgLeaveVenueResp") this.onLeaveVenueResp(msg);
@@ -653,6 +654,148 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
             return this.seat;
         }
         return -1;
+    }
+
+    private getRoomFeeSettlementText(data: any): string {
+        const parts: string[] = [];
+        const roomFeeText = this.getFeeSettlementText(data, 'roomFee', '房费抽取');
+        const shuffleFeeText = this.getFeeSettlementText(data, 'shuffleFee', '洗牌分抽取');
+        if (roomFeeText) parts.push(roomFeeText);
+        if (shuffleFeeText) parts.push(shuffleFeeText);
+        return parts.join('；');
+    }
+
+    private getFeeSettlementText(data: any, fieldPrefix: string, title: string): string {
+        const ids = this.toRoomFeeStringArray(data?.[`${fieldPrefix}PlayerIds`]);
+        const amounts = this.toRoomFeeNumberArray(data?.[`${fieldPrefix}Amounts`]);
+        const parts: string[] = [];
+        let amountSum = 0;
+        const count = Math.min(ids.length, amounts.length);
+        for (let i = 0; i < count; i++) {
+            const playerId = ids[i];
+            const amount = Number(amounts[i]) || 0;
+            if (!playerId || amount <= 0) continue;
+            amountSum += amount;
+            parts.push(`${this.getRoomFeePlayerName(playerId)} -${amount}`);
+        }
+        const total = Number(data?.[`${fieldPrefix}Total`]) || amountSum;
+        if (total <= 0) return '';
+        return parts.length > 0 ? `${title} ${total}（${parts.join('，')}）` : `${title} ${total}`;
+    }
+
+    private getRoomFeePlayerName(playerId: string): string {
+        for (const info of this.playerInfos) {
+            if (!info) continue;
+            if (String(info.playerId || '') === playerId) {
+                return info.nickname || info.playerId || playerId;
+            }
+        }
+        return playerId.length > 4 ? `玩家${playerId.slice(-4)}` : playerId;
+    }
+
+    private toRoomFeeStringArray(value: any): string[] {
+        return this.toRoomFeeArray(value).map((item) => String(item || ''));
+    }
+
+    private toRoomFeeNumberArray(value: any): number[] {
+        return this.toRoomFeeArray(value).map((item) => Number(item) || 0);
+    }
+
+    private toRoomFeeArray(value: any): any[] {
+        if (Array.isArray(value)) return value;
+        if (!value || typeof value !== 'object') return [];
+        return Object.keys(value)
+            .filter((key) => /^\d+$/.test(key))
+            .sort((a, b) => Number(a) - Number(b))
+            .map((key) => value[key]);
+    }
+
+    private async updateResultIncomeBoxSummary(roomFeeText: string): Promise<void> {
+        if (!this.dlgResult || !this.dlgResult.node || !this.dlgResult.node.isValid) return;
+        const setText = (incomeText: string) => {
+            if (!this.dlgResult || !this.dlgResult.node || !this.dlgResult.node.isValid) return;
+            const parts: string[] = [];
+            if (roomFeeText) parts.push(roomFeeText);
+            if (incomeText) parts.push(incomeText);
+            this.dlgResult.setRoomFeeInfo(parts.join('\n'));
+        };
+        setText(roomFeeText ? '' : '收益箱统计加载中');
+
+        const maxAttempts = 4;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            try {
+                const dto = await GameManager.Instance.authGet('/player/agency/income-box');
+                if (!this.isIncomeBoxResponseSuccess(dto)) {
+                    setText('');
+                    return;
+                }
+                setText(this.formatSettlementIncomeBoxText(dto));
+                return;
+            } catch (err) {
+                if (attempt >= maxAttempts - 1) {
+                    setText('');
+                    return;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 650));
+            }
+        }
+    }
+
+    private formatSettlementIncomeBoxText(dto: any): string {
+        const withdrawable = this.getIncomeBoxWithdrawableAmount(dto);
+        const today = Math.max(
+            this.toIncomeBoxNumber(dto?.availableTodayCommission),
+            this.toIncomeBoxNumber(dto?.todayPendingCommission) + this.toIncomeBoxNumber(dto?.todayDepositSettledAmount),
+            this.toIncomeBoxNumber(dto?.todayCommission),
+        );
+        const total = Math.max(
+            this.toIncomeBoxNumber(dto?.totalCommission),
+            today,
+            withdrawable,
+        );
+        return `收益箱 今日 ${today}，可提 ${withdrawable}，累计 ${total}`;
+    }
+
+    private getIncomeBoxWithdrawableAmount(dto: any): number {
+        const ledgerTotal = this.toIncomeBoxNumber(dto?.pendingLedgerAmount)
+            + Math.max(this.toIncomeBoxNumber(dto?.depositSettledAmount), this.toIncomeBoxNumber(dto?.prepaidAmount))
+            + this.toIncomeBoxNumber(dto?.legacyReward);
+        const todayAvailable = this.toIncomeBoxNumber(dto?.availableTodayCommission)
+            || (this.toIncomeBoxNumber(dto?.todayPendingCommission) + this.toIncomeBoxNumber(dto?.todayDepositSettledAmount));
+        return Math.max(
+            this.toIncomeBoxNumber(dto?.balance),
+            this.toIncomeBoxNumber(dto?.pendingAmount),
+            ledgerTotal,
+            todayAvailable,
+            this.toIncomeBoxNumber(dto?.todayCommission),
+        );
+    }
+
+    private isIncomeBoxResponseSuccess(dto: any): boolean {
+        return dto?.code === '00000000' || dto?.code === 200 || dto?.code === '200';
+    }
+
+    private toIncomeBoxNumber(value: any): number {
+        const num = Number(value);
+        return isFinite(num) ? Math.floor(num) : 0;
+    }
+
+    private onShuffleCardsResp(msg: any): void {
+        if (!msg) return;
+        if (msg.errMsg) {
+            const isSelf = !msg.playerId || String(msg.playerId) === String(GameManager.Instance.PlayerId);
+            if (isSelf) Client.Instance.showPromptTip(msg.errMsg, 2.0);
+            return;
+        }
+        const isSelf = String(msg.playerId || '') === String(GameManager.Instance.PlayerId || '');
+        const fee = Number(msg.fee) || 1;
+        if (isSelf) {
+            Client.Instance.showPromptTip(`已洗牌，扣除${fee}积分`, 2.0);
+            GameManager.Instance.getCapital();
+            return;
+        }
+        const name = msg.playerId ? this.getRoomFeePlayerName(String(msg.playerId)) : '其他玩家';
+        Client.Instance.showPromptTip(`${name}已洗牌，下局重新发牌`, 2.0);
     }
 
     private createSelfPlayerInfo(): any {
@@ -1405,6 +1548,11 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
             this.dlgResult.setPlayer(i, playerData, (this.seat === seat));
         }
         this.dlgResult.setGradePoint(Poker.getPointName(msg.gradePointNext));
+        const roomFeeText = this.getRoomFeeSettlementText(msg);
+        this.dlgResult.setRoomFeeInfo(roomFeeText || '收益箱统计加载中');
+        this.updateResultIncomeBoxSummary(roomFeeText);
+        const isFinalSettlement = Number(msg?.roomFeeTotal || 0) > 0 || Number(msg?.shuffleFeeTotal || 0) > 0;
+        this.dlgResult.setShuffleVisible(!isFinalSettlement);
         this.dlgResult.startCountDown();
     }
 

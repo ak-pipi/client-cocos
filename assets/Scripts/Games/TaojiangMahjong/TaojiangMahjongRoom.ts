@@ -401,7 +401,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.pendingRoundIncrement = true;
 
         // 检查是否最后一局，最后一局保留结算界面，由玩家手动返回房间。
-        const isLastRound = this.isAllRoundsFinished();
+        const isLastRound = this.isAllRoundsFinished() || this.hasFinalFeeSettlement(msg);
         this.finalSettlementPendingExit = isLastRound;
         this.finalSettlementServerDisbanded = false;
 
@@ -427,6 +427,10 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.handleRoundSettlement(msg);
         this.updateReadyButtonState();
         this.refreshTaojiangHud();
+    }
+
+    protected hasFinalFeeSettlement(msg: any): boolean {
+        return Number(msg?.roomFeeTotal || 0) > 0 || Number(msg?.shuffleFeeTotal || 0) > 0;
     }
 
     /** 解散投票 */
@@ -1265,19 +1269,52 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
     // ==================== 赖子判断 ====================
 
-    /** 覆写手牌渲染，添加赖子标记 */
+    /** 覆写手牌渲染：只调整显示顺序，底层手牌数组仍保持通用麻将逻辑顺序。 */
     protected renderMyHand(): void {
-        super.renderMyHand();
+        if (!this.myHandArea) return;
+        this.myHandArea.removeAllChildren();
+
+        const displayTiles = this.getHandTilesForDisplay();
+        const tw = 72;
+        const gap = displayTiles.length >= 14 ? 2 : 6;
+        const totalW = displayTiles.length * (tw + gap) - gap;
+        let startX = -totalW / 2 + tw / 2;
+
+        for (let i = 0; i < displayTiles.length; i++) {
+            const tile = displayTiles[i];
+            const tileNode = this.createTileNodeForSeat(tile, 0, true);
+            const sourceIndex = this.myHandTiles.findIndex(item => item.id === tile.id);
+            (tileNode as any)._tileData = tile;
+            tileNode.name = `tile_${i}`;
+            tileNode.parent = this.myHandArea;
+            tileNode.setPosition(startX, this.selectedTileId === tile.id ? 24 : 0, 0);
+            tileNode.setScale(this.selectedTileId === tile.id ? new Vec3(1.04, 1.04, 1) : Vec3.ONE);
+            (tileNode as any)._tileIndex = sourceIndex >= 0 ? sourceIndex : i;
+            startX += tw + gap;
+        }
+
         this.markLaiziTilesInHand();
+    }
+
+    private getHandTilesForDisplay(): MahjongTile[] {
+        if (!this.laiziEnabled || !this.laiziTile) return this.myHandTiles;
+
+        const laiZiTiles: MahjongTile[] = [];
+        const otherTiles: MahjongTile[] = [];
+        for (const tile of this.myHandTiles) {
+            if (this.isLaiZiTile(tile)) laiZiTiles.push(tile);
+            else otherTiles.push(tile);
+        }
+        return laiZiTiles.length > 0 ? [...laiZiTiles, ...otherTiles] : this.myHandTiles;
     }
 
     /** 给手牌中的赖子添加金色角标 */
     protected markLaiziTilesInHand(): void {
         if (!this.laiziEnabled || !this.laiziTile || !this.myHandArea) return;
         const children = this.myHandArea.children;
-        for (let i = 0; i < children.length && i < this.myHandTiles.length; i++) {
-            const tile = this.myHandTiles[i];
-            if (this.isLaiZiTile(tile)) {
+        for (let i = 0; i < children.length; i++) {
+            const tile = (children[i] as any)._tileData as MahjongTile | undefined;
+            if (tile && this.isLaiZiTile(tile)) {
                 this.addLaiziMarker(children[i]);
             }
         }
@@ -1874,7 +1911,11 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
         // 增大面板高度：标题(~75) + 徽章(42+16) + 胡牌样式(78+20) + 玩家行(N*96) + 按钮区(60) + 底部padding(30)
         const playerRows = seatCount;
-        const panelHeight = isHu ? (75 + 58 + 98 + playerRows * 96 + 60 + 30) : (75 + 58 + playerRows * 96 + 60 + 30);
+        const roomFeeText = isLastRound ? this.getRoomFeeSettlementText(msg) : '';
+        const settlementStatsHeight = 64;
+        const panelHeight = isHu
+            ? (75 + 58 + 98 + playerRows * 96 + 60 + 30 + settlementStatsHeight)
+            : (75 + 58 + playerRows * 96 + 60 + 30 + settlementStatsHeight);
         const panel = this.createPopupPanel(
             overlay,
             'SettlementPanel',
@@ -1985,13 +2026,26 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             goldLabel.color = new Color(170, 185, 205, 255);
         }
 
+        const statsNode = this.createUIChild(panel, 'SettlementStatsInfo', 660, 58, 0, -panelHeight / 2 + 112, 1);
+        const statsLabel = statsNode.addComponent(Label);
+        statsLabel.string = roomFeeText || '收益箱统计加载中';
+        statsLabel.fontSize = 18;
+        statsLabel.lineHeight = 23;
+        statsLabel.horizontalAlign = 1;
+        statsLabel.verticalAlign = 1;
+        statsLabel.overflow = Label.Overflow.SHRINK;
+        statsLabel.color = new Color(255, 207, 128, 255);
+        this.updateSettlementIncomeBoxSummary(statsLabel, roomFeeText);
+
         // --- 底部按钮区 ---
         const settledRound = Number(msg?.roundNo ?? (this as any).currentRound) || Number((this as any).currentRound) || 0;
         const settledTotal = Number(msg?.roundCount ?? (this as any).totalRounds) || Number((this as any).totalRounds) || 0;
+        const replayButtonX = isLastRound ? -112 : -214;
+        const continueButtonX = isLastRound ? 112 : 214;
         this.createPopupButton(
             panel,
             settledTotal > 1 ? '选择回放' : '本局回放',
-            -112,
+            replayButtonX,
             -panelHeight / 2 + 44,
             178,
             new Color(63, 98, 143, 255),
@@ -2000,10 +2054,24 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
                 this.openSettlementReplay(settledRound, settledTotal);
             },
         );
+        if (!isLastRound) {
+            this.createPopupButton(
+                panel,
+                '洗牌',
+                0,
+                -panelHeight / 2 + 44,
+                178,
+                new Color(135, 93, 40, 255),
+                new Color(255, 211, 128, 255),
+                () => {
+                    this.onShuffleCardsClick();
+                },
+            );
+        }
         this.createPopupButton(
             panel,
             isLastRound ? '返回' : '继续',
-            112,
+            continueButtonX,
             -panelHeight / 2 + 44,
             178,
             new Color(46, 128, 88, 255),

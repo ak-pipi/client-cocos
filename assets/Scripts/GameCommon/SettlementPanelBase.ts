@@ -23,6 +23,9 @@ export class SettlementPanelBase extends Component {
     @property({ type: Label })
     winTypeLabel: Label = null;          // 胡牌类型描述
 
+    @property({ type: Label })
+    roomFeeLabel: Label = null;          // 房费抽取明细
+
     @property({ type: Node })
     playersContainer: Node = null;       // 玩家结算列表容器
 
@@ -74,6 +77,7 @@ export class SettlementPanelBase extends Component {
         if (this.winTypeLabel) {
             this.winTypeLabel.string = data.winType || '';
         }
+        this.renderRoomFee(data);
 
         // 玩家列表
         this.renderPlayers(data.players);
@@ -109,6 +113,7 @@ export class SettlementPanelBase extends Component {
         if (this.winTypeLabel) {
             this.winTypeLabel.string = '';
         }
+        this.renderRoomFee(data);
 
         // 玩家列表（按分数排序）
         const sorted = [...data.players].sort((a, b) => b.totalScore - a.totalScore);
@@ -142,6 +147,67 @@ export class SettlementPanelBase extends Component {
                 itemNode.parent = this.playersContainer;
             }
         }
+    }
+
+    protected renderRoomFee(data: RoundSettlementData | FinalSettlementData): void {
+        const text = this.getRoomFeeSettlementText(data);
+        if (this.roomFeeLabel) {
+            this.roomFeeLabel.string = text;
+            this.roomFeeLabel.node.active = text.length > 0;
+            return;
+        }
+        if (!text || !this.winTypeLabel) return;
+        this.winTypeLabel.string = this.winTypeLabel.string
+            ? `${this.winTypeLabel.string}\n${text}`
+            : text;
+    }
+
+    protected getRoomFeeSettlementText(data: any): string {
+        const parts: string[] = [];
+        const roomFeeText = this.getFeeSettlementText(data, 'roomFee', '房费抽取');
+        const shuffleFeeText = this.getFeeSettlementText(data, 'shuffleFee', '洗牌分抽取');
+        if (roomFeeText) parts.push(roomFeeText);
+        if (shuffleFeeText) parts.push(shuffleFeeText);
+        return parts.join('；');
+    }
+
+    private getFeeSettlementText(data: any, fieldPrefix: string, title: string): string {
+        const ids = this.toRoomFeeStringArray(data?.[`${fieldPrefix}PlayerIds`]);
+        const amounts = this.toRoomFeeNumberArray(data?.[`${fieldPrefix}Amounts`]);
+        const parts: string[] = [];
+        let amountSum = 0;
+        const count = Math.min(ids.length, amounts.length);
+        for (let i = 0; i < count; i++) {
+            const playerId = ids[i];
+            const amount = Number(amounts[i]) || 0;
+            if (!playerId || amount <= 0) continue;
+            amountSum += amount;
+            const player = Array.isArray(data?.players)
+                ? data.players.find((p: any) => p && String(p.playerId || '') === playerId)
+                : null;
+            const name = player?.nickname || (playerId.length > 4 ? `玩家${playerId.slice(-4)}` : playerId);
+            parts.push(`${name} -${amount}`);
+        }
+        const total = Number(data?.[`${fieldPrefix}Total`]) || amountSum;
+        if (total <= 0) return '';
+        return parts.length > 0 ? `${title} ${total}（${parts.join('，')}）` : `${title} ${total}`;
+    }
+
+    private toRoomFeeStringArray(value: any): string[] {
+        return this.toRoomFeeArray(value).map((item) => String(item || ''));
+    }
+
+    private toRoomFeeNumberArray(value: any): number[] {
+        return this.toRoomFeeArray(value).map((item) => Number(item) || 0);
+    }
+
+    private toRoomFeeArray(value: any): any[] {
+        if (Array.isArray(value)) return value;
+        if (!value || typeof value !== 'object') return [];
+        return Object.keys(value)
+            .filter((key) => /^\d+$/.test(key))
+            .sort((a, b) => Number(a) - Number(b))
+            .map((key) => value[key]);
     }
 
     /**

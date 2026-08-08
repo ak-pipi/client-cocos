@@ -3371,7 +3371,7 @@
         "__id__": 138
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 194
@@ -3650,7 +3650,7 @@
         "__id__": 143
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 149
@@ -3919,7 +3919,7 @@
       "__id__": 141
     },
     "_children": [],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 155
@@ -4010,7 +4010,7 @@
       "b": 0,
       "a": 255
     },
-    "_string": "点击二维码复制下载地址",
+    "_string": "",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 24,

@@ -82,12 +82,7 @@ export const GAME_STAKE_OPTIONS: Record<GameId, StakeOption[]> = {
         { baseScore: 10, roundCount: 8, districtId: 24, label: '台桌10 · 8局' },
         { baseScore: 20, roundCount: 8, districtId: 48, label: '台桌20 · 8局' },
     ],
-    [GameId.Doudizhu]: [
-        { baseScore: 1, roundCount: 8, districtId: 37, label: '底注1 · 8局' },
-        { baseScore: 2, roundCount: 8, districtId: 38, label: '底注2 · 8局' },
-        { baseScore: 5, roundCount: 8, districtId: 39, label: '底注5 · 8局' },
-        { baseScore: 10, roundCount: 8, districtId: 40, label: '底注10 · 8局' },
-    ],
+    [GameId.Doudizhu]: [],
     [GameId.Paodekuai]: [
         { baseScore: 5, roundCount: 1, districtId: 49, label: '台桌5 · 单局' },
         { baseScore: 10, roundCount: 1, districtId: 50, label: '台桌10 · 单局' },

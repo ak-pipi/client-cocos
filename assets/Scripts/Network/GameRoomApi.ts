@@ -85,6 +85,18 @@ export function getRecordGameName(gameId: GameId | string): string {
     return GAME_RECORD_API[gameId]?.name || '麻将';
 }
 
+export interface GameRecordMeta {
+    gameId: GameId | string;
+    name: string;
+}
+
+export function getSupportedRecordGames(): GameRecordMeta[] {
+    return Object.keys(GAME_RECORD_API).map((gameId) => ({
+        gameId,
+        name: GAME_RECORD_API[gameId].name,
+    }));
+}
+
 export function isGameRecordSupported(gameId: GameId | string): boolean {
     return !!GAME_RECORD_API[gameId];
 }
@@ -94,6 +106,9 @@ export interface PublicRoomItem {
     venueId: string;
     number: string;
     gameType: number;
+    gameName?: string;
+    gameTypeText?: string;
+    gameModeText?: string;
     ownerId?: string;
     ownerName?: string;
     ownerHeadUrl?: string;
@@ -110,11 +125,15 @@ export interface DistrictVenueItem {
     venueId: string;
     districtId?: number;
     gameType?: number;
+    gameName?: string;
+    gameTypeText?: string;
+    gameModeText?: string;
     number?: string;
     playerCount: number;
     maxPlayerNums: number;
     baseScore?: number;
     roundCount?: number;
+    players?: Array<{ playerId?: string; nickname?: string; headUrl?: string; avatar?: string } | null>;
 }
 
 /** 麻将战绩项 */
@@ -132,6 +151,8 @@ export interface MahjongRecordItem {
     time: string;
     hasReplay?: boolean;
     expireTime?: string;
+    traceStartTime?: string;
+    traceEndTime?: string;
 }
 
 /** 麻将回放数据 */
@@ -147,6 +168,8 @@ export interface MahjongPlaybackResult {
     hasReplay: boolean;
     retentionDays?: number;
     expireTime?: string;
+    traceStartTime?: string;
+    traceEndTime?: string;
     format?: string;
     codec?: string;
     time?: string;
@@ -279,7 +302,8 @@ export class GameRoomApi {
         if (!dto || !isGameApiSuccess(dto.code)) {
             return [];
         }
-        const items = dto.items || [];
+        const payload = dto.data && typeof dto.data === 'object' ? dto.data : dto;
+        const items = payload.items || dto.items || [];
         return items as DistrictVenueItem[];
     }
 
@@ -366,7 +390,8 @@ export class GameRoomApi {
         const records = await this.getGameRecordsForRoom(gameId, venueId, number);
         if (records.length === 0) return null;
         const exact = records.find((r) => Number(r.roundNo) === Number(roundNo));
-        return exact || records[records.length - 1] || null;
+        if (roundNo > 0) return exact || null;
+        return records[records.length - 1] || null;
     }
 
     private parseRecordPage(dto: any, pageNum: number, defaultError: string): PageResult<MahjongRecordItem> | null {
@@ -442,6 +467,8 @@ export class GameRoomApi {
                 hasReplay: false,
                 retentionDays: payload.retentionDays ?? dto.retentionDays,
                 expireTime: payload.expireTime ?? dto.expireTime,
+                traceStartTime: payload.traceStartTime ?? dto.traceStartTime,
+                traceEndTime: payload.traceEndTime ?? dto.traceEndTime,
                 format: payload.format ?? dto.format,
                 codec: payload.codec ?? dto.codec,
             };

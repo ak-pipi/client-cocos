@@ -80,7 +80,18 @@ export class DlgReplayRoundChooser extends Component {
         this.content.removeAllChildren();
         if (this.statusLabel) this.statusLabel.string = '加载中...';
         try {
-            this.records = await GameRoomApi.Instance.getGameRecordsForRoom(this.gameId, this.options.venueId, this.options.number);
+            const expectedRound = Number(this.options.roundNo || 0);
+            const maxAttempts = expectedRound > 0 ? 6 : 1;
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                this.records = await GameRoomApi.Instance.getGameRecordsForRoom(this.gameId, this.options.venueId, this.options.number);
+                if (expectedRound <= 0 || this.records.some((record) => Number(record.roundNo) === expectedRound)) {
+                    break;
+                }
+                if (attempt < maxAttempts - 1) {
+                    if (this.statusLabel) this.statusLabel.string = '回放生成中...';
+                    await new Promise((resolve) => setTimeout(resolve, 700));
+                }
+            }
             this.renderRecords();
         } finally {
             this.loading = false;
@@ -91,7 +102,7 @@ export class DlgReplayRoundChooser extends Component {
         if (!this.content || !this.statusLabel) return;
         const playable = this.records.filter((r) => r.hasReplay !== false);
         if (playable.length === 0) {
-            this.statusLabel.string = '暂无可回放局';
+            this.statusLabel.string = '暂无数据';
             resizeScrollContent(this.content, 820, 0, 76, 10);
             return;
         }

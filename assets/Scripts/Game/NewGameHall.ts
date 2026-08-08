@@ -6,6 +6,7 @@ import { ResourceLoader } from '../Manager/ResourceLoader';
 import { GameManager } from '../Manager/GameManager';
 import { GameRoomApi, EnterVenueResult, getServerGameType, DistrictVenueItem, isGameRecordSupported } from '../Network/GameRoomApi';
 import { DlgMahjongRecords } from './Dialogs/DlgMahjongRecords';
+import { sanitizeAllEditBoxDefaultLabels, sanitizeEditBoxDefaultLabels } from '../UI/UiKit';
 
 const { ccclass } = _decorator;
 const MIN_CARRY_SCORE_MULTIPLIER = 8;
@@ -311,26 +312,39 @@ export class NewGameHall extends Component {
         tg.rect(-(w - 4) / 2, -2, w - 4, 4);
         tg.fill();
 
-        // 倍数标签
+        // 游戏名称
         const stakeLabel = new Node('StakeLabel');
         stakeLabel.parent = card;
         stakeLabel.addComponent(UITransform).setContentSize(w - 30, 40);
         stakeLabel.setPosition(0, h / 2 - 35, 0);
         const sl = stakeLabel.addComponent(Label);
-        sl.string = stake.label;
-        sl.fontSize = 26;
-        sl.lineHeight = 34;
+        sl.string = this.gameName || stake.label;
+        sl.fontSize = 24;
+        sl.lineHeight = 30;
         sl.overflow = 2;
         sl.horizontalAlign = 1;
         sl.verticalAlign = 1;
         sl.color = new Color(255, 220, 100, 255);
         sl.isBold = true;
 
+        const modeLabel = new Node('ModeLabel');
+        modeLabel.parent = card;
+        modeLabel.addComponent(UITransform).setContentSize(w - 30, 28);
+        modeLabel.setPosition(0, h / 2 - 66, 0);
+        const mode = modeLabel.addComponent(Label);
+        mode.string = `${this.getGameTypeText()} · ${this.getStakeModeText(stake)}`;
+        mode.fontSize = 18;
+        mode.lineHeight = 24;
+        mode.overflow = Label.Overflow.SHRINK;
+        mode.horizontalAlign = Label.HorizontalAlign.CENTER;
+        mode.verticalAlign = Label.VerticalAlign.CENTER;
+        mode.color = new Color(235, 214, 156, 255);
+
         // 分隔线
         const sep = new Node('Sep');
         sep.parent = card;
         sep.addComponent(UITransform).setContentSize(w - 40, 1);
-        sep.setPosition(0, h / 2 - 58, 0);
+        sep.setPosition(0, h / 2 - 88, 0);
         const sg = sep.addComponent(Graphics);
         sg.fillColor = new Color(60, 100, 140, 150);
         sg.rect(-(w - 40) / 2, -0.5, w - 40, 1);
@@ -340,7 +354,7 @@ export class NewGameHall extends Component {
         const countLabel = new Node('CountLabel');
         countLabel.parent = card;
         countLabel.addComponent(UITransform).setContentSize(w - 30, 30);
-        countLabel.setPosition(0, h / 2 - 82, 0);
+        countLabel.setPosition(0, h / 2 - 112, 0);
         const cl = countLabel.addComponent(Label);
         cl.string = '在线 --';
         cl.fontSize = 20;
@@ -355,7 +369,7 @@ export class NewGameHall extends Component {
         const minNode = new Node('MinCarryLabel');
         minNode.parent = card;
         minNode.addComponent(UITransform).setContentSize(w - 30, 30);
-        minNode.setPosition(0, h / 2 - 112, 0);
+        minNode.setPosition(0, h / 2 - 140, 0);
         const ml = minNode.addComponent(Label);
         ml.string = minCarry > 0 ? `携带≥${minCarry}积分` : '';
         ml.fontSize = 18;
@@ -365,71 +379,29 @@ export class NewGameHall extends Component {
         ml.verticalAlign = 1;
         ml.color = new Color(235, 214, 156, 255);
 
-        // 快速游戏按钮
-        const quickBtnW = 140;
-        const quickBtnH = 40;
-        const quickBtn = new Node(`QuickJoin_${stake.districtId}`);
-        quickBtn.parent = card;
-        quickBtn.addComponent(UITransform).setContentSize(quickBtnW, quickBtnH);
-        quickBtn.setPosition(-quickBtnW / 2 - 15, -h / 2 + 35, 0);
+        const actionNode = new Node('ActionHint');
+        actionNode.parent = card;
+        actionNode.addComponent(UITransform).setContentSize(w - 40, 34);
+        actionNode.setPosition(0, -h / 2 + 34, 0);
+        const actionLabel = actionNode.addComponent(Label);
+        actionLabel.string = '点击桌子快速进入';
+        actionLabel.fontSize = 20;
+        actionLabel.lineHeight = 26;
+        actionLabel.overflow = Label.Overflow.SHRINK;
+        actionLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
+        actionLabel.verticalAlign = Label.VerticalAlign.CENTER;
+        actionLabel.color = new Color(255, 255, 255, 255);
 
-        const qg = quickBtn.addComponent(Graphics);
-        qg.fillColor = new Color(46, 139, 87, 230);
-        qg.roundRect(-quickBtnW / 2, -quickBtnH / 2, quickBtnW, quickBtnH, 8);
-        qg.fill();
-
-        const ql = new Node('L');
-        ql.parent = quickBtn;
-        ql.addComponent(UITransform).setContentSize(quickBtnW - 10, quickBtnH - 6);
-        const qll = ql.addComponent(Label);
-        qll.string = '快速游戏';
-        qll.fontSize = 20;
-        qll.horizontalAlign = 1;
-        qll.verticalAlign = 1;
-        qll.color = new Color(255, 255, 255, 255);
-
-        const qButton = quickBtn.addComponent(Button);
-        qButton.transition = 1;
-        qButton.zoomScale = 1.05;
-        qButton.duration = 0.1;
-        const qClick = new EventHandler();
-        qClick.target = this.node;
-        qClick.component = 'NewGameHall';
-        qClick.handler = 'onQuickJoin';
-        qClick.customEventData = String(stake.districtId);
-        qButton.clickEvents.push(qClick);
-
-        // 选桌按钮
-        const selBtn = new Node(`SelectTable_${stake.districtId}`);
-        selBtn.parent = card;
-        selBtn.addComponent(UITransform).setContentSize(quickBtnW, quickBtnH);
-        selBtn.setPosition(quickBtnW / 2 + 15, -h / 2 + 35, 0);
-
-        const sgg = selBtn.addComponent(Graphics);
-        sgg.fillColor = new Color(70, 130, 180, 230);
-        sgg.roundRect(-quickBtnW / 2, -quickBtnH / 2, quickBtnW, quickBtnH, 8);
-        sgg.fill();
-
-        const sll = new Node('L');
-        sll.parent = selBtn;
-        sll.addComponent(UITransform).setContentSize(quickBtnW - 10, quickBtnH - 6);
-        const sl2 = sll.addComponent(Label);
-        sl2.string = '选桌进入';
-        sl2.fontSize = 20;
-        sl2.horizontalAlign = 1;
-        sl2.verticalAlign = 1;
-        sl2.color = new Color(255, 255, 255, 255);
-
-        const sButton = selBtn.addComponent(Button);
-        sButton.transition = 1;
-        sButton.zoomScale = 1.05;
-        sButton.duration = 0.1;
-        const sClick = new EventHandler();
-        sClick.target = this.node;
-        sClick.component = 'NewGameHall';
-        sClick.handler = 'onSelectTable';
-        sClick.customEventData = String(stake.districtId);
-        sButton.clickEvents.push(sClick);
+        const button = card.addComponent(Button);
+        button.transition = Button.Transition.SCALE;
+        button.zoomScale = 1.04;
+        button.duration = 0.1;
+        const clickEvent = new EventHandler();
+        clickEvent.target = this.node;
+        clickEvent.component = 'NewGameHall';
+        clickEvent.handler = 'onQuickJoin';
+        clickEvent.customEventData = String(stake.districtId);
+        button.clickEvents.push(clickEvent);
     }
 
     private refreshPlayerCounts(): void {
@@ -448,6 +420,27 @@ export class NewGameHall extends Component {
         }).catch((err) => {
             console.warn('[NewGameHall] Refresh player counts failed:', err);
         });
+    }
+
+    private getGameTypeText(): string {
+        const meta = GameFactory.getGameMeta(this.gameId);
+        if (meta?.type === GameType.Mahjong) return '麻将';
+        if (meta?.type === GameType.Poker) return '扑克';
+        if (meta?.type === GameType.Zipai) return '字牌';
+        return '游戏';
+    }
+
+    private getStakeModeText(stake: StakeOption): string {
+        const roundText = stake.roundCount === 1 ? '单局' : `${stake.roundCount}局`;
+        return `${roundText} · 台桌${stake.baseScore}`;
+    }
+
+    private formatVenueMode(venue: DistrictVenueItem): string {
+        const ruleParts: string[] = [];
+        if (venue.gameTypeText) ruleParts.push(venue.gameTypeText);
+        if (venue.roundCount) ruleParts.push(venue.roundCount === 1 ? '单局' : `${venue.roundCount}局`);
+        if (venue.baseScore) ruleParts.push(`台桌${venue.baseScore}`);
+        return ruleParts.length > 0 ? ruleParts.join(' · ') : '快速场';
     }
 
     // ==================== 底部按钮 ====================
@@ -733,10 +726,7 @@ export class NewGameHall extends Component {
             ruleNode.addComponent(UITransform).setContentSize(130, itemH - 10);
             ruleNode.setPosition(-70, 0, 0);
             const ruleLabel = ruleNode.addComponent(Label);
-            const ruleParts: string[] = [];
-            if (venue.baseScore) ruleParts.push(`底分${venue.baseScore}`);
-            if (venue.roundCount) ruleParts.push(`${venue.roundCount}局`);
-            ruleLabel.string = ruleParts.length > 0 ? ruleParts.join(' · ') : '快速场';
+            ruleLabel.string = venue.gameModeText || this.formatVenueMode(venue);
             ruleLabel.fontSize = 16;
             ruleLabel.horizontalAlign = 1;
             ruleLabel.verticalAlign = 1;
@@ -1213,6 +1203,8 @@ export class NewGameHall extends Component {
         editBox.string = '';
         (editBox as any).textLabel = textLabel;
         (editBox as any).placeholderLabel = placeholderLabel;
+        sanitizeEditBoxDefaultLabels(editBox, [textLabel, placeholderLabel]);
+        sanitizeAllEditBoxDefaultLabels(popup);
         this.joinEditBox = editBox;
 
         this.createPopupButton(panel, '确认', -80, new Color(46, 139, 87, 255), 'onJoinConfirm');

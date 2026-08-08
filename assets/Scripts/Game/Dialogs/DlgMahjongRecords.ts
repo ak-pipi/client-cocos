@@ -1,7 +1,7 @@
 import { _decorator, Component, Node, Label, UITransform, Color, Event } from 'cc';
 import { GameId } from '../../App/GameEnums';
 import { GameManager } from '../../Manager/GameManager';
-import { GameRoomApi, MahjongRecordItem, getRecordGameName } from '../../Network/GameRoomApi';
+import { GameRoomApi, MahjongRecordItem, getRecordGameName, getSupportedRecordGames } from '../../Network/GameRoomApi';
 import {
     UI_COLORS, createOverlayRoot, createLabel, createButton,
     createScrollArea, fillRoundRect, resizeScrollContent,
@@ -19,9 +19,12 @@ export class DlgMahjongRecords extends Component {
     private listContent: Node | null = null;
     private statusLabel: Label | null = null;
     private pageLabel: Label | null = null;
+    private tabRoot: Node | null = null;
+    private gameTabNodes: Map<string, Node> = new Map<string, Node>();
 
     private gameId: GameId | string = GameId.TaojiangMahjong;
     private gameName = '桃江麻将';
+    private allowGameSwitch = false;
     private pageNum = 1;
     private total = 0;
     private records: MahjongRecordItem[] = [];
@@ -35,13 +38,17 @@ export class DlgMahjongRecords extends Component {
         this.loadPage(this.pageNum || 1);
     }
 
-    public setup(gameId: GameId | string): void {
+    public setup(gameId: GameId | string, allowGameSwitch = false): void {
+        this.allowGameSwitch = allowGameSwitch;
         this.gameId = gameId || GameId.TaojiangMahjong;
         this.gameName = getRecordGameName(this.gameId);
         this.pageNum = 1;
+        this.records = [];
+        this.total = 0;
         if (this.titleLabel) {
             this.titleLabel.string = `${this.gameName}战绩`;
         }
+        this.updateGameTabs();
     }
 
     private buildUI(): void {
@@ -51,11 +58,13 @@ export class DlgMahjongRecords extends Component {
         this.titleLabel = createLabel(this.panel, `${this.gameName}战绩`, 34, UI_COLORS.accent, 300, 48);
         this.titleLabel.node.setPosition(0, 270, 0);
 
+        this.createGameTabs();
+
         this.statusLabel = createLabel(this.panel, '加载中...', 22, UI_COLORS.subText, 800, 36);
-        this.statusLabel.node.setPosition(0, 220, 0);
+        this.statusLabel.node.setPosition(0, 178, 0);
         this.statusLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
 
-        const scroll = createScrollArea(this.panel, 860, 430, -20);
+        const scroll = createScrollArea(this.panel, 860, 390, -40);
         this.listContent = scroll.content;
 
         this.pageLabel = createLabel(this.panel, '第 1 页', 22, UI_COLORS.text, 200, 36);
@@ -68,6 +77,35 @@ export class DlgMahjongRecords extends Component {
             .setPosition(130, -285, 0);
         createButton(this.panel, '关闭', 100, 40, new Color(120, 70, 70, 255), this.node, 'DlgMahjongRecords', 'onCloseClicked')
             .setPosition(380, -285, 0);
+        this.updateGameTabs();
+    }
+
+    private createGameTabs(): void {
+        if (!this.panel) return;
+        const games = getSupportedRecordGames();
+        const totalWidth = games.length * 128 + Math.max(0, games.length - 1) * 12;
+        let x = -totalWidth / 2 + 64;
+        this.tabRoot = new Node('RecordGameTabs');
+        this.tabRoot.parent = this.panel;
+        this.tabRoot.addComponent(UITransform).setContentSize(totalWidth, 42);
+        this.tabRoot.setPosition(0, 222, 0);
+        this.gameTabNodes.clear();
+        games.forEach((game) => {
+            const node = createButton(
+                this.tabRoot!,
+                game.name,
+                128,
+                38,
+                UI_COLORS.tabIdle,
+                this.node,
+                'DlgMahjongRecords',
+                'onGameTabClicked',
+                String(game.gameId),
+            );
+            node.setPosition(x, 0, 0);
+            this.gameTabNodes.set(String(game.gameId), node);
+            x += 140;
+        });
     }
 
     public onPrevPage(): void {
@@ -83,6 +121,18 @@ export class DlgMahjongRecords extends Component {
 
     public onCloseClicked(): void {
         this.node.active = false;
+    }
+
+    public onGameTabClicked(_event: Event, customEventData: string): void {
+        if (!customEventData || customEventData === String(this.gameId) || this.loading) return;
+        this.gameId = customEventData;
+        this.gameName = getRecordGameName(this.gameId);
+        this.pageNum = 1;
+        this.total = 0;
+        this.records = [];
+        if (this.titleLabel) this.titleLabel.string = `${this.gameName}战绩`;
+        this.updateGameTabs();
+        this.loadPage(1);
     }
 
     public async onReplayClicked(_event: Event, customEventData: string): Promise<void> {
@@ -101,8 +151,8 @@ export class DlgMahjongRecords extends Component {
             const sizeText = size > 0 ? `${Math.ceil(size / 1024)}KB` : '-';
             const actionText = playback.actionCount != null ? `，${playback.actionCount}步` : '';
             const playerText = playback.playerCount != null ? `，${playback.playerCount}人` : '';
-            const expireText = playback.expireTime ? `，追溯至 ${playback.expireTime}` : '';
-            if (this.statusLabel) this.statusLabel.string = `回放已加载（${sizeText}${actionText}${playerText}${expireText}）`;
+            const traceText = this.buildTraceText(playback);
+            if (this.statusLabel) this.statusLabel.string = `回放已加载（${sizeText}${actionText}${playerText}${traceText}）`;
         } catch (err) {
             console.error('[DlgMahjongRecords] replay load error:', err);
             if (this.statusLabel) this.statusLabel.string = '加载回放失败';
@@ -140,6 +190,20 @@ export class DlgMahjongRecords extends Component {
         this.listContent.removeAllChildren();
     }
 
+    private updateGameTabs(): void {
+        if (this.tabRoot) {
+            this.tabRoot.active = this.allowGameSwitch;
+        }
+        this.gameTabNodes.forEach((node, gameId) => {
+            const active = gameId === String(this.gameId);
+            fillRoundRect(node, 128, 38, active ? UI_COLORS.tabActive : UI_COLORS.tabIdle, 8);
+            const label = node.getChildByName('Label')?.getComponent(Label);
+            if (label) {
+                label.color = active ? UI_COLORS.text : UI_COLORS.subText;
+            }
+        });
+    }
+
     private getMyResult(record: MahjongRecordItem): { score: number; gold: number; nickname: string } {
         const playerId = GameManager.Instance.PlayerId;
         const players = record.players || [];
@@ -167,7 +231,7 @@ export class DlgMahjongRecords extends Component {
         this.pageLabel.string = `第 ${this.pageNum} / ${maxPage} 页`;
 
         if (this.records.length === 0) {
-            this.statusLabel.string = this.total === 0 ? `暂无${this.gameName}战绩` : '没有更多记录了';
+            this.statusLabel.string = '暂无数据';
             resizeScrollContent(this.listContent, 860, 0, 108, 12);
             return;
         }
@@ -216,5 +280,39 @@ export class DlgMahjongRecords extends Component {
         });
 
         resizeScrollContent(this.listContent, width, this.records.length, itemHeight, gap);
+    }
+
+    private buildTraceText(playback: any): string {
+        const range = this.resolveTraceRange(playback);
+        return range ? `，追溯 ${range.start} 至 ${range.end}` : '';
+    }
+
+    private resolveTraceRange(playback: any): { start: string; end: string } | null {
+        const retentionDays = Number(playback?.retentionDays || 3);
+        const now = new Date();
+        const fallbackEnd = now;
+        const fallbackStart = new Date(now.getTime() - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000);
+        let start = this.parseDateTime(playback?.traceStartTime);
+        let end = this.parseDateTime(playback?.traceEndTime);
+        if (!start || !end || start.getTime() > end.getTime() || start.getTime() > now.getTime() + 60 * 1000) {
+            start = fallbackStart;
+            end = fallbackEnd;
+        }
+        return {
+            start: this.formatDateTime(start),
+            end: this.formatDateTime(end),
+        };
+    }
+
+    private parseDateTime(value?: string): Date | null {
+        if (!value) return null;
+        const normalized = String(value).replace(' ', 'T');
+        const date = new Date(normalized);
+        return isNaN(date.getTime()) ? null : date;
+    }
+
+    private formatDateTime(date: Date): string {
+        const pad = (num: number) => num < 10 ? `0${num}` : String(num);
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
     }
 }

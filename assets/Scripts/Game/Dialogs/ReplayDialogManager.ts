@@ -33,6 +33,9 @@ export class ReplayDialogManager {
             return;
         }
 
+        if (roundNo > 0) {
+            await ReplayDialogManager.findRoomRoundRecord(gameId, roundNo, options);
+        }
         const node = new Node('DlgReplayRoundChooser');
         node.parent = parent;
         const comp = node.addComponent(DlgReplayRoundChooser);
@@ -40,10 +43,11 @@ export class ReplayDialogManager {
     }
 
     private static async findRoomRoundRecord(gameId: GameId | string, roundNo: number, options: SettlementReplayOptions): Promise<MahjongRecordItem | null> {
-        for (let attempt = 0; attempt < 3; attempt++) {
+        const maxAttempts = 8;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const record = await GameRoomApi.Instance.findGameRecordForRoomRound(gameId, roundNo, options.venueId, options.number);
             if (record) return record;
-            if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 600));
+            if (attempt < maxAttempts - 1) await new Promise((resolve) => setTimeout(resolve, 700));
         }
         return null;
     }

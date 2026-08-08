@@ -29,11 +29,10 @@ export type { GameId, GameType, GameMetaInfo } from './GameEnums';
 type RoomComponentCtor = new () => RoomBase;
 
 /** gameId → @ccclass 名称映射 */
-const GAME_CLASS_NAMES: Record<GameId, string> = {
+const GAME_CLASS_NAMES: Partial<Record<GameId, string>> = {
     [GameId.TaojiangMahjong]: 'TaojiangMahjongRoom',
     [GameId.HongzhongMahjong]: 'HongzhongMahjongRoom',
     [GameId.ChangshaMahjong]: 'ChangshaMahjongRoom',
-    [GameId.Doudizhu]: 'DoudizhuRoom',
     [GameId.Paodekuai]: 'PaodekuaiRoom',
     [GameId.Waihuzi]: 'WaihuziRoom',
     [GameId.Qianfen]: 'QianfenRoom',
@@ -61,13 +60,6 @@ const GAME_REGISTRY: Map<GameId, GameMetaInfo> = new Map([
         name: '长沙麻将',
         type: GameType.Mahjong,
         playerCount: 4,
-        priority: 1,
-    }],
-    [GameId.Doudizhu, {
-        id: GameId.Doudizhu,
-        name: '斗地主',
-        type: GameType.Poker,
-        playerCount: 2,
         priority: 1,
     }],
     [GameId.Paodekuai, {
@@ -120,7 +112,7 @@ export class GameFactory {
     public static getAllGames(): GameMetaInfo[] {
         // Cocos 3.8 的网页构建器会将 Map 迭代器的展开语法错误地转为
         // [].concat(iterator)，从而生成只含一个 iterator 的数组。
-        // Array.from 会被保留为标准运行时调用，确保获得七个游戏配置。
+        // Array.from 会被保留为标准运行时调用，确保获得完整游戏配置。
         return Array.from(GAME_REGISTRY.values()).sort((a, b) => a.priority - b.priority);
     }
 
@@ -173,9 +165,6 @@ export class GameFactory {
                 break;
             case GameId.ChangshaMahjong:
                 await import('../Games/ChangshaMahjong/ChangshaMahjongRoom');
-                break;
-            case GameId.Doudizhu:
-                await import('../Games/Doudizhu/DoudizhuRoom');
                 break;
             case GameId.Paodekuai:
                 await import('../Games/Paodekuai/PaodekuaiRoom');

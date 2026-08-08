@@ -33,6 +33,9 @@ export class DoudizhuRoom extends PokerRoomBase {
     private settlementScoreLabel: Label | null = null;
     private settlementDetailLabel: Label | null = null;
     private settlementRemainLabel: Label | null = null;
+    private settlementRoomFeeLabel: Label | null = null;
+    private settlementShuffleButton: Node | null = null;
+    private settlementHasFinalFee: boolean = false;
     private controlBarNode: Node | null = null;
     private customReadyButton: Node | null = null;
     private customReadyLabel: Label | null = null;
@@ -125,6 +128,10 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     private onDoudizhuDisband(): void {
         if (this.dissolvePanel) this.dissolvePanel.active = false;
+        if (this.settlementPanel?.active && this.settlementHasFinalFee) {
+            this.updateStatus('房间已解散，请查看结算');
+            return;
+        }
         this.exitRoom();
     }
 
@@ -145,6 +152,9 @@ export class DoudizhuRoom extends PokerRoomBase {
 
     public closeSettlementPanel(): void {
         this.hideSettlementPanel();
+        if (this.settlementHasFinalFee) {
+            this.exitRoom();
+        }
     }
 
     public pass(): void {
@@ -1118,22 +1128,28 @@ export class DoudizhuRoom extends PokerRoomBase {
     private ensureSettlementPanel(parent: Node): void {
         if (this.settlementPanel) return;
 
-        const panel = this.createArea(parent, 'SettlementPanel', 0, 34, 640, 360);
+        const panel = this.createArea(parent, 'SettlementPanel', 0, 34, 640, 420);
         panel.addComponent(BlockInputEvents);
         const bg = panel.addComponent(Graphics);
         bg.fillColor = new Color(18, 29, 42, 244);
-        bg.roundRect(-320, -180, 640, 360, 8);
+        bg.roundRect(-320, -210, 640, 420, 8);
         bg.fill();
         bg.strokeColor = new Color(236, 190, 96, 255);
         bg.lineWidth = 2;
-        bg.roundRect(-320, -180, 640, 360, 8);
+        bg.roundRect(-320, -210, 640, 420, 8);
         bg.stroke();
 
-        this.settlementTitleLabel = this.createLabel(panel, 'Title', '', 32, 0, 128, 360, 48, new Color(255, 225, 120, 255));
-        this.settlementScoreLabel = this.createLabel(panel, 'Score', '', 38, 0, 74, 360, 54, new Color(255, 255, 255, 255));
-        this.settlementDetailLabel = this.createLabel(panel, 'Detail', '', 22, 0, 6, 560, 70, new Color(218, 226, 234, 255));
-        this.settlementRemainLabel = this.createLabel(panel, 'RemainCards', '', 20, 0, -72, 580, 92, new Color(230, 235, 238, 255));
-        this.createTextButton(panel, '继续', 0, -142, 'closeSettlementPanel', new Color(46, 139, 87, 235));
+        this.settlementTitleLabel = this.createLabel(panel, 'Title', '', 32, 0, 158, 360, 48, new Color(255, 225, 120, 255));
+        this.settlementScoreLabel = this.createLabel(panel, 'Score', '', 38, 0, 104, 360, 54, new Color(255, 255, 255, 255));
+        this.settlementDetailLabel = this.createLabel(panel, 'Detail', '', 22, 0, 36, 560, 70, new Color(218, 226, 234, 255));
+        this.settlementRemainLabel = this.createLabel(panel, 'RemainCards', '', 20, 0, -46, 580, 92, new Color(230, 235, 238, 255));
+        this.settlementRoomFeeLabel = this.createLabel(panel, 'SettlementStatsInfo', '', 18, 0, -122, 580, 54, new Color(255, 207, 128, 255));
+        this.settlementRoomFeeLabel.lineHeight = 23;
+        this.settlementRoomFeeLabel.verticalAlign = 1;
+        this.settlementRoomFeeLabel.overflow = Label.Overflow.SHRINK;
+        this.settlementRoomFeeLabel.node.active = false;
+        this.settlementShuffleButton = this.createTextButton(panel, '洗牌', -76, -172, 'onShuffleCardsClick', new Color(135, 93, 40, 235));
+        this.createTextButton(panel, '继续', 76, -172, 'closeSettlementPanel', new Color(46, 139, 87, 235));
 
         panel.active = false;
         this.settlementPanel = panel;
@@ -1467,6 +1483,17 @@ export class DoudizhuRoom extends PokerRoomBase {
         if (this.settlementRemainLabel) {
             this.settlementRemainLabel.string =
                 `你剩余：${this.formatCardIds(myRemain)}\n对手剩余：${this.formatCardIds(opponentRemain)}`;
+        }
+
+        const roomFeeText = this.getRoomFeeSettlementText(msg);
+        this.settlementHasFinalFee = roomFeeText.length > 0;
+        if (this.settlementRoomFeeLabel) {
+            this.settlementRoomFeeLabel.string = roomFeeText || '收益箱统计加载中';
+            this.settlementRoomFeeLabel.node.active = true;
+            this.updateSettlementIncomeBoxSummary(this.settlementRoomFeeLabel, roomFeeText);
+        }
+        if (this.settlementShuffleButton) {
+            this.settlementShuffleButton.active = !(Number(msg?.roomFeeTotal || 0) > 0 || Number(msg?.shuffleFeeTotal || 0) > 0);
         }
 
         this.settlementPanel.active = true;

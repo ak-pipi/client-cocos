@@ -101,18 +101,30 @@ export enum DistrictId {
     HongzhongB2R8 = 18,
     HongzhongB5R8 = 19,
     HongzhongB10R8 = 20,
+    HongzhongB5R1 = 41,
+    HongzhongB10R1 = 42,
+    HongzhongB25R1 = 43,
+    HongzhongB20R8 = 44,
 
     // 长沙麻将
     ChangshaB1R8 = 21,
     ChangshaB2R8 = 22,
     ChangshaB5R8 = 23,
     ChangshaB10R8 = 24,
+    ChangshaB5R1 = 45,
+    ChangshaB10R1 = 46,
+    ChangshaB25R1 = 47,
+    ChangshaB20R8 = 48,
 
     // 跑得快
     PaodekuaiB1R8 = 25,
     PaodekuaiB2R8 = 26,
     PaodekuaiB5R8 = 27,
     PaodekuaiB10R8 = 28,
+    PaodekuaiB5R1 = 49,
+    PaodekuaiB10R1 = 50,
+    PaodekuaiB25R1 = 51,
+    PaodekuaiB20R8 = 52,
 
     // 歪胡子
     WaihuziB1R8 = 29,

@@ -69,7 +69,10 @@ export class PaodekuaiRoom extends PokerRoomBase {
     private settlementScoreLabel: Label | null = null;
     private settlementDetailLabel: Label | null = null;
     private settlementPlayerLabels: Array<Label | null> = [null, null];
+    private settlementRoomFeeLabel: Label | null = null;
     private settlementReplayLabel: Label | null = null;
+    private settlementShuffleButton: Node | null = null;
+    private settlementShuffleLabel: Label | null = null;
     private settlementContinueLabel: Label | null = null;
     private settlementIsFinalRound: boolean = false;
     private settlementRoundNo: number = 0;
@@ -194,6 +197,10 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     private onPdkDisband(): void {
         if (this.dissolvePanel) this.dissolvePanel.active = false;
+        if (this.settlementPanel?.active) {
+            this.updateStatus('房间已解散，请点击完成返回');
+            return;
+        }
         this.exitRoom();
     }
 
@@ -307,7 +314,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
         if (isFinalRound) {
             this.updateStatus('全部对局结束');
-            this.updateReadyButtonState();
+            this.exitRoom();
             return;
         }
 
@@ -495,10 +502,14 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.refreshPaodekuaiHud();
         const settledRound = Number(msg?.roundNo ?? this.currentRound) || 0;
         const totalRounds = Number(msg?.roundCount ?? this.roundCount ?? this.totalRounds) || 0;
-        const isFinalRound = totalRounds > 0 && settledRound >= totalRounds;
+        const isFinalRound = (totalRounds > 0 && settledRound >= totalRounds) || this.hasFinalFeeSettlement(msg);
         this.showSettlementPanel(msg, scores, myScore, winner, isFinalRound);
         this.updateReadyButtonState();
         console.log(`[PaodekuaiRoom] Settlement winner=${winner}, multiplier=${this.currentMultiplier}, spring=${!!msg?.spring}`);
+    }
+
+    private hasFinalFeeSettlement(msg: any): boolean {
+        return Number(msg?.roomFeeTotal || 0) > 0 || Number(msg?.shuffleFeeTotal || 0) > 0;
     }
 
     protected recognizePattern(cards: PokerCard[]): CardPlay | null {
@@ -1105,12 +1116,12 @@ export class PaodekuaiRoom extends PokerRoomBase {
         mask.roundRect(-960, -540, 1920, 1080, 0);
         mask.fill();
 
-        const panel = this.createArea(overlay, 'SettlementPanel', 0, 22, 680, 430);
-        this.paintRect(panel, 680, 430, new Color(18, 29, 42, 246), new Color(236, 190, 96, 255), 8);
+        const panel = this.createArea(overlay, 'SettlementPanel', 0, 22, 680, 470);
+        this.paintRect(panel, 680, 470, new Color(18, 29, 42, 246), new Color(236, 190, 96, 255), 8);
 
-        this.settlementTitleLabel = this.createLabel(panel, 'Title', '本局结算', 32, 0, 160, 420, 44, new Color(255, 225, 120, 255));
-        this.settlementScoreLabel = this.createLabel(panel, 'Score', '+0', 40, 0, 105, 420, 54, new Color(255, 255, 255, 255));
-        this.settlementDetailLabel = this.createLabel(panel, 'Detail', '', 21, 0, 44, 590, 66, new Color(218, 226, 234, 255));
+        this.settlementTitleLabel = this.createLabel(panel, 'Title', '本局结算', 32, 0, 178, 420, 44, new Color(255, 225, 120, 255));
+        this.settlementScoreLabel = this.createLabel(panel, 'Score', '+0', 40, 0, 123, 420, 54, new Color(255, 255, 255, 255));
+        this.settlementDetailLabel = this.createLabel(panel, 'Detail', '', 21, 0, 62, 590, 66, new Color(218, 226, 234, 255));
 
         for (let i = 0; i < 2; i++) {
             const row = this.createArea(panel, `PlayerSettlement${i}`, 0, i === 0 ? -28 : -90, 600, 52);
@@ -1118,9 +1129,17 @@ export class PaodekuaiRoom extends PokerRoomBase {
             this.settlementPlayerLabels[i] = this.createLabel(row, 'Text', '', 20, 0, 0, 570, 34, new Color(238, 242, 246, 255));
         }
 
-        const replayButton = this.createTextButton(panel, '回放', -76, -170, 'onSettlementReplayClick', new Color(63, 98, 143, 235), 'SettlementReplayButton');
+        this.settlementRoomFeeLabel = this.createLabel(panel, 'SettlementStatsInfo', '', 18, 0, -138, 610, 56, new Color(255, 207, 128, 255));
+        this.settlementRoomFeeLabel.lineHeight = 23;
+        this.settlementRoomFeeLabel.verticalAlign = 1;
+        this.settlementRoomFeeLabel.overflow = Label.Overflow.SHRINK;
+        this.settlementRoomFeeLabel.node.active = false;
+
+        const replayButton = this.createTextButton(panel, '回放', -154, -194, 'onSettlementReplayClick', new Color(63, 98, 143, 235), 'SettlementReplayButton');
         this.settlementReplayLabel = this.findChildComponent<Label>(replayButton, 'Label', Label);
-        const continueButton = this.createTextButton(panel, '继续', 76, -170, 'onSettlementContinueClick', new Color(46, 139, 87, 235), 'SettlementContinueButton');
+        this.settlementShuffleButton = this.createTextButton(panel, '洗牌', 0, -194, 'onShuffleCardsClick', new Color(135, 93, 40, 235), 'SettlementShuffleButton');
+        this.settlementShuffleLabel = this.findChildComponent<Label>(this.settlementShuffleButton, 'Label', Label);
+        const continueButton = this.createTextButton(panel, '继续', 154, -194, 'onSettlementContinueClick', new Color(46, 139, 87, 235), 'SettlementContinueButton');
         this.settlementContinueLabel = this.findChildComponent<Label>(continueButton, 'Label', Label);
 
         overlay.active = false;
@@ -1171,7 +1190,16 @@ export class PaodekuaiRoom extends PokerRoomBase {
             }
         }
 
+        const roomFeeText = isFinalRound ? this.getRoomFeeSettlementText(msg) : '';
+        if (this.settlementRoomFeeLabel) {
+            this.settlementRoomFeeLabel.string = roomFeeText || '收益箱统计加载中';
+            this.settlementRoomFeeLabel.node.active = true;
+            this.updateSettlementIncomeBoxSummary(this.settlementRoomFeeLabel, roomFeeText);
+        }
+
         if (this.settlementReplayLabel) this.settlementReplayLabel.string = totalRounds > 1 ? '选择回放' : '回放';
+        if (this.settlementShuffleButton) this.settlementShuffleButton.active = !isFinalRound;
+        if (this.settlementShuffleLabel) this.settlementShuffleLabel.string = '洗牌';
         if (this.settlementContinueLabel) this.settlementContinueLabel.string = isFinalRound ? '完成' : '继续';
         if (this.readyGroup) this.readyGroup.active = false;
         if (this.btnReady) this.btnReady.active = false;
