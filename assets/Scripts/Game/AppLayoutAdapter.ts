@@ -1,4 +1,4 @@
-import { _decorator, Component, game, sys, view, screen } from 'cc';
+import { _decorator, Component, game, ResolutionPolicy, screen, sys, view } from 'cc';
 const { ccclass, property } = _decorator;
 
 export type LayoutSnapshot = {
@@ -20,10 +20,10 @@ export type LayoutSnapshot = {
 @ccclass('AppLayoutAdapter')
 export class AppLayoutAdapter extends Component {
     @property
-    public designWidth: number = 1920;
+    public designWidth: number = 1600;
 
     @property
-    public designHeight: number = 1080;
+    public designHeight: number = 900;
 
     private static _instance: AppLayoutAdapter | null = null;
 
@@ -45,6 +45,7 @@ export class AppLayoutAdapter extends Component {
             return;
         }
         this.node.name = 'AppLayoutAdapter';
+        this.applyExactFit();
     }
 
     protected onEnable(): void {
@@ -103,6 +104,19 @@ export class AppLayoutAdapter extends Component {
         };
     }
 
+    /**
+     * Project settings are only applied while the player is booting. Enforce the
+     * policy again from the running game so that preview/native players cannot
+     * keep an old SHOW_ALL viewport after a project-settings change.
+     */
+    private applyExactFit(): void {
+        view.setDesignResolutionSize(
+            this.designWidth,
+            this.designHeight,
+            ResolutionPolicy.EXACT_FIT,
+        );
+    }
+
     private getDevicePixelRatio(): number {
         try {
             const anyWindow = window as any;
@@ -130,4 +144,3 @@ export class AppLayoutAdapter extends Component {
         return { x: 0, y: 0, width: frame.width, height: frame.height };
     }
 }
-
