@@ -87,6 +87,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     protected currentTingTiles: MahjongTile[] = [];
     protected pendingGangRevealAction: boolean = false;
     protected currentGangRevealTiles: MahjongTile[] = [];
+    protected afterGangDiscardLocked: boolean = false;
     // 房间规则
     protected roomNumber: string = '';
     protected diZhu: number = 1;
@@ -401,7 +402,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.pendingRoundIncrement = true;
 
         // 检查是否最后一局，最后一局保留结算界面，由玩家手动返回房间。
-        const isLastRound = this.isAllRoundsFinished() || this.hasFinalFeeSettlement(msg);
+        const isLastRound = this.isRoomFinishedSettlement(msg);
         this.finalSettlementPendingExit = isLastRound;
         this.finalSettlementServerDisbanded = false;
 
@@ -429,8 +430,8 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.refreshTaojiangHud();
     }
 
-    protected hasFinalFeeSettlement(msg: any): boolean {
-        return Number(msg?.roomFeeTotal || 0) > 0 || Number(msg?.shuffleFeeTotal || 0) > 0;
+    protected isRoomFinishedSettlement(msg: any): boolean {
+        return msg?.roomFinished === true || this.isAllRoundsFinished() || Number(msg?.roomFeeTotal || 0) > 0 || Number(msg?.shuffleFeeTotal || 0) > 0;
     }
 
     /** 解散投票 */
@@ -822,6 +823,57 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.refreshTaojiangHud();
     }
 
+    protected isDrawnTile(tile: MahjongTile | null | undefined): boolean {
+        return !!tile && !!this.drawnTile && tile.id === this.drawnTile.id;
+    }
+
+    protected mustDiscardDrawnTile(): boolean {
+        return this.afterGangDiscardLocked || this.baoTinged[this.seat] || false;
+    }
+
+    protected onTileTapped(tile: MahjongTile, node: Node): void {
+        if (this.mustDiscardDrawnTile() && !this.isDrawnTile(tile)) {
+            this.selectedTileIndex = -1;
+            this.selectedTileId = -1;
+            this.renderMyHand();
+            if (this.drawnTile) this.showDrawnTile(this.drawnTile);
+            return;
+        }
+        super.onTileTapped(tile, node);
+    }
+
+    public selectAndDiscard(tileIndex: number): void {
+        if (this.mustDiscardDrawnTile()) {
+            this.selectedTileIndex = -1;
+            this.selectedTileId = -1;
+            this.renderMyHand();
+            if (this.drawnTile) this.showDrawnTile(this.drawnTile);
+            return;
+        }
+        super.selectAndDiscard(tileIndex);
+    }
+
+    public discardSelectedTile(playActionId: number): void {
+        if (this.mustDiscardDrawnTile()) {
+            if (!this.drawnTile)
+                return;
+            this.selectedTileIndex = -1;
+            this.selectedTileId = this.drawnTile.id;
+        }
+        super.discardSelectedTile(playActionId);
+    }
+
+    protected sendDiscard(tile: MahjongTile): void {
+        if (this.mustDiscardDrawnTile() && !this.isDrawnTile(tile)) {
+            this.selectedTileIndex = -1;
+            this.selectedTileId = -1;
+            this.renderMyHand();
+            if (this.drawnTile) this.showDrawnTile(this.drawnTile);
+            return;
+        }
+        super.sendDiscard(tile);
+    }
+
     /** 服务端动作选项通知 */
     protected onServerActionOption(msg: any): void {
         const rawOptions: any[] = msg.actionOptions || [];
@@ -893,6 +945,14 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.hideActionPanel();
         this.stopCountdown();
         this.currentActionOptions = [];
+
+        if (actorSeat === this.seat) {
+            this.afterGangDiscardLocked = true;
+            this.drawnTile = null;
+            if (this.drawnTileNode) this.drawnTileNode.removeAllChildren();
+            this.selectedTileIndex = -1;
+            this.selectedTileId = -1;
+        }
 
         // 更新自己的手牌
         if (actorSeat === this.seat && msg.handTiles) {
@@ -1852,6 +1912,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     /** 解析 huWays 位掩码返回加番名称列表（对照 MahjongGenre.h HuWay 枚举） */
     protected parseHuWayNames(huWay: number): string[] {
         const names: string[] = [];
+        const isZiMo = (huWay & 0x01) !== 0;
         // 桃江特有（高位优先）
         if (huWay & 0x01000000) names.push('天天胡');
         if (huWay & 0x00800000) names.push('报听');
@@ -1865,8 +1926,8 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         if (huWay & 0x80) names.push('人胡');
         if (huWay & 0x08) names.push('全求人');
         if (huWay & 0x04) names.push('门清');
-        if (huWay & 0x02) names.push('点炮');
-        if (huWay & 0x01) names.push('自摸');
+        if ((huWay & 0x02) && !isZiMo) names.push('点炮');
+        if (isZiMo) names.push('自摸');
         return names;
     }
 
@@ -1946,8 +2007,10 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             this.paintRect(styleCard, 660, 78, new Color(25, 38, 55, 220), new Color(218, 170, 80, 255), 14);
             const styleLabel = styleCard.addComponent(Label);
             const yingStr = isYingZhuang ? '(硬庄)' : '';
-            const styleStr = huStyleNames.length > 0 ? huStyleNames.join(' · ') : '平胡';
-            const wayStr = huWayNames.length > 0 ? `  |  ${huWayNames.join(' · ')}` : '';
+            const primaryWay = huWayNames.includes('地胡') ? '地胡' : '';
+            const styleStr = huStyleNames.length > 0 ? huStyleNames.join(' · ') : (primaryWay || '平胡');
+            const detailWays = primaryWay ? huWayNames.filter(name => name !== primaryWay) : huWayNames;
+            const wayStr = detailWays.length > 0 ? `  |  ${detailWays.join(' · ')}` : '';
             styleLabel.string = `${styleStr}${yingStr}${wayStr}`;
             styleLabel.fontSize = 26;
             styleLabel.lineHeight = 32;
@@ -2642,6 +2705,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.laiziEnabled = false;
         // 报听状态由 onTJStartRound 统一清除
         this.baoTinged = [false, false, false, false];
+        this.afterGangDiscardLocked = false;
         this.bankerSeat = -1;
         this.refreshTaojiangHud();
     }

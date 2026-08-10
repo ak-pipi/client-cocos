@@ -760,7 +760,7 @@ export class HapticManager {
             } catch (e) { /* ignore */ }
         }
         // Web 平台备用
-        else if ('vibrate' in navigator) {
+        else if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
             const durations = { light: 15, medium: 30, heavy: 50 };
             navigator.vibrate(durations[level]);
         }
@@ -787,7 +787,7 @@ export class HapticManager {
     private tryVibrate(pattern: number[]): void {
         if (typeof (globalThis as any).__napiVibrate !== 'undefined') {
             try { (globalThis as any).__napiVibrate(pattern); } catch (e) { /* ignore */ }
-        } else if ('vibrate' in navigator) {
+        } else if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
             navigator.vibrate(pattern);
         }
     }

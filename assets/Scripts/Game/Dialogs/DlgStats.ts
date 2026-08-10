@@ -27,6 +27,8 @@ interface AgencyStatsRow {
     parentPlayerId?: string;
     parentNickname?: string;
     score?: number;
+    scoreDelta?: number;
+    roundCount?: number;
     totalConsume?: number;
     giftReceived?: number;
     hasChildren?: boolean;
@@ -61,11 +63,13 @@ export class DlgStats extends Component {
     private backButton: Node | null = null;
     private tabNodes: Record<StatsTab, Node | null> = { group: null, member: null };
 
-    private currentTab: StatsTab = 'group';
+    private currentTab: StatsTab = 'member';
     private parentPlayerId = '';
     private parentName = '';
     private selectedDate = this.formatDate(new Date());
     private rows: AgencyStatsRow[] = [];
+    private summaryScoreDelta = 0;
+    private summaryRounds = 0;
     private pageNum = 1;
     private pageSize = 5;
     private total = 0;
@@ -78,7 +82,7 @@ export class DlgStats extends Component {
     onEnable(): void {
         this.parentPlayerId = '';
         this.parentName = '';
-        this.currentTab = 'group';
+        this.currentTab = 'member';
         this.pageNum = 1;
         this.updateTabs();
         this.updateContext();
@@ -125,8 +129,8 @@ export class DlgStats extends Component {
 
     private createTabs(): void {
         const tabs: Array<{ key: StatsTab; text: string; x: number }> = [
-            { key: 'group', text: '群统计', x: -510 },
-            { key: 'member', text: '成员统计', x: -350 },
+            { key: 'member', text: '直邀玩家', x: -510 },
+            { key: 'group', text: '合伙人列表', x: -350 },
         ];
         tabs.forEach((tab) => {
             const node = new Node(`Tab_${tab.key}`);
@@ -169,20 +173,19 @@ export class DlgStats extends Component {
         table.addComponent(UITransform).setContentSize(1240, 510);
         fillRoundRect(table, 1240, 510, new Color(250, 236, 205, 248), 12);
 
-        this.statusLabel = createLabel(table, '加载中...', 22, COLORS.muted, 520, 34);
-        this.statusLabel.node.setPosition(-310, 220, 0);
+        this.statusLabel = createLabel(table, '加载中...', 22, COLORS.muted, 1100, 34);
+        this.statusLabel.overflow = Label.Overflow.CLAMP;
+        this.statusLabel.node.setPosition(0, 220, 0);
 
         const header = new Node('Header');
         header.parent = table;
         header.setPosition(0, 178, 0);
         header.addComponent(UITransform).setContentSize(1180, 44);
         fillRoundRect(header, 1180, 44, COLORS.header, 8);
-        this.headerLabel(header, '身份', -505, 110);
-        this.headerLabel(header, '信息', -325, 250);
-        this.headerLabel(header, '积分', -90, 130);
-        this.headerLabel(header, '总消耗', 95, 150);
-        this.headerLabel(header, '获得赠送', 285, 150);
-        this.headerLabel(header, '操作', 485, 150);
+        this.headerLabel(header, '个人信息', -405, 390);
+        this.headerLabel(header, '输赢比赛分', -80, 170);
+        this.headerLabel(header, '场次', 170, 120);
+        this.headerLabel(header, '操作', 430, 170);
 
         const scroll = createScrollArea(table, 1180, 365, -30);
         this.content = scroll.content;
@@ -244,7 +247,12 @@ export class DlgStats extends Component {
     public onTabClicked(_event: Event, tab: StatsTab): void {
         if (this.currentTab === tab) return;
         this.currentTab = tab;
+        if (tab === 'group') {
+            this.parentPlayerId = '';
+            this.parentName = '';
+        }
         this.updateTabs();
+        this.updateContext();
         this.loadStats(true);
     }
 
@@ -279,6 +287,8 @@ export class DlgStats extends Component {
         }
         this.loading = true;
         this.rows = [];
+        this.summaryScoreDelta = 0;
+        this.summaryRounds = 0;
         this.setStatus('加载中...');
         this.renderRows();
         try {
@@ -294,6 +304,8 @@ export class DlgStats extends Component {
             const dto = await GameManager.Instance.authPost('/player/agency/stat/page', request);
             if (!this.isSuccess(dto)) {
                 this.total = 0;
+                this.summaryScoreDelta = 0;
+                this.summaryRounds = 0;
                 this.setStatus(dto?.msg || '统计数据加载失败');
                 this.updatePageLabel();
                 this.renderRows();
@@ -301,12 +313,16 @@ export class DlgStats extends Component {
             }
             this.rows = dto.records || [];
             this.total = dto.total || 0;
-            this.setStatus(`${this.formatDateText(this.selectedDate)} ${this.currentTab === 'group' ? '群统计' : '成员统计'}：${this.total} 人`);
+            this.summaryScoreDelta = Number(dto.totalScoreDelta || 0);
+            this.summaryRounds = Number(dto.totalRounds || 0);
+            this.setStatus(`${this.formatDateText(this.selectedDate)} ${this.currentTab === 'group' ? '合伙人列表' : '直邀玩家'}：${this.total} 人`);
             this.renderRows();
             this.updatePageLabel();
         } catch (err) {
             console.error('[DlgStats] load stats error:', err);
             this.total = 0;
+            this.summaryScoreDelta = 0;
+            this.summaryRounds = 0;
             this.setStatus('统计数据加载失败');
             this.updatePageLabel();
             this.renderRows();
@@ -321,13 +337,6 @@ export class DlgStats extends Component {
         const width = 1160;
         const itemHeight = 66;
         const gap = 8;
-        if (this.rows.length === 0) {
-            const empty = createLabel(this.content, '暂无数据', 22, COLORS.muted, width, 42);
-            empty.horizontalAlign = Label.HorizontalAlign.CENTER;
-            empty.node.setPosition(0, -40, 0);
-            resizeScrollContent(this.content, 1180, 1, itemHeight, gap);
-            return;
-        }
 
         this.rows.forEach((row, index) => {
             const item = new Node(`Stats_${index}`);
@@ -336,30 +345,42 @@ export class DlgStats extends Component {
             item.addComponent(UITransform).setContentSize(width, itemHeight);
             fillRoundRect(item, width, itemHeight, index % 2 === 0 ? COLORS.row : COLORS.rowAlt, 8);
 
-            const identity = createLabel(item, row.identity || row.roleText || '-', 21, COLORS.text, 104, 36);
-            identity.horizontalAlign = Label.HorizontalAlign.CENTER;
-            identity.node.setPosition(-505, 0, 0);
+            this.createAvatar(item, row, -525, 0);
+            const name = createLabel(item, this.displayName(row), 20, COLORS.text, 240, 28);
+            name.node.setPosition(-405, 15, 0);
+            const id = createLabel(item, `ID:${row.playerId || '-'}`, 18, COLORS.muted, 240, 24);
+            id.node.setPosition(-405, -13, 0);
 
-            this.createAvatar(item, row, -420, 0);
-            const name = createLabel(item, this.displayName(row), 20, COLORS.text, 190, 28);
-            name.node.setPosition(-315, 15, 0);
-            const id = createLabel(item, `ID:${row.playerId || '-'}`, 18, COLORS.muted, 190, 24);
-            id.node.setPosition(-315, -13, 0);
-
-            this.amountLabel(item, row.score, -90, 130);
-            this.amountLabel(item, row.totalConsume, 95, 150);
-            this.amountLabel(item, row.giftReceived, 285, 150);
+            this.amountLabel(item, this.scoreValue(row), -80, 170);
+            this.amountLabel(item, row.roundCount, 170, 120);
 
             if (this.currentTab === 'group') {
-                createButton(item, '查看下级', 106, 38, COLORS.teal, this.node, 'DlgStats', 'onViewJuniorClicked', String(index))
-                    .setPosition(485, 0, 0);
+                createButton(item, '查看玩家', 106, 38, COLORS.teal, this.node, 'DlgStats', 'onViewJuniorClicked', String(index))
+                    .setPosition(430, 0, 0);
             } else {
                 const dash = createLabel(item, '-', 22, COLORS.muted, 110, 36);
                 dash.horizontalAlign = Label.HorizontalAlign.CENTER;
-                dash.node.setPosition(485, 0, 0);
+                dash.node.setPosition(430, 0, 0);
             }
         });
-        resizeScrollContent(this.content, 1180, this.rows.length, itemHeight, gap);
+
+        const totalIndex = this.rows.length;
+        const totalRow = new Node('StatsTotal');
+        totalRow.parent = this.content;
+        totalRow.setPosition(0, -(totalIndex * (itemHeight + gap) + itemHeight / 2), 0);
+        totalRow.addComponent(UITransform).setContentSize(width, itemHeight);
+        fillRoundRect(totalRow, width, itemHeight, COLORS.header, 8);
+        const totalTitle = createLabel(totalRow, '总计', 22, COLORS.title, 390, 36);
+        totalTitle.horizontalAlign = Label.HorizontalAlign.CENTER;
+        totalTitle.node.setPosition(-405, 0, 0);
+        const totalScore = createLabel(totalRow, this.amountText(this.summaryScoreDelta), 22, COLORS.title, 170, 36);
+        totalScore.horizontalAlign = Label.HorizontalAlign.CENTER;
+        totalScore.node.setPosition(-80, 0, 0);
+        const totalRounds = createLabel(totalRow, this.amountText(this.summaryRounds), 22, COLORS.title, 120, 36);
+        totalRounds.horizontalAlign = Label.HorizontalAlign.CENTER;
+        totalRounds.node.setPosition(170, 0, 0);
+
+        resizeScrollContent(this.content, 1180, this.rows.length + 1, itemHeight, gap);
     }
 
     private createAvatar(parent: Node, row: AgencyStatsRow, x: number, y: number): void {
@@ -399,7 +420,9 @@ export class DlgStats extends Component {
 
     private updateContext(): void {
         if (this.contextLabel) {
-            const target = this.parentPlayerId ? `${this.parentName || this.parentPlayerId} 的直邀` : '当前账号直邀';
+            const target = this.parentPlayerId
+                ? `${this.parentName || this.parentPlayerId} 的线下玩家`
+                : (this.currentTab === 'group' ? '当前账号直邀合伙人' : '当前账号直邀玩家');
             this.contextLabel.string = target;
         }
         if (this.dateLabel) {
@@ -426,12 +449,17 @@ export class DlgStats extends Component {
 
     private setStatus(text: string): void {
         if (this.statusLabel) {
-            this.statusLabel.string = text;
+            const value = (text || '').replace(/\s+/g, ' ').trim();
+            this.statusLabel.string = value.length > 42 ? `${value.slice(0, 42)}...` : value;
         }
     }
 
     private displayName(row: AgencyStatsRow): string {
         return row.nickname || row.account || row.playerId || '-';
+    }
+
+    private scoreValue(row: AgencyStatsRow): number | undefined {
+        return row.scoreDelta != null ? row.scoreDelta : row.score;
     }
 
     private amountText(value: number | undefined): string {

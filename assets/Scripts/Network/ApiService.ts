@@ -125,23 +125,23 @@ export class ApiService {
     // ==================== 游戏房间 API（web-server /player/game/*） ====================
 
     /** 创建游戏房间 */
-    async createGameRoom(gameType: number, params?: Record<string, any>) {
-        return GameRoomApi.Instance.createRoom(gameType, params);
+    async createGameRoom(gameType: number, params?: Record<string, any>, carryScore?: number) {
+        return GameRoomApi.Instance.createRoom(gameType, params, carryScore);
     }
 
     /** 通过房间号加入 */
-    async joinGameRoomByNumber(number: string, gameType: number) {
-        return GameRoomApi.Instance.joinByNumber(number, gameType);
+    async joinGameRoomByNumber(number: string, gameType: number, carryScore?: number) {
+        return GameRoomApi.Instance.joinByNumber(number, gameType, carryScore);
     }
 
     /** 通过 venueId 加入 */
-    async joinGameRoomByVenueId(venueId: string, gameType: number) {
-        return GameRoomApi.Instance.joinByVenueId(venueId, gameType);
+    async joinGameRoomByVenueId(venueId: string, gameType: number, carryScore?: number) {
+        return GameRoomApi.Instance.joinByVenueId(venueId, gameType, carryScore);
     }
 
     /** 区域匹配进入 */
-    async joinGameRoomByDistrict(districtId: number) {
-        return GameRoomApi.Instance.joinByDistrict(districtId);
+    async joinGameRoomByDistrict(districtId: number, carryScore?: number) {
+        return GameRoomApi.Instance.joinByDistrict(districtId, carryScore);
     }
 
     /** 查询区域玩家数量 */

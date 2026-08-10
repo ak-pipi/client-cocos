@@ -3,7 +3,7 @@
 // Email 393817707@qq.com
 // Date 2025.10.22
 
-import { _decorator, Component, EditBox, Label, Node, Sprite, sys, ImageAsset, Texture2D, SpriteFrame, Toggle, AudioClip } from 'cc';
+import { _decorator, Component, EditBox, Label, Node, Sprite, sys, ImageAsset, Texture2D, SpriteFrame, Toggle, AudioClip, assetManager } from 'cc';
 import { ResourceLoader } from '../Manager/ResourceLoader';
 import { AesUtils } from '../Utils/AesUtils';
 import { CommonUtils } from '../Utils/CommonUtils';
@@ -110,20 +110,39 @@ export class Login extends Component {
             }
             this.uuidCode = dto.uuid;
             let base64Img = "data:image/jpg;base64," + dto.img;
-            let image = new Image();
-            image.onload = function() {
-                let texture = new Texture2D();
-                texture.image = new ImageAsset(image);
-                let spriteFrame = new SpriteFrame();
-                spriteFrame.texture = texture;
-                onGetaptchaCode(spriteFrame);
-            }
-            image.src = base64Img;
+            this.loadCaptchaSpriteFrame(base64Img, onGetaptchaCode);
         }, (err) => {
             console.log("获取验证码失败: ", err);
             Client.Instance.showPromptTip("获取验证码失败，请检查网络或稍后重试");
         }).then(() => {
             this.captchaLoading = false;
+        });
+    }
+
+    private loadCaptchaSpriteFrame(base64Img: string, onGetaptchaCode: Function): void {
+        const createSpriteFrame = (imageAsset: ImageAsset) => {
+            let texture = new Texture2D();
+            texture.image = imageAsset;
+            let spriteFrame = new SpriteFrame();
+            spriteFrame.texture = texture;
+            onGetaptchaCode(spriteFrame);
+        };
+
+        if (typeof Image !== 'undefined') {
+            let image = new Image();
+            image.onload = function() {
+                createSpriteFrame(new ImageAsset(image));
+            }
+            image.src = base64Img;
+            return;
+        }
+
+        assetManager.loadRemote<ImageAsset>(base64Img, { ext: '.jpg' } as any, (err, imageAsset) => {
+            if (err || !imageAsset) {
+                console.log("加载验证码图片失败: ", err);
+                return;
+            }
+            createSpriteFrame(imageAsset);
         });
     }
 

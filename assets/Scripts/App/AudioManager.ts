@@ -13,7 +13,7 @@
  * Author: AI Assistant
  */
 
-import { _decorator, Component, Node, AudioSource, AudioClip, resources, AssetManager, director, game } from 'cc';
+import { _decorator, Component, Node, AudioSource, AudioClip, resources, AssetManager, director, game, sys } from 'cc';
 
 const { ccclass, property } = _decorator;
 
@@ -506,6 +506,18 @@ export class AudioManager {
         return this.masterVolume;
     }
 
+    public setBGMVolume(volume: number): void {
+        this.setChannelVolume(AudioChannel.BGM, volume);
+    }
+
+    public setSFXVolume(volume: number): void {
+        this.setChannelVolume(AudioChannel.SFX, volume);
+    }
+
+    public static playSFX(path: string, options?: PlayOptions): void {
+        AudioManager.Instance.play(path, AudioChannel.SFX, options);
+    }
+
     /** 获取考虑了总体音量的有效音量 */
     private getEffectiveVolume(channel: AudioChannel): number {
         const chVol = this.volumes.get(channel) ?? AudioManager.DEFAULT_VOLUMES[channel];
@@ -638,7 +650,7 @@ export class AudioManager {
 
     private loadVolumesFromStorage(): void {
         try {
-            const saved = localStorage.getItem(AudioManager.STORAGE_KEY);
+            const saved = sys.localStorage.getItem(AudioManager.STORAGE_KEY);
             if (saved) {
                 const data: VolumeSnapshot = JSON.parse(saved);
                 this.masterVolume = data.master ?? 1;
@@ -674,7 +686,7 @@ export class AudioManager {
                 env: this.volumes.get(AudioChannel.Environment) ?? AudioManager.DEFAULT_VOLUMES[AudioChannel.Environment],
                 reward: this.volumes.get(AudioChannel.Reward) ?? AudioManager.DEFAULT_VOLUMES[AudioChannel.Reward],
             };
-            localStorage.setItem(AudioManager.STORAGE_KEY, JSON.stringify(snapshot));
+            sys.localStorage.setItem(AudioManager.STORAGE_KEY, JSON.stringify(snapshot));
         } catch (e) {
             console.warn('[AudioManager] Failed to save volumes:', e);
         }

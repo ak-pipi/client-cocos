@@ -11,6 +11,7 @@
  * Author: AI Assistant
  */
 
+import { sys } from 'cc';
 import { AudioManager, AudioChannel } from './AudioManager';
 
 // ==================== 设置数据结构 ====================
@@ -191,7 +192,7 @@ export class AudioSettings {
     public setVibration(enabled: boolean): void {
         this.currentSettings.vibrationEnabled = enabled;
         try {
-            localStorage.setItem(VIBRATION_STORAGE_KEY, String(enabled));
+            sys.localStorage.setItem(VIBRATION_STORAGE_KEY, String(enabled));
         } catch (_) {}
         this.notifyChange();
     }
@@ -220,7 +221,7 @@ export class AudioSettings {
     public setFxIntensity(intensity: 'low' | 'medium' | 'high' | 'ultra'): void {
         this.currentSettings.fxIntensity = intensity;
         try {
-            localStorage.setItem(FX_INTENSITY_KEY, intensity);
+            sys.localStorage.setItem(FX_INTENSITY_KEY, intensity);
         } catch (_) {}
         this.notifyChange();
     }
@@ -231,7 +232,7 @@ export class AudioSettings {
     public setLowPerfMode(enabled: boolean): void {
         this.currentSettings.lowPerfMode = enabled;
         try {
-            localStorage.setItem(LOW_PERF_MODE_KEY, String(enabled));
+            sys.localStorage.setItem(LOW_PERF_MODE_KEY, String(enabled));
         } catch (_) {}
         
         // 低性能模式下自动降低音效质量
@@ -294,7 +295,7 @@ export class AudioSettings {
 
     private loadFromStorage(): FullAudioSettings {
         try {
-            const saved = localStorage.getItem(SETTINGS_STORAGE_KEY);
+            const saved = sys.localStorage.getItem(SETTINGS_STORAGE_KEY);
             if (saved) {
                 const parsed = JSON.parse(saved);
                 return { ...DEFAULT_AUDIO_SETTINGS, ...parsed };
@@ -306,11 +307,11 @@ export class AudioSettings {
         // 尝试逐个读取旧格式兼容
         const settings = { ...DEFAULT_AUDIO_SETTINGS };
         try {
-            const vib = localStorage.getItem(VIBRATION_STORAGE_KEY);
+            const vib = sys.localStorage.getItem(VIBRATION_STORAGE_KEY);
             if (vib !== null) settings.vibrationEnabled = vib === 'true';
-            const fx = localStorage.getItem(FX_INTENSITY_KEY);
+            const fx = sys.localStorage.getItem(FX_INTENSITY_KEY);
             if (fx) settings.fxIntensity = fx;
-            const lp = localStorage.getItem(LOW_PERF_MODE_KEY);
+            const lp = sys.localStorage.getItem(LOW_PERF_MODE_KEY);
             if (lp !== null) settings.lowPerfMode = lp === 'true';
         } catch (_) {}
 
@@ -319,11 +320,11 @@ export class AudioSettings {
 
     private saveToStorage(): void {
         try {
-            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(this.currentSettings));
+            sys.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(this.currentSettings));
             // 兼容旧 key
-            localStorage.setItem(VIBRATION_STORAGE_KEY, String(this.currentSettings.vibrationEnabled));
-            localStorage.setItem(FX_INTENSITY_KEY, this.currentSettings.fxIntensity);
-            localStorage.setItem(LOW_PERF_MODE_KEY, String(this.currentSettings.lowPerfMode));
+            sys.localStorage.setItem(VIBRATION_STORAGE_KEY, String(this.currentSettings.vibrationEnabled));
+            sys.localStorage.setItem(FX_INTENSITY_KEY, this.currentSettings.fxIntensity);
+            sys.localStorage.setItem(LOW_PERF_MODE_KEY, String(this.currentSettings.lowPerfMode));
         } catch (e) {
             console.warn('[AudioSettings] Save failed:', e);
         }

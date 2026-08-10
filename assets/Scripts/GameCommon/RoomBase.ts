@@ -23,6 +23,7 @@ import { Client } from '../Game/Client';
 import { CommonUtils } from '../Utils/CommonUtils';
 import { ResourceLoader } from '../Manager/ResourceLoader';
 import { GameRoomApi } from '../Network/GameRoomApi';
+import { CarryScorePrompt } from '../Game/CarryScorePrompt';
 import { RoomState, PlayerRoomState, SeatPosition, RoomPlayerInfo, RoomInfo, RoundSettlementData, FinalSettlementData, CreateRoomOptions } from './GameTypes';
 
 const { ccclass, property } = _decorator;
@@ -1201,6 +1202,9 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
             label.node.active = parts.length > 0;
         };
         setText(roomFeeText ? '' : '收益箱统计加载中');
+        if (roomFeeText) {
+            await new Promise((resolve) => setTimeout(resolve, 800));
+        }
 
         const maxAttempts = 4;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -1225,7 +1229,7 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     protected formatSettlementIncomeBoxText(dto: any): string {
         const withdrawable = this.getIncomeBoxWithdrawableAmount(dto);
         const today = Math.max(
-            this.toIncomeBoxNumber(dto?.availableTodayCommission),
+            this.toIncomeBoxNumber(dto?.todayIncomeAmount),
             this.toIncomeBoxNumber(dto?.todayPendingCommission) + this.toIncomeBoxNumber(dto?.todayDepositSettledAmount),
             this.toIncomeBoxNumber(dto?.todayCommission),
         );
@@ -1234,7 +1238,7 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
             today,
             withdrawable,
         );
-        return `收益箱 今日 ${today}，可提 ${withdrawable}，累计 ${total}`;
+        return `收益箱 今日收益 ${today}，可提 ${withdrawable}，累计 ${total}`;
     }
 
     protected getIncomeBoxWithdrawableAmount(dto: any): number {
@@ -1242,13 +1246,14 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
             + Math.max(this.toIncomeBoxNumber(dto?.depositSettledAmount), this.toIncomeBoxNumber(dto?.prepaidAmount))
             + this.toIncomeBoxNumber(dto?.legacyReward);
         const todayAvailable = this.toIncomeBoxNumber(dto?.availableTodayCommission)
+            || this.toIncomeBoxNumber(dto?.todayAvailableAmount)
+            || this.toIncomeBoxNumber(dto?.todayWithdrawableAmount)
             || (this.toIncomeBoxNumber(dto?.todayPendingCommission) + this.toIncomeBoxNumber(dto?.todayDepositSettledAmount));
         return Math.max(
             this.toIncomeBoxNumber(dto?.balance),
             this.toIncomeBoxNumber(dto?.pendingAmount),
             ledgerTotal,
             todayAvailable,
-            this.toIncomeBoxNumber(dto?.todayCommission),
         );
     }
 
@@ -1366,9 +1371,11 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
      * @param level 房间级别
      * @param extraData 额外参数
      */
-    protected createRoomAPI(gameType: number, level: number, extraData?: any): Promise<void> {
+    protected async createRoomAPI(gameType: number, level: number, extraData?: any): Promise<void> {
         const params = Object.assign({ level }, extraData || {});
-        return GameRoomApi.Instance.createRoom(gameType, params).then((result) => {
+        const carryScore = await CarryScorePrompt.requestByBaseScore(this.node, params.base_score || params.baseScore || 0);
+        if (carryScore == null) return;
+        return GameRoomApi.Instance.createRoom(gameType, params, carryScore).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
         }).catch((err: any) => {
@@ -1379,8 +1386,10 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     /**
      * 通过 districtId 加入场次
      */
-    protected enterDistrictAPI(districtId: number, gameType: number): Promise<void> {
-        return GameRoomApi.Instance.joinByDistrict(districtId).then((result) => {
+    protected async enterDistrictAPI(districtId: number, gameType: number): Promise<void> {
+        const carryScore = await CarryScorePrompt.request(this.node, 0);
+        if (carryScore == null) return;
+        return GameRoomApi.Instance.joinByDistrict(districtId, carryScore).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
         }).catch((err: any) => {
@@ -1391,8 +1400,10 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     /**
      * 通过房号加入房间
      */
-    protected joinRoomByNumberAPI(number: string, gameType: number): Promise<void> {
-        return GameRoomApi.Instance.joinByNumber(number, gameType).then((result) => {
+    protected async joinRoomByNumberAPI(number: string, gameType: number): Promise<void> {
+        const carryScore = await CarryScorePrompt.request(this.node, 0);
+        if (carryScore == null) return;
+        return GameRoomApi.Instance.joinByNumber(number, gameType, carryScore).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
         }).catch((err: any) => {
@@ -1403,8 +1414,10 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
     /**
      * 通过 venueId 加入房间
      */
-    protected joinRoomByVenueIdAPI(venueId: string, gameType: number): Promise<void> {
-        return GameRoomApi.Instance.joinByVenueId(venueId, gameType).then((result) => {
+    protected async joinRoomByVenueIdAPI(venueId: string, gameType: number): Promise<void> {
+        const carryScore = await CarryScorePrompt.request(this.node, 0);
+        if (carryScore == null) return;
+        return GameRoomApi.Instance.joinByVenueId(venueId, gameType, carryScore).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue());
         }).catch((err: any) => {

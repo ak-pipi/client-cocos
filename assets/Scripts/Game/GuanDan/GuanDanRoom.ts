@@ -720,6 +720,9 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
             this.dlgResult.setRoomFeeInfo(parts.join('\n'));
         };
         setText(roomFeeText ? '' : '收益箱统计加载中');
+        if (roomFeeText) {
+            await new Promise((resolve) => setTimeout(resolve, 800));
+        }
 
         const maxAttempts = 4;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -744,7 +747,7 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
     private formatSettlementIncomeBoxText(dto: any): string {
         const withdrawable = this.getIncomeBoxWithdrawableAmount(dto);
         const today = Math.max(
-            this.toIncomeBoxNumber(dto?.availableTodayCommission),
+            this.toIncomeBoxNumber(dto?.todayIncomeAmount),
             this.toIncomeBoxNumber(dto?.todayPendingCommission) + this.toIncomeBoxNumber(dto?.todayDepositSettledAmount),
             this.toIncomeBoxNumber(dto?.todayCommission),
         );
@@ -753,7 +756,7 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
             today,
             withdrawable,
         );
-        return `收益箱 今日 ${today}，可提 ${withdrawable}，累计 ${total}`;
+        return `收益箱 今日收益 ${today}，可提 ${withdrawable}，累计 ${total}`;
     }
 
     private getIncomeBoxWithdrawableAmount(dto: any): number {
@@ -761,13 +764,14 @@ export class GuanDanRoom extends Component implements NetMsgHandler, ConnectionH
             + Math.max(this.toIncomeBoxNumber(dto?.depositSettledAmount), this.toIncomeBoxNumber(dto?.prepaidAmount))
             + this.toIncomeBoxNumber(dto?.legacyReward);
         const todayAvailable = this.toIncomeBoxNumber(dto?.availableTodayCommission)
+            || this.toIncomeBoxNumber(dto?.todayAvailableAmount)
+            || this.toIncomeBoxNumber(dto?.todayWithdrawableAmount)
             || (this.toIncomeBoxNumber(dto?.todayPendingCommission) + this.toIncomeBoxNumber(dto?.todayDepositSettledAmount));
         return Math.max(
             this.toIncomeBoxNumber(dto?.balance),
             this.toIncomeBoxNumber(dto?.pendingAmount),
             ledgerTotal,
             todayAvailable,
-            this.toIncomeBoxNumber(dto?.todayCommission),
         );
     }
 

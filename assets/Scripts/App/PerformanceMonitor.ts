@@ -154,7 +154,7 @@ export class PerformanceMonitor {
     onUpdate(deltaTime: number): void {
         if (!this._initialized || !this._config.enabled) return;
 
-        const now = performance.now();
+        const now = this.nowMs();
 
         // 1. FPS 计算
         this.recordFrame(now);
@@ -247,7 +247,7 @@ export class PerformanceMonitor {
     // ==================== 内存监控 ====================
 
     private checkMemory(): void {
-        const memInfo = (performance as any).memory;
+        const memInfo = this.getMemoryInfo();
         if (!memInfo) return;
 
         const usedMB = Math.floor(memInfo.usedJSHeapSize / (1024 * 1024));
@@ -301,7 +301,7 @@ export class PerformanceMonitor {
         if (this._timers.has(name)) {
             console.warn(`[PerformanceMonitor] Timer "${name}" already running, restarting`);
         }
-        this._timers.set(name, { name, startTime: performance.now(), category, tags });
+        this._timers.set(name, { name, startTime: this.nowMs(), category, tags });
     }
 
     /** 结束计时 */
@@ -312,7 +312,7 @@ export class PerformanceMonitor {
             return null;
         }
 
-        const duration = performance.now() - entry.startTime;
+        const duration = this.nowMs() - entry.startTime;
         this._timerResults.push({
             name: name,
             duration: Math.round(duration),
@@ -472,13 +472,17 @@ export class PerformanceMonitor {
     private startReportingCycle(): void {
         if (!this._config.reportUrl) return;
 
-        this._reportTimer = window.setInterval(() => {
+        const timerHost = typeof window !== 'undefined' ? window : globalThis as any;
+        if (typeof timerHost.setInterval !== 'function') return;
+
+        this._reportTimer = timerHost.setInterval(() => {
             this.sendReport();
         }, this._config.reportIntervalMs) as unknown as number;
     }
 
     private async sendReport(): Promise<void> {
         if (!this._config.reportUrl) return;
+        if (typeof fetch !== 'function') return;
 
         const payload = {
             type: 'performance_report',
@@ -522,6 +526,23 @@ export class PerformanceMonitor {
             jsHeapMB: 0, jsHeapTrend: 'stable',
             uptimeSeconds: 0, totalFrames: 0, droppedFrames: 0,
         };
+    }
+
+    private nowMs(): number {
+        try {
+            if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+                return performance.now();
+            }
+        } catch {}
+        return Date.now();
+    }
+
+    private getMemoryInfo(): any {
+        try {
+            return typeof performance !== 'undefined' ? (performance as any).memory : null;
+        } catch {
+            return null;
+        }
     }
 
     /** 启用/禁用 */

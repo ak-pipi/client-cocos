@@ -3,6 +3,7 @@ import { Client } from '../Client';
 import { GameType, DistrictId } from '../../Common/ConstDefines';
 import { ResourceLoader } from '../../Manager/ResourceLoader';
 import { GameRoomApi } from '../../Network/GameRoomApi';
+import { CarryScorePrompt } from '../CarryScorePrompt';
 
 const { ccclass, property } = _decorator;
 
@@ -83,8 +84,10 @@ export class GuanDanHall extends Component {
         }
     }
 
-    private createRoom(level: number) {
-        GameRoomApi.Instance.createRoom(GameType.GuanDan, { level }).then((result) => {
+    private async createRoom(level: number) {
+        const carryScore = await CarryScorePrompt.request(this.node, 0);
+        if (carryScore == null) return;
+        GameRoomApi.Instance.createRoom(GameType.GuanDan, { level }, carryScore).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, GameType.GuanDan, () => this.onEnterVenue());
         }).catch((err) => {
@@ -92,8 +95,10 @@ export class GuanDanHall extends Component {
         });
     }
 
-    private enterDistrict(districtId: number) {
-        GameRoomApi.Instance.joinByDistrict(districtId).then((result) => {
+    private async enterDistrict(districtId: number) {
+        const carryScore = await CarryScorePrompt.request(this.node, 0);
+        if (carryScore == null) return;
+        GameRoomApi.Instance.joinByDistrict(districtId, carryScore).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, GameType.GuanDan, () => this.onEnterVenue());
         }).catch((err) => {
@@ -126,7 +131,7 @@ export class GuanDanHall extends Component {
         }
     }
 
-    public onNumClicked(event: Event, customEventData: any | null) {
+    public async onNumClicked(event: Event, customEventData: any | null) {
         if (this.count > 5) return;
         let num: number = Number(customEventData);
         if (isNaN(num)) return;
@@ -138,7 +143,9 @@ export class GuanDanHall extends Component {
             for (let i: number = 0; i < 6; i++) {
                 number += this.nums[i].toString();
             }
-            GameRoomApi.Instance.joinByNumber(number, GameType.GuanDan).then((result) => {
+            const carryScore = await CarryScorePrompt.request(this.node, 0);
+            if (carryScore == null) return;
+            GameRoomApi.Instance.joinByNumber(number, GameType.GuanDan, carryScore).then((result) => {
                 if (!result) return;
                 GameRoomApi.Instance.enterVenue(result, GameType.GuanDan, () => this.onEnterVenue());
             }).catch((err) => {

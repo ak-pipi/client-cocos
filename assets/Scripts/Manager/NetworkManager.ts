@@ -209,7 +209,10 @@ export class NetworkManager implements NetMsgHandler  {
         }
         this.connectionState = ConnectionState.Disconnect;
         this.onDisconnect();
-        if (document.hasFocus()) {
+        const documentHasFocus = typeof document === 'undefined'
+            || typeof document.hasFocus !== 'function'
+            || document.hasFocus();
+        if (documentHasFocus) {
             this.reconnect();
         } else {
             this.lostFucusReconnect = true;

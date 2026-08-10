@@ -53,24 +53,24 @@ export interface StakeOption {
 /** 每种游戏的倍数选项列表 */
 export const GAME_STAKE_OPTIONS: Record<GameId, StakeOption[]> = {
     [GameId.TaojiangMahjong]: [
-        { baseScore: 5, roundCount: 1, districtId: 9, label: '台桌5 · 单局' },
-        { baseScore: 10, roundCount: 1, districtId: 10, label: '台桌10 · 单局' },
-        { baseScore: 25, roundCount: 1, districtId: 11, label: '台桌25 · 单局' },
-        { baseScore: 1, roundCount: 8, districtId: 12, label: '台桌1 · 8局' },
-        { baseScore: 2, roundCount: 8, districtId: 13, label: '台桌2 · 8局' },
-        { baseScore: 5, roundCount: 8, districtId: 14, label: '台桌5 · 8局' },
-        { baseScore: 10, roundCount: 8, districtId: 15, label: '台桌10 · 8局' },
-        { baseScore: 20, roundCount: 8, districtId: 16, label: '台桌20 · 8局' },
+        { baseScore: 5, roundCount: 1, districtId: 9, label: '单局桃麻5' },
+        { baseScore: 10, roundCount: 1, districtId: 10, label: '单局桃麻10' },
+        { baseScore: 25, roundCount: 1, districtId: 11, label: '单局桃麻25' },
+        { baseScore: 1, roundCount: 8, districtId: 12, label: '8局桃麻1' },
+        { baseScore: 2, roundCount: 8, districtId: 13, label: '8局桃麻2' },
+        { baseScore: 5, roundCount: 8, districtId: 14, label: '8局桃麻5' },
+        { baseScore: 10, roundCount: 8, districtId: 15, label: '8局桃麻10' },
+        { baseScore: 20, roundCount: 8, districtId: 16, label: '8局桃麻20' },
     ],
     [GameId.HongzhongMahjong]: [
-        { baseScore: 5, roundCount: 1, districtId: 41, label: '台桌5 · 单局' },
-        { baseScore: 10, roundCount: 1, districtId: 42, label: '台桌10 · 单局' },
-        { baseScore: 25, roundCount: 1, districtId: 43, label: '台桌25 · 单局' },
-        { baseScore: 1, roundCount: 8, districtId: 17, label: '台桌1 · 8局' },
-        { baseScore: 2, roundCount: 8, districtId: 18, label: '台桌2 · 8局' },
-        { baseScore: 5, roundCount: 8, districtId: 19, label: '台桌5 · 8局' },
-        { baseScore: 10, roundCount: 8, districtId: 20, label: '台桌10 · 8局' },
-        { baseScore: 20, roundCount: 8, districtId: 44, label: '台桌20 · 8局' },
+        { baseScore: 1, roundCount: 1, districtId: 43, label: '单局红中1' },
+        { baseScore: 5, roundCount: 1, districtId: 41, label: '单局红中5' },
+        { baseScore: 10, roundCount: 1, districtId: 42, label: '单局红中10' },
+        { baseScore: 1, roundCount: 8, districtId: 17, label: '8局红中1' },
+        { baseScore: 2, roundCount: 8, districtId: 18, label: '8局红中2' },
+        { baseScore: 5, roundCount: 8, districtId: 19, label: '8局红中5' },
+        { baseScore: 10, roundCount: 8, districtId: 20, label: '8局红中10' },
+        { baseScore: 20, roundCount: 8, districtId: 44, label: '8局红中20' },
     ],
     [GameId.ChangshaMahjong]: [
         { baseScore: 5, roundCount: 1, districtId: 45, label: '台桌5 · 单局' },
@@ -84,14 +84,14 @@ export const GAME_STAKE_OPTIONS: Record<GameId, StakeOption[]> = {
     ],
     [GameId.Doudizhu]: [],
     [GameId.Paodekuai]: [
-        { baseScore: 5, roundCount: 1, districtId: 49, label: '台桌5 · 单局' },
-        { baseScore: 10, roundCount: 1, districtId: 50, label: '台桌10 · 单局' },
-        { baseScore: 25, roundCount: 1, districtId: 51, label: '台桌25 · 单局' },
-        { baseScore: 1, roundCount: 8, districtId: 25, label: '台桌1 · 8局' },
-        { baseScore: 2, roundCount: 8, districtId: 26, label: '台桌2 · 8局' },
-        { baseScore: 5, roundCount: 8, districtId: 27, label: '台桌5 · 8局' },
-        { baseScore: 10, roundCount: 8, districtId: 28, label: '台桌10 · 8局' },
-        { baseScore: 20, roundCount: 8, districtId: 52, label: '台桌20 · 8局' },
+        { baseScore: 25, roundCount: 1, districtId: 51, label: '单局跑快1' },
+        { baseScore: 5, roundCount: 1, districtId: 49, label: '单局跑快5' },
+        { baseScore: 10, roundCount: 1, districtId: 50, label: '单局跑快10' },
+        { baseScore: 1, roundCount: 8, districtId: 25, label: '8局跑快1' },
+        { baseScore: 2, roundCount: 8, districtId: 26, label: '8局跑快2' },
+        { baseScore: 5, roundCount: 8, districtId: 27, label: '8局跑快5' },
+        { baseScore: 10, roundCount: 8, districtId: 28, label: '8局跑快10' },
+        { baseScore: 20, roundCount: 8, districtId: 52, label: '8局跑快20' },
     ],
     [GameId.Waihuzi]: [
         { baseScore: 1, roundCount: 8, districtId: 29, label: '底注1 · 8局' },
@@ -106,3 +106,36 @@ export const GAME_STAKE_OPTIONS: Record<GameId, StakeOption[]> = {
         { baseScore: 10, roundCount: 8, districtId: 36, label: '底注10 · 8局' },
     ],
 };
+
+const MIN_CARRY_SCORE_MULTIPLIER = 8;
+
+function resolveDefaultMinCarryScore(baseScore: number): number {
+    return baseScore > 0 ? Math.ceil(baseScore * MIN_CARRY_SCORE_MULTIPLIER) : 0;
+}
+
+function matchCarryScore(baseScore: number, rules: Record<number, number>): number | null {
+    const score = rules[baseScore];
+    return score != null ? score : null;
+}
+
+/** 最低携带积分规则，需与 web_server GameServiceImpl 保持一致。 */
+export function resolveMinCarryScore(gameId: GameId | string | null | undefined, baseScore: any, roundCount?: any): number {
+    const base = Number(baseScore);
+    if (!isFinite(base) || base <= 0) return 0;
+    const round = Number(roundCount) || 8;
+
+    if (gameId === GameId.TaojiangMahjong) {
+        if (round === 1) {
+            const matched = matchCarryScore(base, { 5: 260, 10: 500, 25: 1500 });
+            if (matched != null) return matched;
+        } else if (round === 8) {
+            const matched = matchCarryScore(base, { 1: 50, 2: 100, 5: 380, 10: 1000, 20: 2000 });
+            if (matched != null) return matched;
+        }
+    } else if (gameId === GameId.HongzhongMahjong && round === 1) {
+        const matched = matchCarryScore(base, { 1: 40, 2: 80, 3: 120, 5: 200, 10: 400, 20: 800, 25: 1200, 30: 1200 });
+        if (matched != null) return matched;
+    }
+
+    return resolveDefaultMinCarryScore(base);
+}

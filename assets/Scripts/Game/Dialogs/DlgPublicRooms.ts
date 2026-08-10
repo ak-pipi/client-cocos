@@ -2,6 +2,7 @@ import { _decorator, Component, Node, Label, UITransform, Color } from 'cc';
 import { Client } from '../Client';
 import { GameRoomApi, PublicRoomItem } from '../../Network/GameRoomApi';
 import { GameType } from '../../Common/ConstDefines';
+import { CarryScorePrompt } from '../CarryScorePrompt';
 import {
     UI_COLORS, createOverlayRoot, createLabel, createButton,
     createScrollArea, fillRoundRect, resizeScrollContent,
@@ -88,11 +89,14 @@ export class DlgPublicRooms extends Component {
         this.node.active = false;
     }
 
-    public onJoinClicked(_event: Event, index: string): void {
+    public async onJoinClicked(_event: Event, index: string): Promise<void> {
         const room = this.rooms[Number(index)];
         if (!room) return;
 
-        GameRoomApi.Instance.joinByVenueId(room.venueId, room.gameType).then((result) => {
+        const carryScore = await CarryScorePrompt.request(this.node, Number(room.deposit) || 0);
+        if (carryScore == null) return;
+
+        GameRoomApi.Instance.joinByVenueId(room.venueId, room.gameType, carryScore).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, room.gameType, () => {
                 Client.Instance.showPromptTip(`已进入房间 ${room.number}`);

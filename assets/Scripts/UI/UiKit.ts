@@ -97,7 +97,7 @@ function scrubEditBoxDefaultLabels(editBox: EditBox, keepLabels: Array<Label | n
                 label.string = '';
             }
         });
-        stripDefaultLabelNodes(editBox.node, keep);
+        stripDefaultLabelNodes(editBox.node, keep, true);
     };
 
     scrub();
@@ -168,9 +168,13 @@ function isDefaultEditBoxLabel(label: Label): boolean {
     return (label.string || '').trim().toLowerCase() === 'label';
 }
 
-function stripDefaultLabelNodes(node: Node, keep: Set<Label>): void {
+function isGeneratedEditBoxLabel(label: Label): boolean {
+    return label.node.name === 'TEXT_LABEL' || label.node.name === 'PLACEHOLDER_LABEL';
+}
+
+function stripDefaultLabelNodes(node: Node, keep: Set<Label>, stripGenerated = false): void {
     const label = node.getComponent(Label);
-    if (label && !keep.has(label) && isDefaultEditBoxLabel(label)) {
+    if (label && !keep.has(label) && (isDefaultEditBoxLabel(label) || (stripGenerated && isGeneratedEditBoxLabel(label)))) {
         label.string = '';
         label.fontSize = 0;
         label.lineHeight = 0;
@@ -182,7 +186,7 @@ function stripDefaultLabelNodes(node: Node, keep: Set<Label>): void {
             transform.setContentSize(0, 0);
         }
     }
-    node.children.forEach((child) => stripDefaultLabelNodes(child, keep));
+    node.children.forEach((child) => stripDefaultLabelNodes(child, keep, stripGenerated));
 }
 
 export function createButton(
@@ -217,21 +221,40 @@ export function createButton(
     return btnNode;
 }
 
+export function blockInputOnNode(node: Node | null, width?: number, height?: number): void {
+    if (!node || !node.isValid) return;
+    if (width != null && height != null) {
+        const transform = node.getComponent(UITransform) || node.addComponent(UITransform);
+        transform.setContentSize(width, height);
+    } else if (!node.getComponent(UITransform)) {
+        node.addComponent(UITransform);
+    }
+    if (!node.getComponent(BlockInputEvents)) {
+        node.addComponent(BlockInputEvents);
+    }
+}
+
+export function makeModalLayer(root: Node | null, width = 1920, height = 1080): void {
+    blockInputOnNode(root, width, height);
+    if (root?.parent) {
+        root.setSiblingIndex(root.parent.children.length - 1);
+    }
+}
+
 export function createOverlayRoot(parent: Node, name: string): Node {
     const root = new Node(name);
     root.parent = parent;
-    const transform = root.addComponent(UITransform);
-    transform.setContentSize(1920, 1080);
+    makeModalLayer(root);
 
     const mask = new Node('Mask');
     mask.parent = root;
-    mask.addComponent(UITransform).setContentSize(1920, 1080);
-    mask.addComponent(BlockInputEvents);
+    blockInputOnNode(mask, 1920, 1080);
     fillRoundRect(mask, 1920, 1080, UI_COLORS.overlay, 0);
 
     const panel = new Node('Panel');
     panel.parent = root;
     panel.addComponent(UITransform).setContentSize(920, 640);
+    blockInputOnNode(panel);
     fillRoundRect(panel, 920, 640, UI_COLORS.panel, 16);
     return root;
 }

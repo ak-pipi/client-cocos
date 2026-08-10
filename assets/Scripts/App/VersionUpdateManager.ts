@@ -9,7 +9,7 @@
  * Author: AI Assistant
  */
 
-import { sys } from 'cc';
+import { sys, view } from 'cc';
 
 /** 版本检测结果 */
 export enum UpdateType {
@@ -123,14 +123,14 @@ export class VersionUpdateManager {
             platform: sys.platform,
             osVersion: this.getOSVersion(),
             model: this.getModel(),
-            resolution: `${window.innerWidth}x${window.innerHeight}`,
+            resolution: this.getResolution(),
             safeArea: this.getSafeAreaInfo(),
         };
     }
 
     private getOSVersion(): string {
         try {
-            const ua = navigator.userAgent;
+            const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
             if (sys.os === sys.OS.IOS) {
                 const match = ua.match(/OS (\d+[._]\d+)/);
                 return match ? match[1] : 'unknown';
@@ -147,7 +147,7 @@ export class VersionUpdateManager {
 
     private getModel(): string {
         try {
-            const ua = navigator.userAgent;
+            const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
             // iOS
             const iosMatch = ua.match(/\(iPhone.*? OS/);
             if (iosMatch) return 'iPhone';
@@ -170,6 +170,17 @@ export class VersionUpdateManager {
             }
         } catch {}
         return '';
+    }
+
+    private getResolution(): string {
+        try {
+            if (typeof window !== 'undefined') {
+                return `${window.innerWidth}x${window.innerHeight}`;
+            }
+        } catch {}
+
+        const size = view.getVisibleSize();
+        return `${Math.floor(size.width)}x${Math.floor(size.height)}`;
     }
 
     // ==================== 本地版本管理 ====================

@@ -12,6 +12,17 @@ import { ResourceLoader } from "./ResourceLoader";
 import { GameFactory } from "../App/GameFactory";
 import { GameId, GameType } from "../App/GameEnums";
 
+type HttpRequestOptions = {
+    method?: 'GET' | 'POST';
+    headers?: Record<string, string>;
+    body?: string | null;
+};
+
+type HttpJsonResponse = {
+    status: number;
+    data: any;
+};
+
 export class GameManager {
     private static _instance: GameManager = null;
 
@@ -372,15 +383,15 @@ export class GameManager {
         // 每15秒发送一次心跳
         this.lastHeartbeat = nowTime;
         let url = this.getUrl("/player/heartbeat");
-        fetch(url, {
+        this.requestJsonResponse(url, {
             method: 'GET',
             headers: { 'PLAYER-AUTHORIZATION': this.Token }
-        }).then((response: Response) => {
+        }).then((response: HttpJsonResponse) => {
             if (response.status === 401) {
                 this.handleSessionExpired();
                 return null;
             }
-            return response.json().catch(() => null);
+            return response.data;
         }).then((dto: any) => {
             if (!dto) return;
             this.applyCapital(dto);
@@ -516,22 +527,106 @@ export class GameManager {
         return response.json();
     }
 
+    private requestJsonResponse(url: string, options: HttpRequestOptions = {}): Promise<HttpJsonResponse> {
+        const method = options.method || 'GET';
+        const headers = options.headers || {};
+        const body = options.body ?? null;
+
+        if (typeof fetch === 'function') {
+            return fetch(url, {
+                method,
+                headers,
+                body: body ?? undefined,
+            }).then(async (response: Response) => {
+                if (response.status === 401) {
+                    return { status: response.status, data: null };
+                }
+                const data = await this.parseHttpResponse(response);
+                return { status: response.status, data };
+            });
+        }
+
+        return this.requestJsonWithXhr(url, method, headers, body);
+    }
+
+    private requestJson(url: string, options: HttpRequestOptions = {}): Promise<any> {
+        return this.requestJsonResponse(url, options).then((response) => response.data);
+    }
+
+    private requestJsonWithXhr(
+        url: string,
+        method: 'GET' | 'POST',
+        headers: Record<string, string>,
+        body: string | null,
+    ): Promise<HttpJsonResponse> {
+        return new Promise((resolve, reject) => {
+            if (typeof XMLHttpRequest === 'undefined') {
+                reject(new Error('HTTP is unavailable in this runtime'));
+                return;
+            }
+
+            const xhr = new XMLHttpRequest();
+            xhr.open(method, url, true);
+            xhr.timeout = 15000;
+            Object.keys(headers).forEach((key) => {
+                xhr.setRequestHeader(key, headers[key]);
+            });
+            xhr.onreadystatechange = () => {
+                if (xhr.readyState !== 4) return;
+
+                const status = xhr.status || 0;
+                const responseText = xhr.responseText || '';
+                let data: any = null;
+                if (responseText) {
+                    try {
+                        data = JSON.parse(responseText);
+                    } catch {
+                        data = responseText;
+                    }
+                }
+
+                if (status === 429) {
+                    resolve({
+                        status,
+                        data: data || { code: 429, msg: '请求过于频繁，请稍后再试' },
+                    });
+                    return;
+                }
+
+                if (status >= 200 && status < 300) {
+                    resolve({ status, data });
+                    return;
+                }
+
+                if (data && typeof data === 'object') {
+                    resolve({ status, data });
+                    return;
+                }
+
+                reject(new Error(responseText || `HTTP ${status}`));
+            };
+            xhr.onerror = () => reject(new Error('Network error'));
+            xhr.ontimeout = () => reject(new Error('Request timeout'));
+            xhr.send(body);
+        });
+    }
+
     // 非鉴权Get请求
     public get(path): Promise<any> {
         if (CommonUtils.isStringEmpty(this.HttpHost)) return;
         let url = this.getUrl(path);
-        return fetch(url).then((response: Response) => this.parseHttpResponse(response));
+        return this.requestJson(url);
     }
 
     // 非鉴权Post请求
     public post(path, data): Promise<any> {
         if (CommonUtils.isStringEmpty(this.HttpHost)) return;
         let url = this.getUrl(path);
-        return fetch(url, {
+        return this.requestJson(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json;charset=utf-8' },
             body: JSON.stringify(data)
-        }).then((response: Response) => this.parseHttpResponse(response));
+        });
     }
 
     private getAuthHeaders(contentType = false): Record<string, string> {
@@ -554,10 +649,10 @@ export class GameManager {
         const headers = this.getAuthHeaders();
         headers['PLAYER-AUTHORIZATION'] = authToken;
         headers['Authorization'] = `Bearer ${authToken}`;
-        return fetch(url, {
+        return this.requestJson(url, {
             method: 'GET',
             headers: headers
-        }).then((response: Response) => this.parseHttpResponse(response));
+        });
     }
 
     // 鉴权Post请求
@@ -565,11 +660,11 @@ export class GameManager {
         if (CommonUtils.isStringEmpty(this.HttpHost)) return;
         if (CommonUtils.isStringEmpty(this.Token)) return;
         let url = this.getUrl(path);
-        return fetch(url, {
+        return this.requestJson(url, {
             method: 'POST',
             headers: this.getAuthHeaders(true),
             body: data ? JSON.stringify(data) : null
-        }).then((response: Response) => this.parseHttpResponse(response));
+        });
     }
 
     // 远程图像缓存表，例如头像图片，最多仅缓存10张图像
@@ -651,6 +746,9 @@ export class GameManager {
     // 当前正在进入的场地游戏类型
     private enteringGameType: number = 0;
 
+    // 本次进入场地的额外参数，服务端用于读取携带积分
+    private enteringVenueBase64: string = '';
+
     // 进入场地成功后的回调函数
     private enterCallback: (() => void) | null = null;
     /** 进场响应的完整数据（可能包含房间快照），供房间组件读取 */
@@ -690,11 +788,12 @@ export class GameManager {
      * @param gameType 游戏类型
      * @param onEnterVenue 进入成功回调
      */
-    public enterVenue(address: string, venueId: string, gameType: number, onEnterVenue: (() => void)) {
+    public enterVenue(address: string, venueId: string, gameType: number, onEnterVenue: (() => void), base64: string = '') {
         const wsAddress = this.normalizeWebSocketAddress(address);
         console.log("Enter venue, server address: ", wsAddress, ", game type: ", gameType, ", id: ", venueId);
         this.enteringVenueId = venueId;
         this.enteringGameType = gameType;
+        this.enteringVenueBase64 = base64 || '';
         this.enterCallback = onEnterVenue;
         this.enterVenueState = EnterVenueState.Entering;
         this.syncMessageSecret().then((ok) => {
@@ -725,7 +824,7 @@ export class GameManager {
         const msg = {
             venueId: this.enteringVenueId,
             gameType: this.enteringGameType,
-            base64: ""
+            base64: this.enteringVenueBase64 || ""
         };
         NetworkManager.Instance.sendMessage("MsgEnterVenue", msg, true, signingSecret);
     }
@@ -759,6 +858,7 @@ export class GameManager {
         this.venueId = venueId;
         this.enteringVenueId = null;
         this.enteringGameType = 0;
+        this.enteringVenueBase64 = '';
         this.enterVenueData = data || null;
         this.clearEnterVenueSigning();
         if (this.enterCallback) {
@@ -775,6 +875,7 @@ export class GameManager {
         this.enterVenueState = EnterVenueState.Leaved;
         this.enteringVenueId = null;
         this.enteringGameType = 0;
+        this.enteringVenueBase64 = '';
         this.enterCallback = null;
         this.enterVenueData = null;
         this.clearEnterVenueSigning();
@@ -785,6 +886,7 @@ export class GameManager {
         this.enterVenueState = EnterVenueState.Leaved;
         this.enteringVenueId = null;
         this.enteringGameType = 0;
+        this.enteringVenueBase64 = '';
         this.enterCallback = null;
         this.enterVenueData = null;
         this.clearEnterVenueSigning();

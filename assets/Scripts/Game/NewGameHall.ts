@@ -1,15 +1,14 @@
 import { _decorator, Component, Node, Label, Color, Graphics, Button, EventHandler, UITransform, EditBox, Prefab, sys, Widget, math } from 'cc';
 import { Client } from './Client';
 import { GameFactory } from '../App/GameFactory';
-import { GameId, GameType, StakeOption, GAME_STAKE_OPTIONS } from '../App/GameEnums';
+import { GameId, GameType, StakeOption, GAME_STAKE_OPTIONS, resolveMinCarryScore } from '../App/GameEnums';
 import { ResourceLoader } from '../Manager/ResourceLoader';
 import { GameManager } from '../Manager/GameManager';
 import { GameRoomApi, EnterVenueResult, getServerGameType, DistrictVenueItem, isGameRecordSupported } from '../Network/GameRoomApi';
 import { DlgMahjongRecords } from './Dialogs/DlgMahjongRecords';
-import { sanitizeAllEditBoxDefaultLabels, sanitizeEditBoxDefaultLabels } from '../UI/UiKit';
+import { blockInputOnNode, makeModalLayer, sanitizeAllEditBoxDefaultLabels, sanitizeEditBoxDefaultLabels } from '../UI/UiKit';
 
 const { ccclass } = _decorator;
-const MIN_CARRY_SCORE_MULTIPLIER = 8;
 
 // 桃江麻将默认规则配置
 const TAOJIANG_DEFAULT_RULES = {
@@ -66,10 +65,11 @@ const HONGZHONG_DEFAULT_RULES = {
 const HONGZHONG_BASE_OPTIONS = [
     { text: '1', value: 1 },
     { text: '2', value: 2 },
+    { text: '3', value: 3 },
     { text: '5', value: 5 },
     { text: '10', value: 10 },
     { text: '20', value: 20 },
-    { text: '25', value: 25 },
+    { text: '30', value: 30 },
 ];
 
 const HONGZHONG_ROUND_OPTIONS = [
@@ -126,6 +126,7 @@ export class NewGameHall extends Component {
     private tableCardContainer: Node | null = null;
     private tableCardLabels: Map<number, Label> = new Map();  // districtId -> 在线人数 Label
     private selectTablePopup: Node | null = null;
+    private carryScorePopup: Node | null = null;
 
     public init(gameId: string, gameName: string): void {
         this.gameId = gameId as GameId;
@@ -153,6 +154,10 @@ export class NewGameHall extends Component {
 
     protected onDestroy(): void {
         this._refreshTimer = 0;
+        if (this.carryScorePopup) {
+            this.carryScorePopup.destroy();
+            this.carryScorePopup = null;
+        }
     }
 
     private buildUI(): void {
@@ -318,7 +323,7 @@ export class NewGameHall extends Component {
         stakeLabel.addComponent(UITransform).setContentSize(w - 30, 40);
         stakeLabel.setPosition(0, h / 2 - 35, 0);
         const sl = stakeLabel.addComponent(Label);
-        sl.string = this.gameName || stake.label;
+        sl.string = stake.label || this.gameName;
         sl.fontSize = 24;
         sl.lineHeight = 30;
         sl.overflow = 2;
@@ -332,7 +337,7 @@ export class NewGameHall extends Component {
         modeLabel.addComponent(UITransform).setContentSize(w - 30, 28);
         modeLabel.setPosition(0, h / 2 - 66, 0);
         const mode = modeLabel.addComponent(Label);
-        mode.string = `${this.getGameTypeText()} · ${this.getStakeModeText(stake)}`;
+        mode.string = this.getStakeModeText(stake);
         mode.fontSize = 18;
         mode.lineHeight = 24;
         mode.overflow = Label.Overflow.SHRINK;
@@ -365,7 +370,7 @@ export class NewGameHall extends Component {
         cl.color = new Color(180, 200, 220, 255);
         this.tableCardLabels.set(stake.districtId, cl);
 
-        const minCarry = this.getMinCarryScore(stake.baseScore);
+        const minCarry = this.getMinCarryScore(stake.baseScore, stake.roundCount);
         const minNode = new Node('MinCarryLabel');
         minNode.parent = card;
         minNode.addComponent(UITransform).setContentSize(w - 30, 30);
@@ -431,11 +436,12 @@ export class NewGameHall extends Component {
     }
 
     private getStakeModeText(stake: StakeOption): string {
-        const roundText = stake.roundCount === 1 ? '单局' : `${stake.roundCount}局`;
-        return `${roundText} · 台桌${stake.baseScore}`;
+        return stake.label || '快速场';
     }
 
     private formatVenueMode(venue: DistrictVenueItem): string {
+        const stake = this.findStakeByDistrictId(Number(venue.districtId) || 0);
+        if (stake?.label) return stake.label;
         const ruleParts: string[] = [];
         if (venue.gameTypeText) ruleParts.push(venue.gameTypeText);
         if (venue.roundCount) ruleParts.push(venue.roundCount === 1 ? '单局' : `${venue.roundCount}局`);
@@ -511,10 +517,11 @@ export class NewGameHall extends Component {
             Client.Instance.showPromptDialog('不支持的游戏类型');
             return;
         }
-        if (!(await this.ensureEnoughCarryForDistrict(districtId))) return;
+        const carryScore = await this.requestCarryScoreForDistrict(districtId);
+        if (carryScore == null) return;
 
         Client.Instance.showConnecting(true);
-        GameRoomApi.Instance.joinByDistrict(districtId).then((result) => {
+        GameRoomApi.Instance.joinByDistrict(districtId, carryScore).then((result) => {
             if (!result) {
                 Client.Instance.showConnecting(false);
                 return;
@@ -546,12 +553,13 @@ export class NewGameHall extends Component {
 
         const popup = new Node('SelectTablePopup');
         popup.parent = this.node;
+        makeModalLayer(popup);
         this.selectTablePopup = popup;
 
         // 遮罩
         const mask = new Node('Mask');
         mask.parent = popup;
-        mask.addComponent(UITransform).setContentSize(1920, 1080);
+        blockInputOnNode(mask, 1920, 1080);
         const mg = mask.addComponent(Graphics);
         mg.fillColor = new Color(0, 0, 0, 160);
         mg.roundRect(-960, -540, 1920, 1080, 0);
@@ -563,6 +571,7 @@ export class NewGameHall extends Component {
         const panel = new Node('Panel');
         panel.parent = popup;
         panel.addComponent(UITransform).setContentSize(panelW, panelH);
+        blockInputOnNode(panel);
         const pg = panel.addComponent(Graphics);
         pg.fillColor = new Color(29, 35, 52, 255);
         pg.roundRect(-panelW / 2, -panelH / 2, panelW, panelH, 18);
@@ -726,7 +735,7 @@ export class NewGameHall extends Component {
             ruleNode.addComponent(UITransform).setContentSize(130, itemH - 10);
             ruleNode.setPosition(-70, 0, 0);
             const ruleLabel = ruleNode.addComponent(Label);
-            ruleLabel.string = venue.gameModeText || this.formatVenueMode(venue);
+            ruleLabel.string = this.formatVenueMode(venue);
             ruleLabel.fontSize = 16;
             ruleLabel.horizontalAlign = 1;
             ruleLabel.verticalAlign = 1;
@@ -771,21 +780,27 @@ export class NewGameHall extends Component {
                     this.selectTablePopup.destroy();
                     this.selectTablePopup = null;
                 }
-                this.joinVenueById(venue.venueId, venue.baseScore || this.findStakeByDistrictId(districtId)?.baseScore || 0);
+                const stake = this.findStakeByDistrictId(districtId);
+                this.joinVenueById(
+                    venue.venueId,
+                    venue.baseScore || stake?.baseScore || 0,
+                    venue.roundCount || stake?.roundCount || 8,
+                );
             });
         });
     }
 
     /** 通过 venueId 加入房间 */
-    private async joinVenueById(venueId: string, baseScore = 0): Promise<void> {
+    private async joinVenueById(venueId: string, baseScore = 0, roundCount = 8): Promise<void> {
         const gameType = getServerGameType(this.gameId);
         if (!gameType) {
             Client.Instance.showPromptDialog('不支持的游戏类型');
             return;
         }
-        if (!(await this.ensureEnoughCarryByBaseScore(baseScore))) return;
+        const carryScore = await this.requestCarryScoreByBaseScore(baseScore, roundCount);
+        if (carryScore == null) return;
         Client.Instance.showConnecting(true);
-        GameRoomApi.Instance.joinByVenueId(venueId, gameType).then((result) => {
+        GameRoomApi.Instance.joinByVenueId(venueId, gameType, carryScore).then((result) => {
             if (!result) {
                 Client.Instance.showConnecting(false);
                 return;
@@ -806,6 +821,7 @@ export class NewGameHall extends Component {
             if (this.createConfigPopup) {
                 this.resetCreateRules();
                 this.createConfigPopup.active = true;
+                makeModalLayer(this.createConfigPopup);
             }
         } else {
             this.doCreateRoom({});
@@ -833,13 +849,14 @@ export class NewGameHall extends Component {
     private createMahjongConfigPopup(): void {
         const popup = new Node('CreateConfigPopup');
         popup.parent = this.node;
+        makeModalLayer(popup);
         popup.active = false;
         this.createConfigPopup = popup;
 
         // 遮罩
         const mask = new Node('Mask');
         mask.parent = popup;
-        mask.addComponent(UITransform).setContentSize(1920, 1080);
+        blockInputOnNode(mask, 1920, 1080);
         const mg = mask.addComponent(Graphics);
         mg.fillColor = new Color(0, 0, 0, 160);
         mg.roundRect(-960, -540, 1920, 1080, 0);
@@ -851,6 +868,7 @@ export class NewGameHall extends Component {
         panel.parent = popup;
         const pw = 550, ph = 450;
         panel.addComponent(UITransform).setContentSize(pw, ph);
+        blockInputOnNode(panel);
         const pg = panel.addComponent(Graphics);
         pg.fillColor = new Color(30, 55, 85, 255);
         pg.roundRect(-pw / 2, -ph / 2, pw, ph, 12);
@@ -898,12 +916,13 @@ export class NewGameHall extends Component {
     private createDoudizhuConfigPopup(): void {
         const popup = new Node('CreateDoudizhuConfigPopup');
         popup.parent = this.node;
+        makeModalLayer(popup);
         popup.active = false;
         this.createConfigPopup = popup;
 
         const mask = new Node('Mask');
         mask.parent = popup;
-        mask.addComponent(UITransform).setContentSize(1920, 1080);
+        blockInputOnNode(mask, 1920, 1080);
         const mg = mask.addComponent(Graphics);
         mg.fillColor = new Color(0, 0, 0, 160);
         mg.roundRect(-960, -540, 1920, 1080, 0);
@@ -914,6 +933,7 @@ export class NewGameHall extends Component {
         panel.parent = popup;
         const pw = 550, ph = 390;
         panel.addComponent(UITransform).setContentSize(pw, ph);
+        blockInputOnNode(panel);
         const pg = panel.addComponent(Graphics);
         pg.fillColor = new Color(30, 55, 85, 255);
         pg.roundRect(-pw / 2, -ph / 2, pw, ph, 12);
@@ -954,9 +974,10 @@ export class NewGameHall extends Component {
         label.horizontalAlign = 0;
 
         const compact = options.length > 4;
-        const buttonWidth = compact ? 68 : 100;
-        const buttonGap = compact ? 72 : 110;
-        const startX = compact ? -120 : -80;
+        const dense = options.length >= 7;
+        const buttonWidth = compact ? (dense ? 48 : 68) : 100;
+        const buttonGap = compact ? (dense ? 52 : 72) : 110;
+        const startX = compact ? (dense ? 250 - (options.length - 1) * buttonGap - buttonWidth / 2 : -120) : -80;
         const defaultVal = this.createRules[ruleKey] ?? options[0].value;
 
         options.forEach((opt, idx) => {
@@ -985,8 +1006,8 @@ export class NewGameHall extends Component {
                 this.createRules[ruleKey] = opt.value;
                 if (this.usesRegionalRoomOptions() && (ruleKey === 'base_score' || ruleKey === 'round_count')) {
                     this.normalizeRegionalCreateRules(ruleKey);
-                    this.refreshOptionRow(parent, 'base_score', TAOJIANG_BASE_OPTIONS);
-                    this.refreshOptionRow(parent, 'round_count', TAOJIANG_ROUND_OPTIONS);
+                    this.refreshOptionRow(parent, 'base_score', this.getCreateBaseOptions());
+                    this.refreshOptionRow(parent, 'round_count', this.getCreateRoundOptions());
                 } else {
                     this.refreshOptionRow(parent, ruleKey, options);
                 }
@@ -1022,16 +1043,18 @@ export class NewGameHall extends Component {
     private normalizeRegionalCreateRules(changedKey: string): void {
         const baseScore = Number(this.createRules.base_score) || 1;
         const roundCount = Number(this.createRules.round_count) || 8;
-        const singleScores = [5, 10, 25];
-        const eightRoundScores = [1, 2, 5, 10, 20];
+        const singleScores = this.getCreateSingleBaseScores();
+        const eightRoundScores = this.getCreateEightRoundBaseScores();
 
         if (changedKey === 'base_score') {
-            if (baseScore === 25) {
+            const supportsSingle = singleScores.indexOf(baseScore) >= 0;
+            const supportsEightRound = eightRoundScores.indexOf(baseScore) >= 0;
+            if (roundCount === 1 && !supportsSingle && supportsEightRound) {
+                this.createRules.round_count = 8;
+            } else if (roundCount === 8 && !supportsEightRound && supportsSingle) {
                 this.createRules.round_count = 1;
-            } else if (baseScore === 1 || baseScore === 2 || baseScore === 20) {
-                this.createRules.round_count = 8;
             } else if (roundCount !== 1 && roundCount !== 8) {
-                this.createRules.round_count = 8;
+                this.createRules.round_count = supportsSingle ? 1 : 8;
             }
             return;
         }
@@ -1043,6 +1066,28 @@ export class NewGameHall extends Component {
                 this.createRules.base_score = 1;
             }
         }
+    }
+
+    private getCreateSingleBaseScores(): number[] {
+        if (this.gameId === GameId.HongzhongMahjong)
+            return [1, 2, 3, 5, 10, 20, 30];
+        return [5, 10, 25];
+    }
+
+    private getCreateEightRoundBaseScores(): number[] {
+        return [1, 2, 5, 10, 20];
+    }
+
+    private getCreateBaseOptions(): Array<{text: string, value: number}> {
+        if (this.gameId === GameId.HongzhongMahjong)
+            return HONGZHONG_BASE_OPTIONS;
+        return TAOJIANG_BASE_OPTIONS;
+    }
+
+    private getCreateRoundOptions(): Array<{text: string, value: number}> {
+        if (this.gameId === GameId.HongzhongMahjong)
+            return HONGZHONG_ROUND_OPTIONS;
+        return TAOJIANG_ROUND_OPTIONS;
     }
 
     /** 添加开关行 */
@@ -1107,13 +1152,13 @@ export class NewGameHall extends Component {
     private createJoinPopup(): void {
         const popup = new Node('JoinPopup');
         popup.parent = this.node;
+        makeModalLayer(popup);
         popup.active = false;
         this.joinPopup = popup;
 
         const mask = new Node('Mask');
         mask.parent = popup;
-        const maskTransform = mask.addComponent(UITransform);
-        maskTransform.setContentSize(1920, 1080);
+        blockInputOnNode(mask, 1920, 1080);
         const maskGraphics = mask.addComponent(Graphics);
         maskGraphics.fillColor = new Color(0, 0, 0, 160);
         maskGraphics.roundRect(-960, -540, 1920, 1080, 0);
@@ -1123,6 +1168,7 @@ export class NewGameHall extends Component {
         panel.parent = popup;
         const panelTransform = panel.addComponent(UITransform);
         panelTransform.setContentSize(500, 280);
+        blockInputOnNode(panel);
         const panelGraphics = panel.addComponent(Graphics);
         panelGraphics.fillColor = new Color(30, 70, 110, 255);
         panelGraphics.roundRect(-250, -140, 500, 280, 12);
@@ -1199,10 +1245,10 @@ export class NewGameHall extends Component {
         const editBox = inputNode.addComponent(EditBox);
         editBox.maxLength = 6;
         editBox.inputMode = EditBox.InputMode.NUMERIC;
+        editBox.textLabel = textLabel;
+        editBox.placeholderLabel = placeholderLabel;
         editBox.placeholder = placeholderLabel.string;
         editBox.string = '';
-        (editBox as any).textLabel = textLabel;
-        (editBox as any).placeholderLabel = placeholderLabel;
         sanitizeEditBoxDefaultLabels(editBox, [textLabel, placeholderLabel]);
         sanitizeAllEditBoxDefaultLabels(popup);
         this.joinEditBox = editBox;
@@ -1246,6 +1292,195 @@ export class NewGameHall extends Component {
         button.clickEvents.push(clickEvent);
     }
 
+    private async requestCarryScoreForDistrict(districtId: number): Promise<number | null> {
+        const stake = this.findStakeByDistrictId(districtId);
+        return this.requestCarryScoreByBaseScore(stake?.baseScore || 0, stake?.roundCount || 8);
+    }
+
+    private async requestCarryScoreByBaseScore(baseScore: any, roundCount?: any): Promise<number | null> {
+        const minCarry = this.getMinCarryScore(baseScore, roundCount);
+        return this.showCarryScoreInput(minCarry);
+    }
+
+    private async showCarryScoreInput(minCarry: number): Promise<number | null> {
+        await GameManager.Instance.refreshCapital();
+        const available = Math.max(0, Math.floor(Number(GameManager.Instance.Gold) || 0));
+        const min = Math.max(0, Math.floor(Number(minCarry) || 0));
+        if (available < min) {
+            const safeBox = GameManager.Instance.Deposit || 0;
+            Client.Instance.showPromptDialog(
+                `携带积分不足，加入本局至少需要${min}积分。\n当前可用${available}积分，保险柜${safeBox}积分不参与游戏结算，请先从保险柜取出积分。`
+            );
+            return null;
+        }
+
+        if (this.carryScorePopup) {
+            this.carryScorePopup.destroy();
+            this.carryScorePopup = null;
+        }
+
+        return new Promise<number | null>((resolve) => {
+            const popup = new Node('CarryScorePopup');
+            popup.parent = this.node;
+            makeModalLayer(popup);
+            this.carryScorePopup = popup;
+
+            const mask = new Node('Mask');
+            mask.parent = popup;
+            blockInputOnNode(mask, 1920, 1080);
+            const maskGraphics = mask.addComponent(Graphics);
+            maskGraphics.fillColor = new Color(0, 0, 0, 170);
+            maskGraphics.roundRect(-960, -540, 1920, 1080, 0);
+            maskGraphics.fill();
+
+            const panel = new Node('Panel');
+            panel.parent = popup;
+            panel.addComponent(UITransform).setContentSize(520, 320);
+            blockInputOnNode(panel);
+            const panelGraphics = panel.addComponent(Graphics);
+            panelGraphics.fillColor = new Color(30, 70, 110, 255);
+            panelGraphics.roundRect(-260, -160, 520, 320, 12);
+            panelGraphics.fill();
+
+            const titleNode = new Node('Title');
+            titleNode.parent = panel;
+            titleNode.addComponent(UITransform).setContentSize(460, 38);
+            titleNode.setPosition(0, 112, 0);
+            const title = titleNode.addComponent(Label);
+            title.string = '携带积分';
+            title.fontSize = 28;
+            title.lineHeight = 34;
+            title.horizontalAlign = Label.HorizontalAlign.CENTER;
+            title.verticalAlign = Label.VerticalAlign.CENTER;
+            title.color = new Color(255, 255, 255, 255);
+
+            const descNode = new Node('Desc');
+            descNode.parent = panel;
+            descNode.addComponent(UITransform).setContentSize(460, 54);
+            descNode.setPosition(0, 62, 0);
+            const desc = descNode.addComponent(Label);
+            desc.string = min > 0 ? `最低 ${min}，当前可用 ${available}` : `当前可用 ${available}`;
+            desc.fontSize = 21;
+            desc.lineHeight = 28;
+            desc.horizontalAlign = Label.HorizontalAlign.CENTER;
+            desc.verticalAlign = Label.VerticalAlign.CENTER;
+            desc.overflow = Label.Overflow.SHRINK;
+            desc.color = new Color(235, 214, 156, 255);
+
+            const inputNode = new Node('CarryInput');
+            inputNode.parent = panel;
+            inputNode.addComponent(UITransform).setContentSize(360, 54);
+            inputNode.setPosition(0, 4, 0);
+
+            const inputBg = new Node('InputBg');
+            inputBg.parent = inputNode;
+            inputBg.addComponent(UITransform).setContentSize(360, 54);
+            const inputGraphics = inputBg.addComponent(Graphics);
+            inputGraphics.fillColor = new Color(255, 255, 255, 255);
+            inputGraphics.roundRect(-180, -27, 360, 54, 8);
+            inputGraphics.fill();
+
+            const textNode = new Node('Text');
+            textNode.parent = inputNode;
+            const textTransform = textNode.addComponent(UITransform);
+            textTransform.setContentSize(330, 54);
+            textTransform.anchorX = 0;
+            textTransform.anchorY = 0.5;
+            const textWidget = textNode.addComponent(Widget);
+            textWidget.isAlignLeft = true;
+            textWidget.left = 15;
+            textWidget.isAlignVerticalCenter = true;
+            textWidget.verticalCenter = -2;
+            const textLabel = textNode.addComponent(Label);
+            textLabel.string = '';
+            textLabel.fontSize = 26;
+            textLabel.lineHeight = 32;
+            textLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+            textLabel.verticalAlign = Label.VerticalAlign.CENTER;
+            textLabel.overflow = Label.Overflow.CLAMP;
+            textLabel.color = new Color(20, 20, 20, 255);
+
+            const placeholderNode = new Node('Placeholder');
+            placeholderNode.parent = inputNode;
+            const placeholderTransform = placeholderNode.addComponent(UITransform);
+            placeholderTransform.setContentSize(330, 54);
+            placeholderTransform.anchorX = 0;
+            placeholderTransform.anchorY = 0.5;
+            const placeholderWidget = placeholderNode.addComponent(Widget);
+            placeholderWidget.isAlignLeft = true;
+            placeholderWidget.left = 15;
+            placeholderWidget.isAlignVerticalCenter = true;
+            placeholderWidget.verticalCenter = -2;
+            const placeholderLabel = placeholderNode.addComponent(Label);
+            placeholderLabel.string = '输入本房间携带积分';
+            placeholderLabel.fontSize = 22;
+            placeholderLabel.lineHeight = 28;
+            placeholderLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
+            placeholderLabel.verticalAlign = Label.VerticalAlign.CENTER;
+            placeholderLabel.overflow = Label.Overflow.CLAMP;
+            placeholderLabel.color = new Color(120, 120, 120, 255);
+
+            const editBox = inputNode.addComponent(EditBox);
+            editBox.maxLength = 12;
+            editBox.inputMode = EditBox.InputMode.NUMERIC;
+            editBox.textLabel = textLabel;
+            editBox.placeholderLabel = placeholderLabel;
+            editBox.placeholder = placeholderLabel.string;
+            editBox.string = String(min > 0 ? min : Math.max(1, Math.min(available, 100)));
+            sanitizeEditBoxDefaultLabels(editBox, [textLabel, placeholderLabel]);
+            sanitizeAllEditBoxDefaultLabels(popup);
+
+            const finish = (value: number | null) => {
+                if (this.carryScorePopup === popup)
+                    this.carryScorePopup = null;
+                popup.destroy();
+                resolve(value);
+            };
+
+            const confirm = () => {
+                const value = Math.floor(Number(editBox.string));
+                if (!isFinite(value) || value <= 0) {
+                    Client.Instance.showPromptTip('请输入携带积分');
+                    return;
+                }
+                if (value < min) {
+                    Client.Instance.showPromptTip(`最低携带${min}积分`);
+                    return;
+                }
+                if (value > available) {
+                    Client.Instance.showPromptTip('携带积分不能超过当前可用积分');
+                    return;
+                }
+                finish(value);
+            };
+
+            this.createInlineButton(panel, '确认', -92, -92, new Color(46, 139, 87, 255), confirm);
+            this.createInlineButton(panel, '取消', 92, -92, new Color(160, 82, 45, 255), () => finish(null));
+        });
+    }
+
+    private createInlineButton(parent: Node, text: string, x: number, y: number, color: Color, onClick: () => void): void {
+        const btnNode = new Node(text);
+        btnNode.parent = parent;
+        btnNode.addComponent(UITransform).setContentSize(130, 46);
+        btnNode.setPosition(x, y, 0);
+        const graphics = btnNode.addComponent(Graphics);
+        graphics.fillColor = color;
+        graphics.roundRect(-65, -23, 130, 46, 8);
+        graphics.fill();
+        const labelNode = new Node('Label');
+        labelNode.parent = btnNode;
+        const label = labelNode.addComponent(Label);
+        label.string = text;
+        label.fontSize = 22;
+        label.lineHeight = 28;
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        label.color = new Color(255, 255, 255, 255);
+        btnNode.addComponent(Button);
+        btnNode.on(Node.EventType.TOUCH_END, onClick);
+    }
+
     // ==================== 事件处理 ====================
 
     public onCreateConfirm(_event: Event, _customEventData: any | null) {
@@ -1265,8 +1500,9 @@ export class NewGameHall extends Component {
         }
 
         const params: Record<string, any> = { level: 1, ...rules };
-        if (!(await this.ensureEnoughCarryByBaseScore(params.base_score))) return;
-        GameRoomApi.Instance.createRoom(gameType, params).then((result) => {
+        const carryScore = await this.requestCarryScoreByBaseScore(params.base_score, params.round_count);
+        if (carryScore == null) return;
+        GameRoomApi.Instance.createRoom(gameType, params, carryScore).then((result) => {
             if (!result) return;
             GameRoomApi.Instance.enterVenue(result, gameType, () => this.onEnterVenue(result));
         }).catch((err) => {
@@ -1278,6 +1514,7 @@ export class NewGameHall extends Component {
     public onJoinRoom(_event: Event, _customEventData: any | null) {
         if (this.joinPopup) {
             this.joinPopup.active = true;
+            makeModalLayer(this.joinPopup);
             if (this.joinEditBox) {
                 this.joinEditBox.string = '';
             }
@@ -1290,7 +1527,7 @@ export class NewGameHall extends Component {
         }
     }
 
-    public onJoinConfirm(_event: Event, _customEventData: any | null) {
+    public async onJoinConfirm(_event: Event, _customEventData: any | null) {
         const input = this.joinEditBox?.string?.trim() || '';
         if (!input) {
             Client.Instance.showPromptTip('请输入房间号或ID');
@@ -1307,9 +1544,12 @@ export class NewGameHall extends Component {
             return;
         }
 
+        const carryScore = await this.requestCarryScoreByBaseScore(0);
+        if (carryScore == null) return;
+
         const joinPromise = /^\d{6}$/.test(input)
-            ? GameRoomApi.Instance.joinByNumber(input, gameType)
-            : GameRoomApi.Instance.joinByVenueId(input, gameType);
+            ? GameRoomApi.Instance.joinByNumber(input, gameType, carryScore)
+            : GameRoomApi.Instance.joinByVenueId(input, gameType, carryScore);
 
         joinPromise.then((result) => {
             if (!result) return;
@@ -1349,18 +1589,17 @@ export class NewGameHall extends Component {
         return null;
     }
 
-    private getMinCarryScore(baseScore: any): number {
-        const base = Number(baseScore);
-        return isFinite(base) && base > 0 ? Math.ceil(base * MIN_CARRY_SCORE_MULTIPLIER) : 0;
+    private getMinCarryScore(baseScore: any, roundCount?: any): number {
+        return resolveMinCarryScore(this.gameId, baseScore, roundCount);
     }
 
     private async ensureEnoughCarryForDistrict(districtId: number): Promise<boolean> {
         const stake = this.findStakeByDistrictId(districtId);
-        return this.ensureEnoughCarryByBaseScore(stake?.baseScore || 0);
+        return this.ensureEnoughCarryByBaseScore(stake?.baseScore || 0, stake?.roundCount || 8);
     }
 
-    private async ensureEnoughCarryByBaseScore(baseScore: any): Promise<boolean> {
-        const required = this.getMinCarryScore(baseScore);
+    private async ensureEnoughCarryByBaseScore(baseScore: any, roundCount?: any): Promise<boolean> {
+        const required = this.getMinCarryScore(baseScore, roundCount);
         if (required <= 0) return true;
         await GameManager.Instance.refreshCapital();
         const carry = GameManager.Instance.Gold || 0;

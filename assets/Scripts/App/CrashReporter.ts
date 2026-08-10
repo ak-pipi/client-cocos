@@ -127,23 +127,27 @@ export class CrashReporter {
 
     // ==================== 全局异常捕获注册 ====================
     private registerGlobalHandlers(): void {
-        // JS运行时错误
-        const prevOnError = window.onerror;
-        window.onerror = (message, source, lineno, colno, error) => {
-            this.captureError(error || new Error(String(message)), CrashType.JS_ERROR);
-            if (prevOnError) return prevOnError(message, source, lineno, colno, error);
-            return false;
-        };
+        const hasWindow = typeof window !== 'undefined';
+        const hasDocument = typeof document !== 'undefined';
 
-        // Promise未捕获 rejection
-        const prevOnUnhandled = window.onunhandledrejection;
-        window.onunhandledrejection = (event) => {
-            this.captureError(
-                event.reason instanceof Error ? event.reason : new Error(String(event.reason)),
-                CrashType.UNHANDLED_REJECTION
-            );
-            if (prevOnUnhandled) prevOnUnhandled(event);
-        };
+        if (hasWindow) {
+            const anyWindow = window as any;
+            const prevOnError = anyWindow.onerror;
+            anyWindow.onerror = (message, source, lineno, colno, error) => {
+                this.captureError(error || new Error(String(message)), CrashType.JS_ERROR);
+                if (prevOnError) return prevOnError(message, source, lineno, colno, error);
+                return false;
+            };
+
+            const prevOnUnhandled = anyWindow.onunhandledrejection;
+            anyWindow.onunhandledrejection = (event) => {
+                this.captureError(
+                    event.reason instanceof Error ? event.reason : new Error(String(event.reason)),
+                    CrashType.UNHANDLED_REJECTION
+                );
+                if (prevOnUnhandled) prevOnUnhandled(event);
+            };
+        }
 
         // Cocos Creator 错误
         game.on(game.EVENT_RENDERER_INIT_FAIL, () => {
@@ -157,11 +161,14 @@ export class CrashReporter {
             });
         }
 
-        // 页面隐藏前保存缓存
-        window.addEventListener('beforeunload', () => {
-            this.saveCache();
-        });
+        if (hasWindow && typeof window.addEventListener === 'function') {
+            window.addEventListener('beforeunload', () => {
+                this.saveCache();
+            });
+        }
+
         // 页面可见性变化 - 恢复后尝试补传
+        if (!hasDocument || typeof document.addEventListener !== 'function') return;
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
                 this.flushCachedReports();
@@ -290,6 +297,10 @@ export class CrashReporter {
             this.addToCache(report);
             return;
         }
+        if (typeof fetch !== 'function') {
+            this.addToCache(report);
+            return;
+        }
 
         try {
             const response = await fetch(this._config.reportUrl, {
@@ -318,6 +329,7 @@ export class CrashReporter {
 
     private async flushCachedReports(): Promise<void> {
         if (!this._cache.length || !this._config.reportUrl) return;
+        if (typeof fetch !== 'function') return;
 
         const batch = this._cache.splice(0, this._config.batchSize);
         try {
@@ -392,6 +404,7 @@ export class CrashReporter {
 
     private collectDeviceInfo(): DeviceInfo {
         const screenSize = view.getVisibleSize();
+        const memoryUsage = this.getMemoryUsageMB();
         return {
             platform: ccSys.platform || 'unknown',
             osVersion: ccSys.os || 'unknown',
@@ -401,9 +414,18 @@ export class CrashReporter {
             language: ccSys.language || 'zh-CN',
             engineVersion: (ccSys as any).engineVersion || 'unknown',
             appVersion: this.getAppVersion(),
-            memoryUsage: Math.floor((performance as any).memory?.usedJSHeapSize / (1024 * 1024)) || 0,
+            memoryUsage,
             isLowMemory: (ccSys as any).isNative ? (ccSys as any).totalMemory < (512 * 1024 * 1024) : false,
         };
+    }
+
+    private getMemoryUsageMB(): number {
+        try {
+            const memory = typeof performance !== 'undefined' ? (performance as any).memory : null;
+            return Math.floor((memory?.usedJSHeapSize || 0) / (1024 * 1024)) || 0;
+        } catch {
+            return 0;
+        }
     }
 
     private getAppVersion(): string {

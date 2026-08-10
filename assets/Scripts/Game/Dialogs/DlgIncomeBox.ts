@@ -21,9 +21,12 @@ interface IncomeBoxSummary {
     prepaidAmount?: number;
     legacyReward?: number;
     todayCommission?: number;
+    todayIncomeAmount?: number;
     todayPendingCommission?: number;
     todayDepositSettledAmount?: number;
     availableTodayCommission?: number;
+    todayAvailableAmount?: number;
+    todayWithdrawableAmount?: number;
     totalCommission?: number;
     claimedAmount?: number;
     gold?: number;
@@ -91,7 +94,7 @@ export class DlgIncomeBox extends Component {
     private detailTabButton: Node | null = null;
     private recordsContent: Node | null = null;
     private recordsStatusLabel: Label | null = null;
-    private currentTab: IncomeBoxTab = 'withdraw';
+    private currentTab: IncomeBoxTab = 'detail';
     private withdrawRecords: IncomeBoxRecord[] = [];
     private incomeDetails: IncomeBoxRecord[] = [];
     private loading = false;
@@ -133,7 +136,7 @@ export class DlgIncomeBox extends Component {
         createButton(titleBand, 'X', 48, 48, COLORS.danger, this.node, 'DlgIncomeBox', 'onCloseClicked')
             .setPosition(370, 0, 0);
 
-        this.todayLabel = this.createMetric(panel, '今日可提', '0', -210, 164, COLORS.cardB);
+        this.todayLabel = this.createMetric(panel, '今日收益', '0', -210, 164, COLORS.cardB);
         this.balanceLabel = this.createMetric(panel, '剩余未提取收益', '0', 210, 164, COLORS.cardA);
 
         const table = new Node('WithdrawRecordTable');
@@ -349,7 +352,7 @@ export class DlgIncomeBox extends Component {
         if (this.todayLabel) {
             this.todayLabel.string = this.formatAmount(
                 Math.max(
-                    this.toNumber(dto?.availableTodayCommission),
+                    this.toNumber(dto?.todayIncomeAmount),
                     this.toNumber(dto?.todayPendingCommission) + this.toNumber(dto?.todayDepositSettledAmount),
                     this.toNumber(dto?.todayCommission),
                 )
@@ -372,13 +375,14 @@ export class DlgIncomeBox extends Component {
             + Math.max(this.toNumber(dto?.depositSettledAmount), this.toNumber(dto?.prepaidAmount))
             + this.toNumber(dto?.legacyReward);
         const todayAvailable = this.toNumber(dto?.availableTodayCommission)
+            || this.toNumber(dto?.todayAvailableAmount)
+            || this.toNumber(dto?.todayWithdrawableAmount)
             || (this.toNumber(dto?.todayPendingCommission) + this.toNumber(dto?.todayDepositSettledAmount));
         return Math.max(
             this.toNumber(dto?.balance),
             this.toNumber(dto?.pendingAmount),
             ledgerTotal,
             todayAvailable,
-            this.toNumber(dto?.todayCommission),
         );
     }
 
@@ -437,10 +441,11 @@ export class DlgIncomeBox extends Component {
             const sourceType = record?.sourceTypeText || '收益';
             const player = record?.sourcePlayerName || record?.feePlayerNickname || record?.sourcePlayerId || record?.feePlayerId || '-';
             const time = this.formatRecordTime(record);
+            const amount = this.toNumber(record?.commissionAmount ?? record?.amount ?? record?.value ?? record?.availableAmount);
             rows.push({
                 title: `${gameName} | ${sourceType} | ${record?.statusText || ''}`,
                 subtitle: `来源玩家 ${player} | 房间 ${record?.roomId || '-'} | ${time}`,
-                amount: `+${this.formatAmount(record?.availableAmount ?? record?.commissionAmount ?? record?.amount ?? record?.value)}`,
+                amount: `+${this.formatAmount(amount)}`,
                 positive: true,
             });
         });

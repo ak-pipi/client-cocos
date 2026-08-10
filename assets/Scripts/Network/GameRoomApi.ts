@@ -18,6 +18,8 @@ export interface EnterVenueResult {
     wsAddress: string;
     venueId: string;
     number?: string;
+    carryScore?: number;
+    base64?: string;
 }
 
 /** GameId → 服务端 gameType */
@@ -32,6 +34,7 @@ export const GAME_ID_TO_SERVER_TYPE: Record<string, number> = {
 };
 
 const SUCCESS_CODES = new Set<string | number>(['00000000', 200, '200']);
+export const ALL_RECORD_GAME_ID = 'all';
 
 const GAME_RECORD_API: Record<string, { record: string; playback: string; name: string }> = {
     [GameId.TaojiangMahjong]: {
@@ -74,6 +77,8 @@ export function parseEnterVenueResponse(dto: any): EnterVenueResult | null {
         wsAddress: payload.wsAddress,
         venueId: payload.venueId,
         number: payload.number != null ? String(payload.number) : undefined,
+        carryScore: payload.carryScore != null ? Number(payload.carryScore) : undefined,
+        base64: payload.base64 != null ? String(payload.base64) : undefined,
     };
 }
 
@@ -82,6 +87,7 @@ export function getServerGameType(gameId: GameId | string): number {
 }
 
 export function getRecordGameName(gameId: GameId | string): string {
+    if (gameId === ALL_RECORD_GAME_ID) return '全部';
     return GAME_RECORD_API[gameId]?.name || '麻将';
 }
 
@@ -90,11 +96,12 @@ export interface GameRecordMeta {
     name: string;
 }
 
-export function getSupportedRecordGames(): GameRecordMeta[] {
-    return Object.keys(GAME_RECORD_API).map((gameId) => ({
+export function getSupportedRecordGames(includeAll = false): GameRecordMeta[] {
+    const games = Object.keys(GAME_RECORD_API).map((gameId) => ({
         gameId,
         name: GAME_RECORD_API[gameId].name,
     }));
+    return includeAll ? [{ gameId: ALL_RECORD_GAME_ID, name: '全部' }, ...games] : games;
 }
 
 export function isGameRecordSupported(gameId: GameId | string): boolean {
@@ -143,6 +150,7 @@ export interface MahjongRecordItem {
     number: string;
     roundNo: number;
     banker: number;
+    gameId?: GameId | string;
     gameType?: number;
     gameName?: string;
     players: Array<{ playerId: string; nickname: string; headUrl?: string } | null>;
@@ -205,12 +213,13 @@ export class GameRoomApi {
      * 创建房间
      * POST /player/game/create
      */
-    async createRoom(gameType: number, params?: Record<string, any>): Promise<EnterVenueResult | null> {
+    async createRoom(gameType: number, params?: Record<string, any>, carryScore?: number): Promise<EnterVenueResult | null> {
         const roomParams = params || { level: 1 };
         const base64 = CommonUtils.encodeBase64(JSON.stringify(roomParams));
         const dto = await GameManager.Instance.authPost('/player/game/create', {
             gameType,
             base64,
+            carryScore,
         });
         return this.handleResponse(dto, '创建房间失败');
     }
@@ -219,10 +228,11 @@ export class GameRoomApi {
      * 通过 6 位房间号加入
      * POST /player/game/enter/number
      */
-    async joinByNumber(number: string, gameType: number): Promise<EnterVenueResult | null> {
+    async joinByNumber(number: string, gameType: number, carryScore?: number): Promise<EnterVenueResult | null> {
         const dto = await GameManager.Instance.authPost('/player/game/enter/number', {
             number,
             gameType,
+            carryScore,
         });
         return this.handleResponse(dto, '加入房间失败');
     }
@@ -231,10 +241,11 @@ export class GameRoomApi {
      * 通过 venueId 加入
      * POST /player/game/enter
      */
-    async joinByVenueId(venueId: string, gameType: number): Promise<EnterVenueResult | null> {
+    async joinByVenueId(venueId: string, gameType: number, carryScore?: number): Promise<EnterVenueResult | null> {
         const dto = await GameManager.Instance.authPost('/player/game/enter', {
             venueId,
             gameType,
+            carryScore,
         });
         return this.handleResponse(dto, '加入房间失败');
     }
@@ -243,8 +254,9 @@ export class GameRoomApi {
      * 区域匹配进入
      * POST /player/game/enter/district?districtId={id}
      */
-    async joinByDistrict(districtId: number): Promise<EnterVenueResult | null> {
-        const url = `/player/game/enter/district?districtId=${districtId}`;
+    async joinByDistrict(districtId: number, carryScore?: number): Promise<EnterVenueResult | null> {
+        const url = `/player/game/enter/district?districtId=${districtId}`
+            + (carryScore != null ? `&carryScore=${encodeURIComponent(String(carryScore))}` : '');
         const dto = await GameManager.Instance.authPost(url, null);
         return this.handleResponse(dto, '加入房间失败');
     }
@@ -354,6 +366,9 @@ export class GameRoomApi {
     }
 
     async getGameRecords(gameId: GameId | string, pageNum = 1, pageSize = 10): Promise<PageResult<MahjongRecordItem> | null> {
+        if (gameId === ALL_RECORD_GAME_ID) {
+            return this.getAllGameRecords(pageNum, pageSize);
+        }
         const api = GAME_RECORD_API[gameId];
         if (!api) {
             Client.Instance.showPromptDialog('当前游戏暂未开放回放战绩');
@@ -364,6 +379,85 @@ export class GameRoomApi {
             pageSize,
         });
         return this.parseRecordPage(dto, pageNum, `查询${api.name}战绩失败`);
+    }
+
+    async getAllGameRecords(pageNum = 1, pageSize = 10): Promise<PageResult<MahjongRecordItem> | null> {
+        const supportedGames = getSupportedRecordGames(false);
+        const fetchSize = Math.max(pageSize, pageNum * pageSize);
+        const pages = await Promise.all(supportedGames.map(async (game) => {
+            const result = await this.getGameRecords(game.gameId, 1, fetchSize);
+            return { game, result };
+        }));
+        let total = 0;
+        const records: MahjongRecordItem[] = [];
+        for (const page of pages) {
+            if (!page.result) continue;
+            total += page.result.total || 0;
+            for (const record of page.result.records || []) {
+                records.push({
+                    ...record,
+                    gameId: page.game.gameId,
+                    gameName: record.gameName || page.game.name,
+                });
+            }
+        }
+        records.sort((a, b) => {
+            const timeDiff = this.parseRecordSortTime(b.time) - this.parseRecordSortTime(a.time);
+            if (timeDiff !== 0) return timeDiff;
+            return (Number(b.id) || 0) - (Number(a.id) || 0);
+        });
+        const start = Math.max(0, (pageNum - 1) * pageSize);
+        return {
+            code: '00000000',
+            msg: 'Success',
+            pageNum,
+            total,
+            records: records.slice(start, start + pageSize),
+        };
+    }
+
+    async getGameRecordSnapshot(gameId: GameId | string, maxRecords = 1000, pageSize = 100): Promise<MahjongRecordItem[]> {
+        const limit = Math.max(1, Math.floor(maxRecords));
+        const size = Math.max(1, Math.min(200, Math.floor(pageSize)));
+        if (gameId === ALL_RECORD_GAME_ID) {
+            const pages = await Promise.all(getSupportedRecordGames(false).map(async (game) => {
+                const records = await this.getGameRecordSnapshot(game.gameId, limit, size);
+                return records.map((record) => ({
+                    ...record,
+                    gameId: game.gameId,
+                    gameName: record.gameName || game.name,
+                }));
+            }));
+            const records = ([] as MahjongRecordItem[]).concat(...pages);
+            records.sort((a, b) => {
+                const timeDiff = this.parseRecordSortTime(b.time) - this.parseRecordSortTime(a.time);
+                if (timeDiff !== 0) return timeDiff;
+                return (Number(b.id) || 0) - (Number(a.id) || 0);
+            });
+            return records.slice(0, limit);
+        }
+
+        const api = GAME_RECORD_API[gameId];
+        if (!api) return [];
+        const records: MahjongRecordItem[] = [];
+        const maxPages = Math.ceil(limit / size);
+        let total = 0;
+        for (let page = 1; page <= maxPages && records.length < limit; page++) {
+            const result = await this.getGameRecords(gameId, page, size);
+            if (!result) break;
+            total = result.total || total;
+            const pageRecords = result.records || [];
+            for (const record of pageRecords) {
+                records.push({
+                    ...record,
+                    gameId,
+                    gameName: record.gameName || api.name,
+                });
+                if (records.length >= limit) break;
+            }
+            if (pageRecords.length === 0 || (total > 0 && records.length >= total)) break;
+        }
+        return records;
     }
 
     async getGameRecordsForRoom(gameId: GameId | string, venueId?: string, number?: string): Promise<MahjongRecordItem[]> {
@@ -399,17 +493,29 @@ export class GameRoomApi {
             Client.Instance.showPromptDialog(`${defaultError}，服务器无响应`);
             return null;
         }
-        if (!isGameApiSuccess(dto.code)) {
+        const payload = dto.data && typeof dto.data === 'object' ? dto.data : dto;
+        const code = dto.code ?? payload.code;
+        if (!isGameApiSuccess(code)) {
             Client.Instance.showPromptDialog(`${defaultError}: ${dto.msg || '未知错误'}`);
             return null;
         }
+        const records = payload.records ?? dto.records ?? payload.rows ?? [];
         return {
-            code: dto.code,
-            msg: dto.msg,
-            pageNum: dto.pageNum ?? pageNum,
-            total: dto.total ?? 0,
-            records: (dto.records || []) as MahjongRecordItem[],
+            code,
+            msg: dto.msg ?? payload.msg,
+            pageNum: payload.pageNum ?? dto.pageNum ?? pageNum,
+            total: payload.total ?? dto.total ?? 0,
+            records: Array.isArray(records) ? records as MahjongRecordItem[] : [],
         };
+    }
+
+    private parseRecordSortTime(value?: string): number {
+        if (!value) return 0;
+        const text = String(value).trim();
+        const withYear = /^\d{2}-\d{2}/.test(text) ? `${new Date().getFullYear()}-${text}` : text;
+        const normalized = withYear.replace(' ', 'T');
+        const parsed = Date.parse(normalized);
+        return Number.isFinite(parsed) ? parsed : 0;
     }
 
     /**
@@ -495,7 +601,7 @@ export class GameRoomApi {
         GameManager.Instance.enterVenue(result.wsAddress, result.venueId, gameType, () => {
             Client.Instance.showConnecting(false);
             onEnterVenue();
-        });
+        }, result.base64 || '');
     }
 
     private parsePublicRooms(dto: any): PublicRoomItem[] {

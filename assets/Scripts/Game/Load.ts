@@ -58,8 +58,12 @@ export class Load extends Component {
         const hostname = isBrowser ? window.location.hostname : '';
         const isLocalDevelopment = this.isLocalDevelopmentHost(hostname);
 
-        if (PREVIEW || !isBrowser || isLocalDevelopment) {
+        if (PREVIEW || isLocalDevelopment) {
             return LOCAL_RUNTIME_CONFIG;
+        }
+
+        if (!isBrowser || sys.isNative) {
+            return AWS_RUNTIME_CONFIG;
         }
 
         try {

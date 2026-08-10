@@ -7,9 +7,9 @@ import { GameManager } from '../Manager/GameManager';
 import { ResourceLoader } from '../Manager/ResourceLoader';
 import { GameRoomApi, getServerGameType } from '../Network/GameRoomApi';
 import type { DistrictVenueItem, EnterVenueResult } from '../Network/GameRoomApi';
+import { CarryScorePrompt } from './CarryScorePrompt';
 
 const { ccclass, property } = _decorator;
-const MIN_CARRY_SCORE_MULTIPLIER = 8;
 
 interface TabItem {
     key: string;
@@ -23,6 +23,8 @@ interface RoomOptionItem {
     subText: string;
     gameId: GameId;
     districtId?: number;
+    baseScore?: number;
+    roundCount?: number;
 }
 
 interface RoomPlayerInfo {
@@ -207,15 +209,9 @@ export class GameList extends Component {
         if (options.length === 0 || !this.content) return;
 
         const tabX = this.tabItems.find((item) => item.key === this.activeTabKey)?.x || 0;
-        const cols = options.length > 6 ? 2 : 1;
-        const rows = Math.ceil(options.length / cols);
-        const optionW = cols === 1 ? 258 : 230;
-        const optionH = 44;
-        const gapX = 10;
-        const gapY = 6;
-        const padding = 12;
-        const panelW = cols * optionW + (cols - 1) * gapX + padding * 2;
-        const panelH = rows * optionH + (rows - 1) * gapY + padding * 2;
+        const layout = this.buildDropdownLayout(options);
+        const panelW = layout.panelW;
+        const panelH = layout.panelH;
         const dropdownX = this.clamp(tabX, -this.viewWidth / 2 + panelW / 2, this.viewWidth / 2 - panelW / 2);
 
         const dropdown = new Node('RoomOptionDropdown');
@@ -225,14 +221,65 @@ export class GameList extends Component {
         this.drawRoundRect(dropdown, panelW, panelH, COLORS.dropdown, 10);
         this.dropdownNode = dropdown;
 
-        options.forEach((option, index) => {
-            const col = Math.floor(index / rows);
-            const row = index % rows;
-            const x = -panelW / 2 + padding + optionW / 2 + col * (optionW + gapX);
-            const y = panelH / 2 - padding - optionH / 2 - row * (optionH + gapY);
-            this.createRoomOption(dropdown, option, x, y, optionW, optionH);
+        layout.items.forEach((item) => {
+            this.createRoomOption(dropdown, item.option, item.x, item.y, item.width, item.height);
         });
         dropdown.setSiblingIndex(this.content.children.length - 1);
+    }
+
+    private buildDropdownLayout(options: RoomOptionItem[]): {
+        panelW: number;
+        panelH: number;
+        items: Array<{ option: RoomOptionItem; x: number; y: number; width: number; height: number }>;
+    } {
+        const optionH = 44;
+        const gapX = 10;
+        const gapY = 6;
+        const padding = 12;
+        const groupedSingles = options.filter((option) => option.roundCount === 1);
+        const groupedRounds = options.filter((option) => option.roundCount !== 1);
+
+        if (options.length > 6 && groupedSingles.length > 0 && groupedRounds.length > 0) {
+            const optionW = 230;
+            const cols = 2;
+            const rows = Math.max(groupedSingles.length, groupedRounds.length);
+            const panelW = cols * optionW + gapX + padding * 2;
+            const panelH = rows * optionH + (rows - 1) * gapY + padding * 2;
+            const items: Array<{ option: RoomOptionItem; x: number; y: number; width: number; height: number }> = [];
+            [groupedSingles, groupedRounds].forEach((column, col) => {
+                column.forEach((option, row) => {
+                    items.push({
+                        option,
+                        x: -panelW / 2 + padding + optionW / 2 + col * (optionW + gapX),
+                        y: panelH / 2 - padding - optionH / 2 - row * (optionH + gapY),
+                        width: optionW,
+                        height: optionH,
+                    });
+                });
+            });
+            return { panelW, panelH, items };
+        }
+
+        const cols = options.length > 6 ? 2 : 1;
+        const rows = Math.ceil(options.length / cols);
+        const optionW = cols === 1 ? 258 : 230;
+        const panelW = cols * optionW + (cols - 1) * gapX + padding * 2;
+        const panelH = rows * optionH + (rows - 1) * gapY + padding * 2;
+        return {
+            panelW,
+            panelH,
+            items: options.map((option, index) => {
+                const col = Math.floor(index / rows);
+                const row = index % rows;
+                return {
+                    option,
+                    x: -panelW / 2 + padding + optionW / 2 + col * (optionW + gapX),
+                    y: panelH / 2 - padding - optionH / 2 - row * (optionH + gapY),
+                    width: optionW,
+                    height: optionH,
+                };
+            }),
+        };
     }
 
     private getDropdownOptions(): RoomOptionItem[] {
@@ -250,6 +297,8 @@ export class GameList extends Component {
                 subText: this.getStakeSubText(stake),
                 gameId: game.id,
                 districtId: stake.districtId,
+                baseScore: stake.baseScore,
+                roundCount: stake.roundCount,
             }));
     }
 
@@ -262,6 +311,8 @@ export class GameList extends Component {
                     subText: `${game.playerCount}人玩法`,
                     gameId: game.id,
                     districtId: stake?.districtId,
+                    baseScore: stake?.baseScore,
+                    roundCount: stake?.roundCount,
                 };
             });
         }
@@ -276,6 +327,8 @@ export class GameList extends Component {
                 subText: this.getStakeSubText(stake),
                 gameId: game.id,
                 districtId: stake.districtId,
+                baseScore: stake.baseScore,
+                roundCount: stake.roundCount,
             }));
     }
 
@@ -569,12 +622,14 @@ export class GameList extends Component {
             Client.Instance.showPromptDialog('不支持的游戏类型');
             return;
         }
-        if (!(await this.ensureEnoughCarryForDistrict(districtId))) return;
+        const stake = this.findStakeByDistrictId(districtId);
+        const carryScore = await CarryScorePrompt.requestByRule(this.node, game.id, stake?.baseScore || 0, stake?.roundCount || 8);
+        if (carryScore == null) return;
 
         this.entering = true;
         Client.Instance.showConnecting(true);
         try {
-            const result = await GameRoomApi.Instance.joinByDistrict(districtId);
+            const result = await GameRoomApi.Instance.joinByDistrict(districtId, carryScore);
             if (!result) {
                 Client.Instance.showConnecting(false);
                 return;
@@ -596,12 +651,14 @@ export class GameList extends Component {
             Client.Instance.showPromptDialog('不支持的游戏类型');
             return;
         }
-        if (!(await this.ensureEnoughCarryForDistrict(districtId))) return;
+        const stake = this.findStakeByDistrictId(districtId);
+        const carryScore = await CarryScorePrompt.requestByRule(this.node, game.id, stake?.baseScore || 0, stake?.roundCount || 8);
+        if (carryScore == null) return;
 
         this.entering = true;
         Client.Instance.showConnecting(true);
         try {
-            const result = await GameRoomApi.Instance.joinByVenueId(venueId, gameType);
+            const result = await GameRoomApi.Instance.joinByVenueId(venueId, gameType, carryScore);
             if (!result) {
                 Client.Instance.showConnecting(false);
                 return;
@@ -616,38 +673,12 @@ export class GameList extends Component {
         }
     }
 
-    private async ensureEnoughCarryForDistrict(districtId: number): Promise<boolean> {
-        const stake = this.findStakeByDistrictId(districtId);
-        return this.ensureEnoughCarryByBaseScore(stake?.baseScore || 0);
-    }
-
-    private async ensureEnoughCarryByBaseScore(baseScore: number): Promise<boolean> {
-        const required = this.getMinCarryScore(baseScore);
-        if (required <= 0) return true;
-        try {
-            await GameManager.Instance.refreshCapital();
-        } catch (err) {
-            console.warn('[GameList] Refresh capital failed:', err);
-        }
-        const carry = Math.floor(Number(GameManager.Instance.gold || 0));
-        if (carry >= required) return true;
-        const safeBox = Math.floor(Number(GameManager.Instance.deposit || 0));
-        Client.Instance.showPromptDialog(
-            `携带积分不足，加入本局至少需要${required}积分。\n当前携带${carry}积分，保险柜${safeBox}积分不参与游戏结算，请先从保险柜取出积分。`
-        );
-        return false;
-    }
-
     private findStakeByDistrictId(districtId: number): StakeOption | undefined {
         for (const gameId of Object.keys(GAME_STAKE_OPTIONS)) {
             const stake = (GAME_STAKE_OPTIONS[gameId as GameId] || []).find((item) => item.districtId === districtId);
             if (stake) return stake;
         }
         return undefined;
-    }
-
-    private getMinCarryScore(baseScore: number): number {
-        return Math.max(0, Math.ceil((Number(baseScore) || 0) * MIN_CARRY_SCORE_MULTIPLIER));
     }
 
     private onEnterVenue(game: GameMetaInfo, result: EnterVenueResult): void {

@@ -4,6 +4,7 @@
 // Date 2025.10.24
 
 import { _decorator, Component, Label, Node } from 'cc';
+import { makeModalLayer } from '../UI/UiKit';
 const { ccclass, property } = _decorator;
 
 @ccclass('PromptDialog')
@@ -16,6 +17,10 @@ export class PromptDialog extends Component {
 
     // 点击取消回调函数
     private cancelFunc : Function | null = null;
+
+    protected onLoad(): void {
+        makeModalLayer(this.node);
+    }
 
     public showMessage(text: string, okFunc: Function | null, cancelFunc: Function | null) {
         this.labelMessage.string = text;
@@ -37,5 +42,4 @@ export class PromptDialog extends Component {
         }
     }
 }
-
 

@@ -16,7 +16,7 @@ import { DlgFamilyInvite } from './Dialogs/DlgFamilyInvite';
 import { DlgStats } from './Dialogs/DlgStats';
 import { DlgMatchSettings } from './Dialogs/DlgMatchSettings';
 import { DlgIncomeBox } from './Dialogs/DlgIncomeBox';
-import { sanitizeAllEditBoxDefaultLabels } from '../UI/UiKit';
+import { makeModalLayer, sanitizeAllEditBoxDefaultLabels } from '../UI/UiKit';
 const { ccclass, property } = _decorator;
 
 @ccclass('Hall')
@@ -382,6 +382,7 @@ export class Hall extends Component {
 
     private showDialogNode(dialog: Node): void {
         dialog.active = true;
+        makeModalLayer(dialog);
         this.bringNodeToFront(dialog.parent);
         this.bringNodeToFront(dialog);
         sanitizeAllEditBoxDefaultLabels(dialog);
