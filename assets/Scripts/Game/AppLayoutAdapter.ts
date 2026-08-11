@@ -1,4 +1,4 @@
-import { _decorator, Component, game, ResolutionPolicy, screen, sys, view } from 'cc';
+import { _decorator, Component, director, game, Node, ResolutionPolicy, screen, sys, view } from 'cc';
 const { ccclass, property } = _decorator;
 
 export type LayoutSnapshot = {
@@ -33,6 +33,10 @@ export class AppLayoutAdapter extends Component {
 
     private _snapshot: LayoutSnapshot | null = null;
 
+    private _canvas: Node | null = null;
+    private _canvasBaseScaleX = 1;
+    private _canvasBaseScaleY = 1;
+
     public get Snapshot(): LayoutSnapshot | null {
         return this._snapshot;
     }
@@ -45,20 +49,26 @@ export class AppLayoutAdapter extends Component {
             return;
         }
         this.node.name = 'AppLayoutAdapter';
-        this.applyExactFit();
+        this.applyStretchLayout();
     }
 
     protected onEnable(): void {
-        view.on('canvas-resize', this.recalculate, this);
-        game.on(game.EVENT_SHOW, this.recalculate, this);
-        game.on(game.EVENT_HIDE, this.recalculate, this);
-        this.recalculate();
+        view.on('canvas-resize', this.onLayoutChanged, this);
+        game.on(game.EVENT_SHOW, this.onLayoutChanged, this);
+        game.on(game.EVENT_HIDE, this.onLayoutChanged, this);
+        this.onLayoutChanged();
     }
 
     protected onDisable(): void {
-        view.off('canvas-resize', this.recalculate, this);
-        game.off(game.EVENT_SHOW, this.recalculate, this);
-        game.off(game.EVENT_HIDE, this.recalculate, this);
+        view.off('canvas-resize', this.onLayoutChanged, this);
+        game.off(game.EVENT_SHOW, this.onLayoutChanged, this);
+        game.off(game.EVENT_HIDE, this.onLayoutChanged, this);
+    }
+
+    protected start(): void {
+        // Canvas and Widget finish their first layout before start. Apply the
+        // stretch once more so that their initial layout cannot reset it.
+        this.applyStretchLayout();
     }
 
     protected onDestroy(): void {
@@ -104,17 +114,52 @@ export class AppLayoutAdapter extends Component {
         };
     }
 
+    private onLayoutChanged(): void {
+        this.applyStretchLayout();
+        this.recalculate();
+    }
+
     /**
-     * Project settings are only applied while the player is booting. Enforce the
-     * policy again from the running game so that preview/native players cannot
-     * keep an old SHOW_ALL viewport after a project-settings change.
+     * Cocos Canvas keeps its camera projection proportional to the physical
+     * screen, even when EXACT_FIT is selected. Therefore the policy alone still
+     * leaves a 16:9 UI canvas centred inside a wider screen. Scale the Canvas
+     * itself by the aspect-ratio difference to deliberately stretch all game UI
+     * into the complete viewport without cropping it.
      */
-    private applyExactFit(): void {
+    private applyStretchLayout(): void {
         view.setDesignResolutionSize(
             this.designWidth,
             this.designHeight,
             ResolutionPolicy.EXACT_FIT,
         );
+
+        const canvas = this.getCanvas();
+        if (!canvas) return;
+
+        const frame = screen.windowSize;
+        if (frame.width <= 0 || frame.height <= 0) return;
+
+        const designAspect = this.designWidth / this.designHeight;
+        const frameAspect = frame.width / frame.height;
+        const stretchX = frameAspect / designAspect;
+
+        canvas.setScale(
+            this._canvasBaseScaleX * stretchX,
+            this._canvasBaseScaleY,
+            canvas.scale.z,
+        );
+    }
+
+    private getCanvas(): Node | null {
+        if (this._canvas?.isValid) return this._canvas;
+
+        const canvas = director.getScene()?.getChildByName('Canvas') ?? null;
+        if (!canvas) return null;
+
+        this._canvas = canvas;
+        this._canvasBaseScaleX = canvas.scale.x;
+        this._canvasBaseScaleY = canvas.scale.y;
+        return canvas;
     }
 
     private getDevicePixelRatio(): number {

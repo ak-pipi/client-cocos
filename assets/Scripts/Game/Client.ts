@@ -299,7 +299,6 @@ export class Client extends Component {
     private ensureLayoutAdapter() {
         if (AppLayoutAdapter.Instance) return;
         const node = new Node('AppLayoutAdapter');
-        node.parent = this.node;
         node.addComponent(AppLayoutAdapter);
         director.addPersistRootNode(node);
     }
