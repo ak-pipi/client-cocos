@@ -1972,8 +1972,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
 
         // 增大面板高度：标题(~75) + 徽章(42+16) + 胡牌样式(78+20) + 玩家行(N*96) + 按钮区(60) + 底部padding(30)
         const playerRows = seatCount;
-        const roomFeeText = isLastRound ? this.getRoomFeeSettlementText(msg) : '';
-        const settlementStatsHeight = 64;
+        const settlementStatsHeight = 0;
         const panelHeight = isHu
             ? (75 + 58 + 98 + playerRows * 96 + 60 + 30 + settlementStatsHeight)
             : (75 + 58 + playerRows * 96 + 60 + 30 + settlementStatsHeight);
@@ -2088,17 +2087,6 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
             goldLabel.string = `余额 ${golds[serverSeat] || 0}`;
             goldLabel.color = new Color(170, 185, 205, 255);
         }
-
-        const statsNode = this.createUIChild(panel, 'SettlementStatsInfo', 660, 58, 0, -panelHeight / 2 + 112, 1);
-        const statsLabel = statsNode.addComponent(Label);
-        statsLabel.string = roomFeeText || '收益箱统计加载中';
-        statsLabel.fontSize = 18;
-        statsLabel.lineHeight = 23;
-        statsLabel.horizontalAlign = 1;
-        statsLabel.verticalAlign = 1;
-        statsLabel.overflow = Label.Overflow.SHRINK;
-        statsLabel.color = new Color(255, 207, 128, 255);
-        this.updateSettlementIncomeBoxSummary(statsLabel, roomFeeText);
 
         // --- 底部按钮区 ---
         const settledRound = Number(msg?.roundNo ?? (this as any).currentRound) || Number((this as any).currentRound) || 0;

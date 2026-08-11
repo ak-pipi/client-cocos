@@ -140,6 +140,7 @@ export interface DistrictVenueItem {
     maxPlayerNums: number;
     baseScore?: number;
     roundCount?: number;
+    minCarryScore?: number;
     players?: Array<{ playerId?: string; nickname?: string; headUrl?: string; avatar?: string } | null>;
 }
 
@@ -156,6 +157,7 @@ export interface MahjongRecordItem {
     players: Array<{ playerId: string; nickname: string; headUrl?: string } | null>;
     scores: number[];
     winGolds: number[];
+    scoreScale?: number;
     time: string;
     hasReplay?: boolean;
     expireTime?: string;

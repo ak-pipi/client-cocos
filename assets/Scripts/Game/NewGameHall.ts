@@ -1,7 +1,7 @@
 import { _decorator, Component, Node, Label, Color, Graphics, Button, EventHandler, UITransform, EditBox, Prefab, sys, Widget, math } from 'cc';
 import { Client } from './Client';
 import { GameFactory } from '../App/GameFactory';
-import { GameId, GameType, StakeOption, GAME_STAKE_OPTIONS, resolveMinCarryScore } from '../App/GameEnums';
+import { GameId, GameType, StakeOption, GAME_STAKE_OPTIONS, formatStakeDisplayLabel, resolveMinCarryScore } from '../App/GameEnums';
 import { ResourceLoader } from '../Manager/ResourceLoader';
 import { GameManager } from '../Manager/GameManager';
 import { GameRoomApi, EnterVenueResult, getServerGameType, DistrictVenueItem, isGameRecordSupported } from '../Network/GameRoomApi';
@@ -301,101 +301,50 @@ export class NewGameHall extends Component {
         card.addComponent(UITransform).setContentSize(w, h);
         card.setPosition(x, y, 0);
 
-        // 卡片背景
         const g = card.addComponent(Graphics);
-        g.fillColor = new Color(30, 70, 110, 240);
-        g.roundRect(-w / 2, -h / 2, w, h, 12);
+        g.fillColor = new Color(0, 0, 0, 45);
+        g.ellipse(8, -66, 138, 30);
         g.fill();
 
-        // 顶部装饰条
-        const topBar = new Node('TopBar');
-        topBar.parent = card;
-        topBar.addComponent(UITransform).setContentSize(w - 4, 4);
-        topBar.setPosition(0, h / 2 - 3, 0);
-        const tg = topBar.addComponent(Graphics);
-        tg.fillColor = new Color(255, 200, 60, 200);
-        tg.rect(-(w - 4) / 2, -2, w - 4, 4);
-        tg.fill();
+        this.createBench(card, 0, 66, true);
 
-        // 游戏名称
+        const deskNode = new Node('RoundDesk');
+        deskNode.parent = card;
+        deskNode.addComponent(UITransform).setContentSize(210, 170);
+        deskNode.setPosition(0, 2, 0);
+        const dg = deskNode.addComponent(Graphics);
+        this.draw3DDesk(dg, stake.districtId % 2 === 0 ? new Color(42, 134, 118, 245) : new Color(126, 52, 124, 245));
+
         const stakeLabel = new Node('StakeLabel');
-        stakeLabel.parent = card;
-        stakeLabel.addComponent(UITransform).setContentSize(w - 30, 40);
-        stakeLabel.setPosition(0, h / 2 - 35, 0);
+        stakeLabel.parent = deskNode;
+        stakeLabel.addComponent(UITransform).setContentSize(158, 36);
+        stakeLabel.setPosition(0, 31, 0);
         const sl = stakeLabel.addComponent(Label);
-        sl.string = stake.label || this.gameName;
+        sl.string = formatStakeDisplayLabel(this.gameId, stake, this.gameName);
         sl.fontSize = 24;
         sl.lineHeight = 30;
-        sl.overflow = 2;
+        sl.overflow = Label.Overflow.SHRINK;
         sl.horizontalAlign = 1;
         sl.verticalAlign = 1;
-        sl.color = new Color(255, 220, 100, 255);
+        sl.color = new Color(245, 253, 255, 255);
         sl.isBold = true;
 
-        const modeLabel = new Node('ModeLabel');
-        modeLabel.parent = card;
-        modeLabel.addComponent(UITransform).setContentSize(w - 30, 28);
-        modeLabel.setPosition(0, h / 2 - 66, 0);
-        const mode = modeLabel.addComponent(Label);
-        mode.string = this.getStakeModeText(stake);
-        mode.fontSize = 18;
-        mode.lineHeight = 24;
-        mode.overflow = Label.Overflow.SHRINK;
-        mode.horizontalAlign = Label.HorizontalAlign.CENTER;
-        mode.verticalAlign = Label.VerticalAlign.CENTER;
-        mode.color = new Color(235, 214, 156, 255);
-
-        // 分隔线
-        const sep = new Node('Sep');
-        sep.parent = card;
-        sep.addComponent(UITransform).setContentSize(w - 40, 1);
-        sep.setPosition(0, h / 2 - 88, 0);
-        const sg = sep.addComponent(Graphics);
-        sg.fillColor = new Color(60, 100, 140, 150);
-        sg.rect(-(w - 40) / 2, -0.5, w - 40, 1);
-        sg.fill();
-
-        // 在线人数
-        const countLabel = new Node('CountLabel');
-        countLabel.parent = card;
-        countLabel.addComponent(UITransform).setContentSize(w - 30, 30);
-        countLabel.setPosition(0, h / 2 - 112, 0);
-        const cl = countLabel.addComponent(Label);
-        cl.string = '在线 --';
-        cl.fontSize = 20;
-        cl.lineHeight = 26;
-        cl.overflow = 2;
-        cl.horizontalAlign = 1;
-        cl.verticalAlign = 1;
-        cl.color = new Color(180, 200, 220, 255);
-        this.tableCardLabels.set(stake.districtId, cl);
-
-        const minCarry = this.getMinCarryScore(stake.baseScore, stake.roundCount);
+        const minCarry = this.getStakeMinCarryScore(stake);
         const minNode = new Node('MinCarryLabel');
-        minNode.parent = card;
-        minNode.addComponent(UITransform).setContentSize(w - 30, 30);
-        minNode.setPosition(0, h / 2 - 140, 0);
+        minNode.parent = deskNode;
+        minNode.addComponent(UITransform).setContentSize(112, 28);
+        minNode.setPosition(0, -7, 0);
         const ml = minNode.addComponent(Label);
-        ml.string = minCarry > 0 ? `携带≥${minCarry}积分` : '';
+        ml.string = minCarry > 0 ? `赛 ${minCarry}` : '';
         ml.fontSize = 18;
-        ml.lineHeight = 24;
-        ml.overflow = 2;
+        ml.lineHeight = 26;
+        ml.overflow = Label.Overflow.SHRINK;
         ml.horizontalAlign = 1;
         ml.verticalAlign = 1;
-        ml.color = new Color(235, 214, 156, 255);
+        ml.color = new Color(255, 228, 118, 255);
+        ml.isBold = true;
 
-        const actionNode = new Node('ActionHint');
-        actionNode.parent = card;
-        actionNode.addComponent(UITransform).setContentSize(w - 40, 34);
-        actionNode.setPosition(0, -h / 2 + 34, 0);
-        const actionLabel = actionNode.addComponent(Label);
-        actionLabel.string = '点击桌子快速进入';
-        actionLabel.fontSize = 20;
-        actionLabel.lineHeight = 26;
-        actionLabel.overflow = Label.Overflow.SHRINK;
-        actionLabel.horizontalAlign = Label.HorizontalAlign.CENTER;
-        actionLabel.verticalAlign = Label.VerticalAlign.CENTER;
-        actionLabel.color = new Color(255, 255, 255, 255);
+        this.createBench(card, 0, -66, false);
 
         const button = card.addComponent(Button);
         button.transition = Button.Transition.SCALE;
@@ -407,6 +356,77 @@ export class NewGameHall extends Component {
         clickEvent.handler = 'onQuickJoin';
         clickEvent.customEventData = String(stake.districtId);
         button.clickEvents.push(clickEvent);
+    }
+
+    private draw3DDesk(graphics: Graphics, tableColor: Color): void {
+        graphics.clear();
+        graphics.fillColor = new Color(0, 0, 0, 78);
+        graphics.ellipse(8, -70, 108, 24);
+        graphics.fill();
+        graphics.fillColor = new Color(13, 14, 31, 245);
+        graphics.ellipse(0, -66, 48, 14);
+        graphics.fill();
+        graphics.fillColor = new Color(34, 32, 58, 248);
+        graphics.roundRect(-23, -66, 46, 54, 12);
+        graphics.fill();
+        graphics.fillColor = new Color(17, 19, 42, 255);
+        graphics.circle(0, -12, 72);
+        graphics.fill();
+        graphics.fillColor = new Color(47, 48, 84, 245);
+        graphics.circle(0, -3, 69);
+        graphics.fill();
+        graphics.fillColor = new Color(13, 17, 39, 255);
+        graphics.circle(0, 3, 64);
+        graphics.fill();
+        graphics.fillColor = new Color(22, 31, 56, 255);
+        graphics.circle(0, 8, 61);
+        graphics.fill();
+        graphics.fillColor = new Color(25, 27, 57, 255);
+        graphics.circle(0, 6, 56);
+        graphics.fill();
+        graphics.fillColor = tableColor;
+        graphics.circle(0, 11, 52);
+        graphics.fill();
+        graphics.fillColor = new Color(255, 255, 255, 36);
+        graphics.ellipse(-18, 31, 28, 9);
+        graphics.fill();
+        graphics.strokeColor = new Color(209, 232, 255, 190);
+        graphics.lineWidth = 2;
+        graphics.circle(0, 11, 47);
+        graphics.stroke();
+        graphics.strokeColor = new Color(7, 10, 29, 230);
+        graphics.lineWidth = 4;
+        graphics.circle(0, 6, 56);
+        graphics.stroke();
+    }
+
+    private createBench(parent: Node, x: number, y: number, backSide: boolean): void {
+        const bench = new Node('Bench');
+        bench.parent = parent;
+        bench.addComponent(UITransform).setContentSize(168, 54);
+        bench.setPosition(x, y, 0);
+        const graphics = bench.addComponent(Graphics);
+        graphics.fillColor = new Color(0, 0, 0, backSide ? 46 : 72);
+        graphics.ellipse(6, -25, 82, 12);
+        graphics.fill();
+        graphics.fillColor = new Color(43, 28, 28, 245);
+        graphics.roundRect(-58, -29, 12, 20, 5);
+        graphics.fill();
+        graphics.roundRect(46, -29, 12, 20, 5);
+        graphics.fill();
+        graphics.fillColor = new Color(75, 48, 49, 242);
+        graphics.roundRect(-80, -19, 160, 38, 19);
+        graphics.fill();
+        graphics.fillColor = new Color(backSide ? 125 : 146, 83, 70, backSide ? 224 : 248);
+        graphics.roundRect(-72, -14, 144, 28, 14);
+        graphics.fill();
+        graphics.fillColor = new Color(218, 149, 96, 126);
+        graphics.roundRect(-58, 1, 94, 8, 5);
+        graphics.fill();
+        graphics.strokeColor = new Color(255, 226, 170, 92);
+        graphics.lineWidth = 1.4;
+        graphics.roundRect(-70, -12, 140, 24, 12);
+        graphics.stroke();
     }
 
     private refreshPlayerCounts(): void {
@@ -436,12 +456,18 @@ export class NewGameHall extends Component {
     }
 
     private getStakeModeText(stake: StakeOption): string {
-        return stake.label || '快速场';
+        const rounds = stake.roundCount === 1 ? '单局' : `${stake.roundCount}局`;
+        return `${stake.baseScore}积分 · ${rounds}`;
     }
 
     private formatVenueMode(venue: DistrictVenueItem): string {
         const stake = this.findStakeByDistrictId(Number(venue.districtId) || 0);
-        if (stake?.label) return stake.label;
+        if (stake) return formatStakeDisplayLabel(this.gameId, stake, this.gameName);
+        const baseScore = Number(venue.baseScore) || 0;
+        const roundCount = Number(venue.roundCount) || 0;
+        if (baseScore > 0 && roundCount > 0) {
+            return formatStakeDisplayLabel(this.gameId, { baseScore, roundCount, label: '' }, '快速场');
+        }
         const ruleParts: string[] = [];
         if (venue.gameTypeText) ruleParts.push(venue.gameTypeText);
         if (venue.roundCount) ruleParts.push(venue.roundCount === 1 ? '单局' : `${venue.roundCount}局`);
@@ -785,19 +811,20 @@ export class NewGameHall extends Component {
                     venue.venueId,
                     venue.baseScore || stake?.baseScore || 0,
                     venue.roundCount || stake?.roundCount || 8,
+                    venue.minCarryScore || stake?.minCarryScore,
                 );
             });
         });
     }
 
     /** 通过 venueId 加入房间 */
-    private async joinVenueById(venueId: string, baseScore = 0, roundCount = 8): Promise<void> {
+    private async joinVenueById(venueId: string, baseScore = 0, roundCount = 8, minCarryScore?: any): Promise<void> {
         const gameType = getServerGameType(this.gameId);
         if (!gameType) {
             Client.Instance.showPromptDialog('不支持的游戏类型');
             return;
         }
-        const carryScore = await this.requestCarryScoreByBaseScore(baseScore, roundCount);
+        const carryScore = await this.requestCarryScoreByBaseScore(baseScore, roundCount, minCarryScore);
         if (carryScore == null) return;
         Client.Instance.showConnecting(true);
         GameRoomApi.Instance.joinByVenueId(venueId, gameType, carryScore).then((result) => {
@@ -1294,11 +1321,12 @@ export class NewGameHall extends Component {
 
     private async requestCarryScoreForDistrict(districtId: number): Promise<number | null> {
         const stake = this.findStakeByDistrictId(districtId);
-        return this.requestCarryScoreByBaseScore(stake?.baseScore || 0, stake?.roundCount || 8);
+        return this.requestCarryScoreByBaseScore(stake?.baseScore || 0, stake?.roundCount || 8, stake?.minCarryScore);
     }
 
-    private async requestCarryScoreByBaseScore(baseScore: any, roundCount?: any): Promise<number | null> {
-        const minCarry = this.getMinCarryScore(baseScore, roundCount);
+    private async requestCarryScoreByBaseScore(baseScore: any, roundCount?: any, explicitMinCarry?: any): Promise<number | null> {
+        const explicit = Math.floor(Number(explicitMinCarry) || 0);
+        const minCarry = explicit > 0 ? explicit : this.getMinCarryScore(baseScore, roundCount);
         return this.showCarryScoreInput(minCarry);
     }
 
@@ -1444,7 +1472,7 @@ export class NewGameHall extends Component {
                     return;
                 }
                 if (value < min) {
-                    Client.Instance.showPromptTip(`最低携带${min}积分`);
+                    Client.Instance.showPromptTip(`至少携带${min}积分`);
                     return;
                 }
                 if (value > available) {
@@ -1593,13 +1621,20 @@ export class NewGameHall extends Component {
         return resolveMinCarryScore(this.gameId, baseScore, roundCount);
     }
 
-    private async ensureEnoughCarryForDistrict(districtId: number): Promise<boolean> {
-        const stake = this.findStakeByDistrictId(districtId);
-        return this.ensureEnoughCarryByBaseScore(stake?.baseScore || 0, stake?.roundCount || 8);
+    private getStakeMinCarryScore(stake: StakeOption | null | undefined): number {
+        const explicit = Math.floor(Number(stake?.minCarryScore) || 0);
+        if (explicit > 0) return explicit;
+        return this.getMinCarryScore(stake?.baseScore || 0, stake?.roundCount || 8);
     }
 
-    private async ensureEnoughCarryByBaseScore(baseScore: any, roundCount?: any): Promise<boolean> {
-        const required = this.getMinCarryScore(baseScore, roundCount);
+    private async ensureEnoughCarryForDistrict(districtId: number): Promise<boolean> {
+        const stake = this.findStakeByDistrictId(districtId);
+        return this.ensureEnoughCarryByBaseScore(stake?.baseScore || 0, stake?.roundCount || 8, stake?.minCarryScore);
+    }
+
+    private async ensureEnoughCarryByBaseScore(baseScore: any, roundCount?: any, explicitMinCarry?: any): Promise<boolean> {
+        const explicit = Math.floor(Number(explicitMinCarry) || 0);
+        const required = explicit > 0 ? explicit : this.getMinCarryScore(baseScore, roundCount);
         if (required <= 0) return true;
         await GameManager.Instance.refreshCapital();
         const carry = GameManager.Instance.Gold || 0;

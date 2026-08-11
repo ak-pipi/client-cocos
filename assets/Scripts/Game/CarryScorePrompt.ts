@@ -15,8 +15,15 @@ export class CarryScorePrompt {
         return this.request(parent, this.getMinCarryScore(baseScore));
     }
 
-    public static requestByRule(parent: Node, gameId: GameId | string | null | undefined, baseScore: any, roundCount?: any): Promise<number | null> {
-        return this.request(parent, this.getMinCarryScore(baseScore, gameId, roundCount));
+    public static requestByRule(
+        parent: Node,
+        gameId: GameId | string | null | undefined,
+        baseScore: any,
+        roundCount?: any,
+        explicitMinCarry?: any,
+    ): Promise<number | null> {
+        const explicit = Math.floor(Number(explicitMinCarry) || 0);
+        return this.request(parent, explicit > 0 ? explicit : this.getMinCarryScore(baseScore, gameId, roundCount));
     }
 
     public static async request(parent: Node, minCarry: number): Promise<number | null> {
@@ -89,7 +96,7 @@ export class CarryScorePrompt {
                     return;
                 }
                 if (value < min) {
-                    Client.Instance.showPromptTip(`最低携带${min}积分`);
+                    Client.Instance.showPromptTip(`至少携带${min}积分`);
                     return;
                 }
                 if (value > available) {

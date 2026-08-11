@@ -32,6 +32,7 @@ interface AgencyStatsRow {
     totalConsume?: number;
     giftReceived?: number;
     hasChildren?: boolean;
+    self?: boolean;
 }
 
 const COLORS = {
@@ -68,6 +69,7 @@ export class DlgStats extends Component {
     private parentName = '';
     private selectedDate = this.formatDate(new Date());
     private rows: AgencyStatsRow[] = [];
+    private selfStats: AgencyStatsRow | null = null;
     private summaryScoreDelta = 0;
     private summaryRounds = 0;
     private pageNum = 1;
@@ -287,6 +289,7 @@ export class DlgStats extends Component {
         }
         this.loading = true;
         this.rows = [];
+        this.selfStats = null;
         this.summaryScoreDelta = 0;
         this.summaryRounds = 0;
         this.setStatus('加载中...');
@@ -304,6 +307,7 @@ export class DlgStats extends Component {
             const dto = await GameManager.Instance.authPost('/player/agency/stat/page', request);
             if (!this.isSuccess(dto)) {
                 this.total = 0;
+                this.selfStats = null;
                 this.summaryScoreDelta = 0;
                 this.summaryRounds = 0;
                 this.setStatus(dto?.msg || '统计数据加载失败');
@@ -312,15 +316,19 @@ export class DlgStats extends Component {
                 return;
             }
             this.rows = dto.records || [];
+            this.selfStats = dto.selfStats || null;
             this.total = dto.total || 0;
             this.summaryScoreDelta = Number(dto.totalScoreDelta || 0);
             this.summaryRounds = Number(dto.totalRounds || 0);
-            this.setStatus(`${this.formatDateText(this.selectedDate)} ${this.currentTab === 'group' ? '合伙人列表' : '直邀玩家'}：${this.total} 人`);
+            const listName = this.currentTab === 'group' ? '合伙人列表' : '直邀玩家';
+            const selfTip = this.selfStats ? '，含本人统计' : '';
+            this.setStatus(`${this.formatDateText(this.selectedDate)} ${listName}：${this.total} 人${selfTip}`);
             this.renderRows();
             this.updatePageLabel();
         } catch (err) {
             console.error('[DlgStats] load stats error:', err);
             this.total = 0;
+            this.selfStats = null;
             this.summaryScoreDelta = 0;
             this.summaryRounds = 0;
             this.setStatus('统计数据加载失败');
@@ -337,16 +345,24 @@ export class DlgStats extends Component {
         const width = 1160;
         const itemHeight = 66;
         const gap = 8;
+        const entries: Array<{ row: AgencyStatsRow; rowIndex: number; isSelf: boolean }> = [];
+        if (this.selfStats) {
+            entries.push({ row: this.selfStats, rowIndex: -1, isSelf: true });
+        }
+        this.rows.forEach((row, rowIndex) => entries.push({ row, rowIndex, isSelf: false }));
 
-        this.rows.forEach((row, index) => {
+        entries.forEach((entry, index) => {
+            const row = entry.row;
             const item = new Node(`Stats_${index}`);
             item.parent = this.content!;
             item.setPosition(0, -(index * (itemHeight + gap) + itemHeight / 2), 0);
             item.addComponent(UITransform).setContentSize(width, itemHeight);
-            fillRoundRect(item, width, itemHeight, index % 2 === 0 ? COLORS.row : COLORS.rowAlt, 8);
+            const rowColor = entry.isSelf ? new Color(255, 239, 183, 250) : (index % 2 === 0 ? COLORS.row : COLORS.rowAlt);
+            fillRoundRect(item, width, itemHeight, rowColor, 8);
 
-            this.createAvatar(item, row, -525, 0);
-            const name = createLabel(item, this.displayName(row), 20, COLORS.text, 240, 28);
+            this.createAvatar(item, row, -525, 0, entry.isSelf);
+            const nameText = entry.isSelf ? `本人 ${this.displayName(row)}` : this.displayName(row);
+            const name = createLabel(item, nameText, 20, COLORS.text, 240, 28);
             name.node.setPosition(-405, 15, 0);
             const id = createLabel(item, `ID:${row.playerId || '-'}`, 18, COLORS.muted, 240, 24);
             id.node.setPosition(-405, -13, 0);
@@ -354,8 +370,8 @@ export class DlgStats extends Component {
             this.amountLabel(item, this.scoreValue(row), -80, 170);
             this.amountLabel(item, row.roundCount, 170, 120);
 
-            if (this.currentTab === 'group') {
-                createButton(item, '查看玩家', 106, 38, COLORS.teal, this.node, 'DlgStats', 'onViewJuniorClicked', String(index))
+            if (this.currentTab === 'group' && !entry.isSelf) {
+                createButton(item, '查看玩家', 106, 38, COLORS.teal, this.node, 'DlgStats', 'onViewJuniorClicked', String(entry.rowIndex))
                     .setPosition(430, 0, 0);
             } else {
                 const dash = createLabel(item, '-', 22, COLORS.muted, 110, 36);
@@ -364,13 +380,14 @@ export class DlgStats extends Component {
             }
         });
 
-        const totalIndex = this.rows.length;
+        const totalIndex = entries.length;
         const totalRow = new Node('StatsTotal');
         totalRow.parent = this.content;
         totalRow.setPosition(0, -(totalIndex * (itemHeight + gap) + itemHeight / 2), 0);
         totalRow.addComponent(UITransform).setContentSize(width, itemHeight);
         fillRoundRect(totalRow, width, itemHeight, COLORS.header, 8);
-        const totalTitle = createLabel(totalRow, '总计', 22, COLORS.title, 390, 36);
+        const totalTitleText = this.selfStats ? '下级总计' : '总计';
+        const totalTitle = createLabel(totalRow, totalTitleText, 22, COLORS.title, 390, 36);
         totalTitle.horizontalAlign = Label.HorizontalAlign.CENTER;
         totalTitle.node.setPosition(-405, 0, 0);
         const totalScore = createLabel(totalRow, this.amountText(this.summaryScoreDelta), 22, COLORS.title, 170, 36);
@@ -380,15 +397,16 @@ export class DlgStats extends Component {
         totalRounds.horizontalAlign = Label.HorizontalAlign.CENTER;
         totalRounds.node.setPosition(170, 0, 0);
 
-        resizeScrollContent(this.content, 1180, this.rows.length + 1, itemHeight, gap);
+        resizeScrollContent(this.content, 1180, entries.length + 1, itemHeight, gap);
     }
 
-    private createAvatar(parent: Node, row: AgencyStatsRow, x: number, y: number): void {
+    private createAvatar(parent: Node, row: AgencyStatsRow, x: number, y: number, isSelf = false): void {
         const avatar = new Node('Avatar');
         avatar.parent = parent;
         avatar.setPosition(x, y, 0);
         avatar.addComponent(UITransform).setContentSize(50, 50);
-        fillRoundRect(avatar, 50, 50, this.currentTab === 'group' ? COLORS.accent : COLORS.teal, 8);
+        const color = isSelf ? COLORS.accent : (this.currentTab === 'group' ? COLORS.accent : COLORS.teal);
+        fillRoundRect(avatar, 50, 50, color, 8);
 
         const initial = createLabel(avatar, this.displayName(row).charAt(0) || '员', 22, COLORS.white, 44, 44);
         initial.horizontalAlign = Label.HorizontalAlign.CENTER;

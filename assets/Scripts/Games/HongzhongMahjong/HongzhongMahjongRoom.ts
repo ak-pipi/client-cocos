@@ -1163,8 +1163,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         const data = msg?.data || {};
         const isHu = !!data.hu;
         const seatCount = this.getSeatCount();
-        const roomFeeText = isLastRound ? this.getRoomFeeSettlementText(msg) : '';
-        const settlementStatsHeight = 64;
+        const settlementStatsHeight = 0;
         const panelHeight = 430 + seatCount * 88 + settlementStatsHeight;
         const panel = this.createPopupPanel(
             overlay,
@@ -1242,16 +1241,6 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
             detailLabel.color = new Color(178, 196, 216, 255);
             cursorY -= 84;
         }
-
-        const statsLabel = this.createUIChild(panel, 'SettlementStatsInfo', 620, 56, 0, -panelHeight / 2 + 112, 1).addComponent(Label);
-        statsLabel.string = roomFeeText || '收益箱统计加载中';
-        statsLabel.fontSize = 18;
-        statsLabel.lineHeight = 23;
-        statsLabel.horizontalAlign = 1;
-        statsLabel.verticalAlign = 1;
-        statsLabel.overflow = Label.Overflow.SHRINK;
-        statsLabel.color = new Color(255, 207, 128, 255);
-        this.updateSettlementIncomeBoxSummary(statsLabel, roomFeeText);
 
         const settledRound = Number(msg?.roundNo ?? (this as any).currentRound) || Number((this as any).currentRound) || 0;
         const settledTotal = Number(msg?.roundCount ?? (this as any).totalRounds) || Number((this as any).totalRounds) || 0;

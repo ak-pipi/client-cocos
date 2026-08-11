@@ -24,6 +24,7 @@ const PANEL_H = 760;
 const TABLE_W = 1460;
 const ROW_H = 54;
 const ROW_GAP = 6;
+const RECORD_RANGE_DAYS = 3;
 
 const COLORS = {
     overlay: new Color(0, 0, 0, 150),
@@ -77,13 +78,15 @@ export class DlgMahjongRecords extends Component {
     private filteredRecords: MahjongRecordItem[] = [];
     private loading = false;
     private ownOnly = true;
-    private selectedDate = this.formatDate(new Date());
+    private selectedStartDate = this.formatDate(this.addDays(new Date(), -RECORD_RANGE_DAYS));
+    private selectedEndDate = this.formatDate(new Date());
 
     onLoad() {
         this.buildUI();
     }
 
     onEnable() {
+        this.resetDefaultDateRange();
         this.loadPage(1, true);
         this.scrubEditBoxLabels();
     }
@@ -455,10 +458,23 @@ export class DlgMahjongRecords extends Component {
             return { score: 0, gold: 0, nickname: GameManager.Instance.NickName || '我' };
         }
         return {
-            score: record.scores?.[index] ?? 0,
-            gold: Number(record.winGolds?.[index] ?? 0),
+            score: this.scaleRecordValue(record, record.scores?.[index] ?? 0),
+            gold: this.scaleRecordValue(record, Number(record.winGolds?.[index] ?? 0)),
             nickname: players[index]?.nickname || '我',
         };
+    }
+
+    private scaleRecordValue(record: MahjongRecordItem, value: number): number {
+        return (Number(value) || 0) / this.getRecordScoreScale(record);
+    }
+
+    private getRecordScoreScale(record: MahjongRecordItem): number {
+        const isPaodekuai = record.gameId === GameId.Paodekuai ||
+            Number(record.gameType) === 1033 ||
+            record.gameName === '跑得快';
+        if (!isPaodekuai) return 1;
+        const scale = Number(record.scoreScale || 1);
+        return isFinite(scale) && scale > 0 ? scale : 1;
     }
 
     private hasCurrentPlayer(record: MahjongRecordItem): boolean {
@@ -485,7 +501,11 @@ export class DlgMahjongRecords extends Component {
 
     private matchDate(record: MahjongRecordItem): boolean {
         const date = this.parseRecordDate(record.time);
-        return !!date && this.formatDate(date) === this.selectedDate;
+        if (!date) return false;
+        const start = this.startOfDay(this.parseDate(this.selectedStartDate)).getTime();
+        const end = this.addDays(this.startOfDay(this.parseDate(this.selectedEndDate)), 1).getTime();
+        const time = date.getTime();
+        return time >= start && time < end;
     }
 
     private formatPlayers(record: MahjongRecordItem): string {
@@ -628,21 +648,41 @@ export class DlgMahjongRecords extends Component {
     }
 
     private formatScore(value: number): string {
-        const num = Number(value) || 0;
-        return num > 0 ? `+${Math.floor(num)}` : String(Math.floor(num));
+        const rounded = Math.round((Number(value) || 0) * 10) / 10;
+        const normalized = Object.is(rounded, -0) ? 0 : rounded;
+        const text = Number.isInteger(normalized)
+            ? String(normalized)
+            : normalized.toFixed(1).replace(/\.0$/, '');
+        return normalized > 0 ? `+${text}` : text;
     }
 
     private shiftDate(days: number): void {
-        const date = this.parseDate(this.selectedDate);
-        date.setDate(date.getDate() + days);
-        this.selectedDate = this.formatDate(date);
+        const offset = days * RECORD_RANGE_DAYS;
+        this.selectedStartDate = this.formatDate(this.addDays(this.parseDate(this.selectedStartDate), offset));
+        this.selectedEndDate = this.formatDate(this.addDays(this.parseDate(this.selectedEndDate), offset));
         if (this.dateLabel) this.dateLabel.string = this.dateText();
         this.loadPage(1, true);
     }
 
     private dateText(): string {
-        const text = this.formatDateText(this.selectedDate);
-        return `${text} -- ${text}`;
+        return `${this.formatDateText(this.selectedStartDate)} -- ${this.formatDateText(this.selectedEndDate)}`;
+    }
+
+    private resetDefaultDateRange(): void {
+        const end = new Date();
+        this.selectedEndDate = this.formatDate(end);
+        this.selectedStartDate = this.formatDate(this.addDays(end, -RECORD_RANGE_DAYS));
+        if (this.dateLabel) this.dateLabel.string = this.dateText();
+    }
+
+    private addDays(date: Date, days: number): Date {
+        const next = new Date(date.getTime());
+        next.setDate(next.getDate() + days);
+        return next;
+    }
+
+    private startOfDay(date: Date): Date {
+        return new Date(date.getFullYear(), date.getMonth(), date.getDate());
     }
 
     private parseDate(value: string): Date {

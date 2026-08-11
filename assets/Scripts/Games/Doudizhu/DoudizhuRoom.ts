@@ -1488,9 +1488,8 @@ export class DoudizhuRoom extends PokerRoomBase {
         const roomFeeText = this.getRoomFeeSettlementText(msg);
         this.settlementHasFinalFee = roomFeeText.length > 0;
         if (this.settlementRoomFeeLabel) {
-            this.settlementRoomFeeLabel.string = roomFeeText || '收益箱统计加载中';
-            this.settlementRoomFeeLabel.node.active = true;
-            this.updateSettlementIncomeBoxSummary(this.settlementRoomFeeLabel, roomFeeText);
+            this.settlementRoomFeeLabel.string = '';
+            this.settlementRoomFeeLabel.node.active = false;
         }
         if (this.settlementShuffleButton) {
             this.settlementShuffleButton.active = !(Number(msg?.roomFeeTotal || 0) > 0 || Number(msg?.shuffleFeeTotal || 0) > 0);

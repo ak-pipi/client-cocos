@@ -1,6 +1,6 @@
 import { _decorator, Button, Color, Component, Event, EventHandler, Graphics, Label, Node, Prefab, Sprite, UITransform } from 'cc';
 import { Client } from './Client';
-import { GAME_STAKE_OPTIONS, GameId, GameType } from '../App/GameEnums';
+import { GAME_STAKE_OPTIONS, GameId, GameType, formatStakeDisplayLabel, resolveMinCarryScore } from '../App/GameEnums';
 import type { GameMetaInfo, StakeOption } from '../App/GameEnums';
 import { GameFactory } from '../App/GameFactory';
 import { GameManager } from '../Manager/GameManager';
@@ -25,6 +25,7 @@ interface RoomOptionItem {
     districtId?: number;
     baseScore?: number;
     roundCount?: number;
+    minCarryScore?: number;
 }
 
 interface RoomPlayerInfo {
@@ -44,6 +45,7 @@ interface TableItem {
     number?: string;
     playerCount: number;
     maxPlayerNums: number;
+    minCarryScore: number;
     players: RoomPlayerInfo[];
 }
 
@@ -61,8 +63,9 @@ const COLORS = {
     tableText: new Color(238, 250, 255, 255),
     tableSubText: new Color(255, 220, 96, 255),
     seat: new Color(244, 236, 218, 255),
-    seatEmpty: new Color(118, 104, 104, 220),
     seatText: new Color(245, 245, 245, 255),
+    chair: new Color(112, 72, 64, 230),
+    chairEdge: new Color(72, 48, 52, 235),
 };
 
 @ccclass('GameList')
@@ -79,6 +82,8 @@ export class GameList extends Component {
     private tabNodes: Map<string, Node> = new Map<string, Node>();
     private dropdownNode: Node | null = null;
     private tableGridNode: Node | null = null;
+    private quickJoinNode: Node | null = null;
+    private quickJoinLabel: Label | null = null;
     private statusLabel: Label | null = null;
     private tableLoadSeq = 0;
     private entering = false;
@@ -121,7 +126,9 @@ export class GameList extends Component {
         this.activeTabKey = this.games[0].id;
         this.createTabs();
         this.createTableLayer();
+        this.createQuickJoinButton();
         this.renderDropdown();
+        this.updateQuickJoinButton();
         this.loadTables();
     }
 
@@ -196,6 +203,24 @@ export class GameList extends Component {
         const status = this.createCenteredLabel(this.tableGridNode, '', 22, COLORS.optionSubText, 640, 38);
         status.node.setPosition(0, 130, 0);
         this.statusLabel = status;
+    }
+
+    private createQuickJoinButton(): void {
+        if (!this.content) return;
+        const width = 196;
+        const height = 52;
+        const node = new Node('QuickJoinButton');
+        node.parent = this.content;
+        node.addComponent(UITransform).setContentSize(width, height);
+        node.setPosition(this.viewWidth / 2 - width / 2 - 26, -this.viewHeight / 2 + height / 2 - 8, 0);
+        this.drawRoundRect(node, width, height, new Color(46, 142, 104, 245), 14);
+
+        const label = this.createCenteredLabel(node, '快速游戏', 24, new Color(255, 248, 220, 255), width - 18, height - 8);
+        label.node.setPosition(0, 0, 0);
+        label.isBold = true;
+        this.quickJoinNode = node;
+        this.quickJoinLabel = label;
+        this.bindClick(node, 'onQuickStartClicked');
     }
 
     private renderDropdown(): void {
@@ -293,12 +318,13 @@ export class GameList extends Component {
         return stakes
             .filter((stake) => stake.districtId > 0)
             .map((stake) => ({
-                text: stake.label,
+                text: formatStakeDisplayLabel(game.id, stake, game.name),
                 subText: this.getStakeSubText(stake),
                 gameId: game.id,
                 districtId: stake.districtId,
                 baseScore: stake.baseScore,
                 roundCount: stake.roundCount,
+                minCarryScore: stake.minCarryScore,
             }));
     }
 
@@ -307,12 +333,13 @@ export class GameList extends Component {
             return this.games.map((game) => {
                 const stake = (GAME_STAKE_OPTIONS[game.id] || [])[0];
                 return {
-                    text: stake?.label || game.name,
+                    text: formatStakeDisplayLabel(game.id, stake, game.name),
                     subText: `${game.playerCount}人玩法`,
                     gameId: game.id,
                     districtId: stake?.districtId,
                     baseScore: stake?.baseScore,
                     roundCount: stake?.roundCount,
+                    minCarryScore: stake?.minCarryScore,
                 };
             });
         }
@@ -323,18 +350,19 @@ export class GameList extends Component {
         return stakes
             .filter((stake) => this.selectedDistrictId == null || stake.districtId === this.selectedDistrictId)
             .map((stake) => ({
-                text: stake.label,
+                text: formatStakeDisplayLabel(game.id, stake, game.name),
                 subText: this.getStakeSubText(stake),
                 gameId: game.id,
                 districtId: stake.districtId,
                 baseScore: stake.baseScore,
                 roundCount: stake.roundCount,
+                minCarryScore: stake.minCarryScore,
             }));
     }
 
     private getStakeSubText(stake: StakeOption): string {
         const rounds = stake.roundCount === 1 ? '单局' : `${stake.roundCount}局`;
-        return `底分${stake.baseScore} · ${rounds}`;
+        return `${stake.baseScore}积分 · ${rounds}`;
     }
 
     private createRoomOption(parent: Node, option: RoomOptionItem, x: number, y: number, width: number, height: number): void {
@@ -393,6 +421,9 @@ export class GameList extends Component {
         const anyVenue = venue as any;
         const players = this.normalizePlayers(anyVenue.players || anyVenue.playerList || anyVenue.avatars || []);
         const playerCount = Number(venue.playerCount || players.length || 0);
+        const baseScore = Number(venue.baseScore || source.baseScore || 0);
+        const roundCount = Number(venue.roundCount || source.roundCount || 8);
+        const minCarryScore = Number(venue.minCarryScore || source.minCarryScore || resolveMinCarryScore(game.id, baseScore, roundCount) || 0);
         return {
             gameId: game.id,
             gameName: game.name,
@@ -403,11 +434,13 @@ export class GameList extends Component {
             number: venue.number,
             playerCount,
             maxPlayerNums: Number(venue.maxPlayerNums || game.playerCount || Math.max(playerCount, 2)),
+            minCarryScore,
             players,
         };
     }
 
     private createPlaceholderTable(game: GameMetaInfo, source: RoomOptionItem): TableItem {
+        const minCarryScore = Number(source.minCarryScore || resolveMinCarryScore(game.id, source.baseScore || 0, source.roundCount || 8) || 0);
         return {
             gameId: game.id,
             gameName: game.name,
@@ -416,6 +449,7 @@ export class GameList extends Component {
             districtId: source.districtId,
             playerCount: 0,
             maxPlayerNums: game.playerCount || 2,
+            minCarryScore,
             players: [],
         };
     }
@@ -467,65 +501,98 @@ export class GameList extends Component {
         card.addComponent(UITransform).setContentSize(width, height);
         card.setPosition(x, y, 0);
 
-        const shadow = card.addComponent(Graphics);
-        shadow.fillColor = new Color(18, 16, 22, 72);
-        shadow.roundRect(-width / 2 + 8, -height / 2 + 6, width - 16, height - 12, 18);
-        shadow.fill();
+        const players = this.getVisiblePlayers(table);
+        this.createPlayerBench(card, 0, 66, players[1], true);
 
         const tableNode = new Node('Desk');
         tableNode.parent = card;
-        tableNode.addComponent(UITransform).setContentSize(250, 112);
-        tableNode.setPosition(0, 26, 0);
+        tableNode.addComponent(UITransform).setContentSize(210, 170);
+        tableNode.setPosition(0, 2, 0);
         const desk = tableNode.addComponent(Graphics);
-        desk.fillColor = COLORS.tableEdge;
-        desk.ellipse(0, 0, 128, 58);
-        desk.fill();
-        desk.fillColor = index % 2 === 0 ? COLORS.tableA : COLORS.tableB;
-        desk.ellipse(0, 4, 118, 50);
-        desk.fill();
+        this.draw3DDesk(desk, index % 2 === 0 ? COLORS.tableA : COLORS.tableB);
 
-        const title = this.createCenteredLabel(tableNode, table.roomType, 25, COLORS.tableText, 220, 34);
-        title.node.setPosition(0, 15, 0);
+        const title = this.createCenteredLabel(tableNode, table.roomType, 24, COLORS.tableText, 158, 34);
+        title.node.setPosition(0, 31, 0);
         title.isBold = true;
-        const count = this.createCenteredLabel(tableNode, `${table.playerCount}/${table.maxPlayerNums}`, 21, COLORS.tableSubText, 110, 28);
-        count.node.setPosition(0, -18, 0);
+        const minText = table.minCarryScore > 0 ? this.formatScore(table.minCarryScore) : '--';
+        const minCarry = this.createCenteredLabel(tableNode, `赛 ${minText}`, 18, new Color(255, 228, 118, 255), 116, 28);
+        minCarry.node.setPosition(0, -7, 0);
+        minCarry.isBold = true;
 
-        const sub = this.createCenteredLabel(card, table.subText || table.gameName, 16, COLORS.optionSubText, 260, 24);
-        sub.node.setPosition(0, -54, 0);
-
-        const seats = [
-            { x: -116, y: -42 },
-            { x: 116, y: -42 },
-            { x: -116, y: 84 },
-            { x: 116, y: 84 },
-        ];
-        const maxSeats = Math.min(Math.max(table.maxPlayerNums, 2), seats.length);
-        for (let i = 0; i < maxSeats; i++) {
-            const player = table.players[i];
-            const occupied = !!player || i < table.playerCount;
-            const name = player?.nickname || (occupied ? `玩家${i + 1}` : '空位');
-            this.createSeat(card, seats[i].x, seats[i].y, name, player?.headUrl || player?.avatar, occupied);
-        }
+        this.createPlayerBench(card, 0, -66, players[0]);
 
         const payload = `${table.gameId}|${table.districtId || 0}|${table.venueId || ''}|${table.playerCount}|${table.maxPlayerNums}`;
         this.bindClick(card, 'onRoomTableClicked', payload);
     }
 
-    private createSeat(parent: Node, x: number, y: number, name: string, avatarUrl: string | undefined, occupied: boolean): void {
-        const seat = new Node('Seat');
-        seat.parent = parent;
-        seat.setPosition(x, y, 0);
+    private draw3DDesk(graphics: Graphics, tableColor: Color): void {
+        graphics.clear();
+        graphics.fillColor = new Color(0, 0, 0, 78);
+        graphics.ellipse(8, -70, 108, 24);
+        graphics.fill();
+        graphics.fillColor = new Color(13, 14, 31, 245);
+        graphics.ellipse(0, -66, 48, 14);
+        graphics.fill();
+        graphics.fillColor = new Color(34, 32, 58, 248);
+        graphics.roundRect(-23, -66, 46, 54, 12);
+        graphics.fill();
+        graphics.fillColor = new Color(17, 19, 42, 255);
+        graphics.circle(0, -12, 72);
+        graphics.fill();
+        graphics.fillColor = new Color(47, 48, 84, 245);
+        graphics.circle(0, -3, 69);
+        graphics.fill();
+        graphics.fillColor = new Color(13, 17, 39, 255);
+        graphics.circle(0, 3, 64);
+        graphics.fill();
+        graphics.fillColor = COLORS.tableEdge;
+        graphics.circle(0, 8, 61);
+        graphics.fill();
+        graphics.fillColor = new Color(25, 27, 57, 255);
+        graphics.circle(0, 6, 56);
+        graphics.fill();
+        graphics.fillColor = tableColor;
+        graphics.circle(0, 11, 52);
+        graphics.fill();
+        graphics.fillColor = new Color(255, 255, 255, 36);
+        graphics.ellipse(-18, 31, 28, 9);
+        graphics.fill();
+        graphics.strokeColor = new Color(209, 232, 255, 190);
+        graphics.lineWidth = 2;
+        graphics.circle(0, 11, 47);
+        graphics.stroke();
+        graphics.strokeColor = new Color(7, 10, 29, 230);
+        graphics.lineWidth = 4;
+        graphics.circle(0, 6, 56);
+        graphics.stroke();
+    }
 
+    private createPlayerBench(parent: Node, x: number, y: number, player?: RoomPlayerInfo, backSide = false): void {
+        const bench = new Node('PlayerBench');
+        bench.parent = parent;
+        bench.setPosition(x, y, 0);
+        bench.addComponent(UITransform).setContentSize(168, 54);
+
+        const graphics = bench.addComponent(Graphics);
+        this.draw3DBench(graphics, backSide);
+
+        if (!player) return;
+
+        const name = player.nickname || player.playerId || '玩家';
+        const avatarUrl = player.headUrl || player.avatar;
         const avatar = new Node('Avatar');
-        avatar.parent = seat;
-        avatar.addComponent(UITransform).setContentSize(44, 44);
-        avatar.setPosition(0, 9, 0);
+        avatar.parent = bench;
+        avatar.addComponent(UITransform).setContentSize(32, 32);
+        avatar.setPosition(-40, 0, 0);
         const bg = avatar.addComponent(Graphics);
-        bg.fillColor = occupied ? COLORS.seat : COLORS.seatEmpty;
-        bg.ellipse(0, 0, 22, 22);
+        bg.fillColor = new Color(30, 20, 24, 180);
+        bg.ellipse(2, -2, 18, 18);
+        bg.fill();
+        bg.fillColor = COLORS.seat;
+        bg.ellipse(0, 0, 16, 16);
         bg.fill();
 
-        const initial = this.createCenteredLabel(avatar, occupied ? name.charAt(0) || '玩' : '', 18, COLORS.optionText, 38, 38);
+        const initial = this.createCenteredLabel(avatar, name.charAt(0) || '玩', 15, COLORS.optionText, 28, 28);
         initial.node.setPosition(0, 0, 0);
         if (avatarUrl) {
             const sprite = avatar.addComponent(Sprite);
@@ -536,8 +603,52 @@ export class GameList extends Component {
             });
         }
 
-        const label = this.createCenteredLabel(seat, name, 14, COLORS.seatText, 84, 22);
-        label.node.setPosition(0, -25, 0);
+        const label = this.createCenteredLabel(bench, name, 13, COLORS.seatText, 78, 20);
+        label.node.setPosition(24, 0, 0);
+        if (player.playerId) {
+            const idLabel = this.createCenteredLabel(bench, `ID:${player.playerId}`, 10, new Color(236, 220, 184, 255), 76, 14);
+            idLabel.node.setPosition(24, -13, 0);
+        }
+    }
+
+    private draw3DBench(graphics: Graphics, backSide: boolean): void {
+        graphics.clear();
+        graphics.fillColor = new Color(0, 0, 0, backSide ? 46 : 72);
+        graphics.ellipse(6, -25, 82, 12);
+        graphics.fill();
+        graphics.fillColor = new Color(43, 28, 28, 245);
+        graphics.roundRect(-58, -29, 12, 20, 5);
+        graphics.fill();
+        graphics.roundRect(46, -29, 12, 20, 5);
+        graphics.fill();
+        graphics.fillColor = COLORS.chairEdge;
+        graphics.roundRect(-80, -19, 160, 38, 19);
+        graphics.fill();
+        graphics.fillColor = new Color(backSide ? 125 : 146, 83, 70, backSide ? 224 : 248);
+        graphics.roundRect(-72, -14, 144, 28, 14);
+        graphics.fill();
+        graphics.fillColor = new Color(218, 149, 96, 126);
+        graphics.roundRect(-58, 1, 94, 8, 5);
+        graphics.fill();
+        graphics.strokeColor = new Color(255, 226, 170, 92);
+        graphics.lineWidth = 1.4;
+        graphics.roundRect(-70, -12, 140, 24, 12);
+        graphics.stroke();
+    }
+
+    private getVisiblePlayers(table: TableItem): RoomPlayerInfo[] {
+        return table.players
+            .filter((player) => !!player && !!(player.nickname || player.playerId || player.headUrl || player.avatar))
+            .slice(0, 2);
+    }
+
+    private formatScore(score: number): string {
+        if (!isFinite(score)) return '0';
+        if (Math.abs(score) >= 10000) {
+            const value = score / 10000;
+            return `${Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1)}万`;
+        }
+        return String(Math.floor(score));
     }
 
     public onGameTabClicked(_event: Event, customEventData: string): void {
@@ -552,6 +663,7 @@ export class GameList extends Component {
         this.dropdownOpen = true;
         this.refreshTabStyles();
         this.renderDropdown();
+        this.updateQuickJoinButton();
         this.loadTables();
     }
 
@@ -574,6 +686,7 @@ export class GameList extends Component {
         this.selectedDistrictId = districtId;
         this.dropdownOpen = false;
         this.renderDropdown();
+        this.updateQuickJoinButton();
         await this.enterDistrictForGame(game, districtId);
     }
 
@@ -615,6 +728,15 @@ export class GameList extends Component {
         await this.enterDistrictForGame(game, stake.districtId);
     }
 
+    public async onQuickStartClicked(): Promise<void> {
+        const target = this.getQuickStartTarget();
+        if (!target) {
+            Client.Instance.showPromptTip('暂无可用房间区域', 2.0);
+            return;
+        }
+        await this.enterDistrictForGame(target.game, target.districtId);
+    }
+
     private async enterDistrictForGame(game: GameMetaInfo, districtId: number): Promise<void> {
         if (this.entering) return;
         const gameType = getServerGameType(game.id);
@@ -623,7 +745,13 @@ export class GameList extends Component {
             return;
         }
         const stake = this.findStakeByDistrictId(districtId);
-        const carryScore = await CarryScorePrompt.requestByRule(this.node, game.id, stake?.baseScore || 0, stake?.roundCount || 8);
+        const carryScore = await CarryScorePrompt.requestByRule(
+            this.node,
+            game.id,
+            stake?.baseScore || 0,
+            stake?.roundCount || 8,
+            stake?.minCarryScore,
+        );
         if (carryScore == null) return;
 
         this.entering = true;
@@ -652,7 +780,13 @@ export class GameList extends Component {
             return;
         }
         const stake = this.findStakeByDistrictId(districtId);
-        const carryScore = await CarryScorePrompt.requestByRule(this.node, game.id, stake?.baseScore || 0, stake?.roundCount || 8);
+        const carryScore = await CarryScorePrompt.requestByRule(
+            this.node,
+            game.id,
+            stake?.baseScore || 0,
+            stake?.roundCount || 8,
+            stake?.minCarryScore,
+        );
         if (carryScore == null) return;
 
         this.entering = true;
@@ -679,6 +813,41 @@ export class GameList extends Component {
             if (stake) return stake;
         }
         return undefined;
+    }
+
+    private updateQuickJoinButton(): void {
+        const target = this.getQuickStartTarget();
+        if (this.quickJoinNode) {
+            this.quickJoinNode.active = !!target;
+            this.quickJoinNode.setSiblingIndex(this.content?.children.length || 0);
+        }
+        if (this.quickJoinLabel) {
+            this.quickJoinLabel.string = '快速游戏';
+        }
+    }
+
+    private getQuickStartTarget(): { game: GameMetaInfo; districtId: number } | null {
+        if (this.activeTabKey !== 'all') {
+            const game = this.games.find((item) => item.id === this.activeTabKey);
+            if (!game) return null;
+            const stake = this.findStakeForGame(game.id, this.selectedDistrictId);
+            return stake ? { game, districtId: stake.districtId } : null;
+        }
+
+        for (const game of this.games) {
+            const stake = this.findStakeForGame(game.id);
+            if (stake) return { game, districtId: stake.districtId };
+        }
+        return null;
+    }
+
+    private findStakeForGame(gameId: GameId, districtId?: number | null): StakeOption | undefined {
+        const stakes = GAME_STAKE_OPTIONS[gameId] || [];
+        if (districtId != null) {
+            const selected = stakes.find((item) => item.districtId === districtId);
+            if (selected) return selected;
+        }
+        return stakes.find((item) => item.districtId > 0);
     }
 
     private onEnterVenue(game: GameMetaInfo, result: EnterVenueResult): void {

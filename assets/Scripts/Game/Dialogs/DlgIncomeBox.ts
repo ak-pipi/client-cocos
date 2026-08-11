@@ -292,7 +292,7 @@ export class DlgIncomeBox extends Component {
             Client.Instance.showPromptTip('提取数量不能超过可提取收益', 2.0);
             return;
         }
-        await this.withdrawIncomeBox('/player/agency/income-box/withdraw', amount);
+        await this.withdrawIncomeBox(`/player/agency/income-box/withdraw?amount=${encodeURIComponent(String(amount))}`, amount);
     }
 
     public onFillAmountClicked(): void {
@@ -318,8 +318,8 @@ export class DlgIncomeBox extends Component {
             }
             this.syncCapital(dto);
             this.applySummary(dto);
-            const amount = this.toNumber(dto?.withdrawnAmount ?? dto?.amount);
-            Client.Instance.showPromptTip(amount > 0 ? `已提取${amount}积分到账户` : '收益箱暂无可提取积分', 2.0);
+            const withdrawnAmount = this.toNumber(dto?.withdrawnAmount ?? dto?.amount);
+            Client.Instance.showPromptTip(withdrawnAmount > 0 ? `已提取${withdrawnAmount}积分到账户` : '收益箱暂无可提取积分', 2.0);
             this.setStatus('');
         } catch (err) {
             const msg = err?.msg || err?.message || String(err);
