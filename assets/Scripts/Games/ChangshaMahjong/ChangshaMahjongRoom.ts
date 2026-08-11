@@ -958,7 +958,7 @@ export class ChangshaMahjongRoom extends MahjongRoomBase {
 
     protected buildChangshaHud(): void {
         if (this.specialHudRoot) return;
-        this.specialHudRoot = this.createUIChild(this.node, 'ChangshaHud', 360, 164, -560, 356, 120);
+        this.specialHudRoot = this.createUIChild(this.node, 'ChangshaHud', 360, 164, this.getLeftHudCenterX(360), this.getBelowExitButtonCenterY(164), 120);
         this.paintRect(this.specialHudRoot, 360, 164, new Color(27, 35, 49, 210), new Color(232, 194, 112, 255), 18);
 
         const title = this.createUIChild(this.specialHudRoot, 'Title', 280, 30, 0, 52, 1);

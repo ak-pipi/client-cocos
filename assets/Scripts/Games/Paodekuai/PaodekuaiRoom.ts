@@ -1110,7 +1110,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         overlay.setSiblingIndex(this.node.children.length - 1);
         this.overlayRoot = overlay;
 
-        const hud = this.createArea(overlay, 'PaodekuaiHud', -560, 356, 360, 240);
+        const hud = this.createArea(overlay, 'PaodekuaiHud', -560, 315, 360, 240);
         this.paintRect(hud, 360, 240, new Color(29, 35, 52, 214), new Color(238, 198, 116, 255), 18);
 
         this.createLabel(hud, 'Title', '跑得快', 26, 0, 92, 280, 30, new Color(255, 236, 198, 255));
@@ -1519,7 +1519,6 @@ export class PaodekuaiRoom extends PokerRoomBase {
         const width = 148;
         const height = 58;
         const node = this.createArea(parent, nodeName, x, 0, width, height);
-        node.addComponent(BlockInputEvents);
         this.paintRect(node, width, height, fill, stroke, 10);
 
         const label = this.createLabel(node, 'Label', text, 24, 0, 1, width - 14, 42, new Color(255, 255, 255, 255));

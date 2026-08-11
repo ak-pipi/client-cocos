@@ -755,6 +755,37 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         this.refreshHongzhongHud();
     }
 
+    protected refreshMahjongPlayerInfo(): void {
+        super.refreshMahjongPlayerInfo();
+        this.layoutHongzhongOpponentInfo();
+    }
+
+    private layoutHongzhongOpponentInfo(): void {
+        if (this.getSeatCount() !== 2) return;
+        const opponentCard = this.playerInfoCards[2]?.root;
+        if (!opponentCard || !this.playerInfoRoot || !this.customReadyButton) return;
+
+        const readyTransform = this.customReadyButton.getComponent(UITransform);
+        const rootTransform = this.playerInfoRoot.getComponent(UITransform);
+        const cardTransform = opponentCard.getComponent(UITransform);
+        if (!readyTransform || !rootTransform || !cardTransform) return;
+
+        const readyBounds = readyTransform.getBoundingBoxToWorld();
+        const gap = 12;
+        const cardWidth = cardTransform.width || 292;
+        const cardHeight = cardTransform.height || 84;
+        const worldX = readyBounds.x + readyBounds.width / 2;
+        const worldY = readyBounds.y - gap - cardHeight / 2;
+        const localPosition = rootTransform.convertToNodeSpaceAR(new Vec3(worldX, worldY, 0));
+
+        const padding = 15;
+        const rootWidth = rootTransform.width || 1680;
+        const minX = -rootWidth / 2 + padding + cardWidth / 2;
+        const maxX = rootWidth / 2 - padding - cardWidth / 2;
+        const x = Math.min(maxX, Math.max(minX, localPosition.x));
+        opponentCard.setPosition(x, localPosition.y, 0);
+    }
+
     protected countHongzhongs(): number {
         let count = this.myHandTiles.filter(t => HongzhongMahjongRoom.isHongzhong(t)).length;
         if (this.drawnTile && HongzhongMahjongRoom.isHongzhong(this.drawnTile)) count++;
@@ -1541,7 +1572,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
 
     protected buildHongzhongHud(): void {
         if (this.hzHudRoot) return;
-        this.hzHudRoot = this.createUIChild(this.node, 'HongzhongHud', 344, 172, 560, 344, 120);
+        this.hzHudRoot = this.createUIChild(this.node, 'HongzhongHud', 344, 172, this.getLeftHudCenterX(344), this.getBelowExitButtonCenterY(172), 120);
         this.paintRect(this.hzHudRoot, 344, 172, new Color(35, 31, 38, 214), new Color(232, 194, 122, 255), 12);
 
         const title = this.createUIChild(this.hzHudRoot, 'Title', 280, 28, 0, 58, 1);
@@ -1573,7 +1604,8 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         this.hzRuleLabel.horizontalAlign = 1;
         this.hzRuleLabel.color = new Color(235, 245, 235, 255);
 
-        this.hongzhongIndicator = this.createUIChild(this.hzHudRoot, 'HzIndicator', 116, 40, 0, -66, 1);
+        this.hongzhongIndicator = this.createUIChild(this.node, 'HzIndicator', 116, 40, 0, 200, 121);
+        this.updateHongzhongIndicatorPosition();
         this.hzCountLabel = this.hongzhongIndicator.addComponent(Label);
         this.hzCountLabel.fontSize = 20;
         this.hzCountLabel.lineHeight = 24;
@@ -1588,6 +1620,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         if (this.hzCountLabel) this.hzCountLabel.string = `红中 ${count}`;
         if (this.hongzhongIndicator) {
             this.hongzhongIndicator.active = true;
+            this.updateHongzhongIndicatorPosition();
             this.paintRect(this.hongzhongIndicator, 116, 40,
                 count > 0 ? new Color(166, 40, 45, 222) : new Color(50, 58, 68, 218),
                 new Color(255, 214, 168, 255), 10);
@@ -1598,5 +1631,38 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
         } else if (this.hzRuleLabel) {
             this.hzRuleLabel.string = this.allowDianPao ? '无红中可接炮，红中手牌只自摸/抢杠' : '仅自摸';
         }
+    }
+
+    private updateHongzhongIndicatorPosition(): void {
+        if (!this.hongzhongIndicator) return;
+        const countdownNode = this.getCountdownBoxNode();
+        const countdownTransform = countdownNode?.getComponent(UITransform);
+        const indicatorTransform = this.hongzhongIndicator.getComponent(UITransform);
+        const indicatorWidth = indicatorTransform?.width || 116;
+        const countdownBounds = countdownTransform?.getBoundingBoxToWorld();
+        const parentTransform = this.node.getComponent(UITransform);
+        if (countdownBounds && parentTransform) {
+            const worldX = countdownBounds.x + countdownBounds.width + 12 + indicatorWidth / 2;
+            const worldY = countdownBounds.y + countdownBounds.height / 2;
+            const localPosition = parentTransform.convertToNodeSpaceAR(new Vec3(worldX, worldY, 0));
+            this.hongzhongIndicator.setPosition(localPosition.x, localPosition.y, 0);
+            return;
+        }
+        this.hongzhongIndicator.setPosition(130, 200, 0);
+    }
+
+    private getCountdownBoxNode(): Node | null {
+        const labelNode = this.countdownLabel?.node ?? null;
+        if (!labelNode) return null;
+        const labelTransform = labelNode.getComponent(UITransform);
+        const parent = labelNode.parent;
+        const parentTransform = parent?.getComponent(UITransform);
+        if (parent && parent !== this.node && parentTransform && labelTransform
+            && parentTransform.width > labelTransform.width
+            && parentTransform.width <= 260
+            && parentTransform.height <= 120) {
+            return parent;
+        }
+        return labelNode;
     }
 }

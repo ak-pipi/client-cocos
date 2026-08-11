@@ -1513,13 +1513,16 @@ export class MahjongRoomBase extends RoomBase {
 
         const zOrder = 100; // 在 GuanDan prefab UI 之上
 
-        this.tableBackgroundNode = this.createUIChild(parent, 'TableBackground', 1680, 920, 0, 0, zOrder);
+        const tableSize = this.getMahjongTableBackgroundSize();
+
+        this.tableBackgroundNode = this.createUIChild(parent, 'TableBackground', tableSize.width, tableSize.height, 0, 0, zOrder);
         const tableSprite = this.tableBackgroundNode.addComponent(Sprite);
         tableSprite.color = new Color(42, 96, 74, 255);
-        const tableBackgroundFallback = this.createUIChild(this.tableBackgroundNode, 'FallbackBg', 1680, 920, 0, 0, 0);
-        this.paintRect(tableBackgroundFallback, 1680, 920, new Color(42, 96, 74, 255), new Color(18, 50, 38, 255), 18);
+        const tableBackgroundFallback = this.createUIChild(this.tableBackgroundNode, 'FallbackBg', tableSize.width, tableSize.height, 0, 0, 0);
+        this.paintRect(tableBackgroundFallback, tableSize.width, tableSize.height, new Color(42, 96, 74, 255), new Color(18, 50, 38, 255), 18);
 
-        const topHud = this.createUIChild(parent, 'TopHud', 1240, 74, 0, 470, zOrder + 4);
+        const topHudY = this.getTopInfoCenterY();
+        const topHud = this.createUIChild(parent, 'TopHud', this.getTopInfoWidth(), 74, this.getTopInfoCenterX(), topHudY, zOrder + 4);
         this.paintRect(topHud, 1240, 74, new Color(14, 31, 44, 210), new Color(214, 182, 116, 255), 18);
 
         const roomNode = this.createUIChild(topHud, 'RoomInfo', 320, 40, -360, 0, 1);
@@ -1542,7 +1545,7 @@ export class MahjongRoomBase extends RoomBase {
         this.remainCountLabel.horizontalAlign = 2;
         this.remainCountLabel.color = new Color(255, 229, 143, 255);
 
-        const ruleNode = this.createUIChild(parent, 'RuleHint', 520, 40, 0, 420, zOrder + 3);
+        const ruleNode = this.createUIChild(parent, 'RuleHint', 520, 40, this.getTopInfoCenterX(), this.getTopInfoBottomY() - 20, zOrder + 3);
         this.ruleHintLabel = ruleNode.addComponent(Label);
         this.ruleHintLabel.fontSize = 22;
         this.ruleHintLabel.lineHeight = 26;
@@ -1589,12 +1592,24 @@ export class MahjongRoomBase extends RoomBase {
         this.actionHintLabel.color = new Color(255, 228, 166, 255);
         this.actionPanel.active = false;
 
-        this.effectLayer = this.createUIChild(parent, 'MahjongEffectLayer', 1680, 920, 0, 0, zOrder + 8);
+        this.effectLayer = this.createUIChild(parent, 'MahjongEffectLayer', tableSize.width, tableSize.height, 0, 0, zOrder + 8);
         this.buildMahjongControls(parent, zOrder + 9);
-        this.buildMahjongPlayerInfo(parent, zOrder + 5);
+        this.buildMahjongPlayerInfo(parent, zOrder + 5, tableSize);
         this.ensureBackButtonVisible();
 
         console.log('[MahjongRoom] Mahjong UI built (legacy-inspired)');
+    }
+
+    /**
+     * 麻将桌面是运行时 Graphics 绘制的，不会因为外层 UITransform 变大而自动重绘。
+     * 因此在创建时直接使用当前可视逻辑尺寸，保证不会露出下面的加载/大厅背景。
+     */
+    protected getMahjongTableBackgroundSize(): { width: number; height: number } {
+        const visible = view.getVisibleSize();
+        return {
+            width: Math.max(1680, visible.width || 0),
+            height: Math.max(920, visible.height || 0),
+        };
     }
 
     /** 隐藏 GuanDan prefab 中与麻将 UI 冲突的桌面背景节点 */
@@ -1663,9 +1678,15 @@ export class MahjongRoomBase extends RoomBase {
 
     protected buildMahjongControls(parent: Node, zOrder: number): void {
         if (this.controlBarNode) return;
-        const visibleWidth = view.getVisibleSize().width || 1280;
-        const controlX = Math.max(240, visibleWidth / 2 - 240);
-        this.controlBarNode = this.createUIChild(parent, 'MahjongControlBar', 432, 56, controlX, 470, zOrder);
+        this.controlBarNode = this.createUIChild(
+            parent,
+            'MahjongControlBar',
+            432,
+            56,
+            this.getRightBelowTopInfoCenterX(432),
+            this.getBelowRoomInfoCenterY(56),
+            zOrder,
+        );
 
         this.customReadyButton = this.createActionButton(this.controlBarNode, 'ReadyBtn', '准备', 0, 0, 120, new Color(46, 128, 88, 255), new Color(133, 231, 174, 255), 'onReadyClick');
         this.customReadyLabel = this.findChildComponent<Label>(this.customReadyButton, 'Label', Label);
@@ -1677,9 +1698,9 @@ export class MahjongRoomBase extends RoomBase {
         this.customSeatLabel = this.findChildComponent<Label>(this.customSeatButton, 'Label', Label);
     }
 
-    protected buildMahjongPlayerInfo(parent: Node, zOrder: number): void {
+    protected buildMahjongPlayerInfo(parent: Node, zOrder: number, tableSize: { width: number; height: number } = { width: 1680, height: 920 }): void {
         if (this.playerInfoRoot) return;
-        this.playerInfoRoot = this.createUIChild(parent, 'MahjongPlayerInfoRoot', 1680, 920, 0, 0, zOrder);
+        this.playerInfoRoot = this.createUIChild(parent, 'MahjongPlayerInfoRoot', tableSize.width, tableSize.height, 0, 0, zOrder);
         this.playerInfoCards[0] = this.createPlayerInfoCard(this.playerInfoRoot, 'SelfInfo', -610, -304, 292, 92);
         this.playerInfoCards[1] = this.createPlayerInfoCard(this.playerInfoRoot, 'LeftInfo', -690, 118, 188, 84);
         this.playerInfoCards[2] = this.createPlayerInfoCard(this.playerInfoRoot, 'TopInfo', 0, 372, 292, 84);
@@ -1805,27 +1826,19 @@ export class MahjongRoomBase extends RoomBase {
 
     protected ensureBackButtonVisible(): void {
         const root = this.node;
-        const visibleWidth = view.getVisibleSize().width || 1280;
-        const backX = -visibleWidth / 2 + 86;
-        const btnBack = this.findChildRecursive(root, 'BtnBack');
-        if (btnBack) {
-            btnBack.active = true;
-            btnBack.setPosition(backX, 470, 0);
-            if (btnBack.parent) {
-                btnBack.parent.active = true;
-                btnBack.setSiblingIndex(btnBack.parent.children.length - 1);
-            }
-            return;
-        }
+        const prefabBack = this.findChildRecursive(root, 'BtnBack');
+        if (prefabBack) prefabBack.active = false;
 
+        const backX = this.getLeftChromeCenterX(132);
+        const backY = this.getTopInfoCenterY();
         if (this.fallbackBackButton && this.fallbackBackButton.isValid) {
             this.fallbackBackButton.active = true;
-            this.fallbackBackButton.setPosition(backX, 470, 0);
+            this.fallbackBackButton.setPosition(backX, backY, 0);
             this.fallbackBackButton.setSiblingIndex(this.node.children.length - 1);
             return;
         }
 
-        const buttonNode = this.createUIChild(root, 'MahjongFallbackBack', 132, 52, backX, 470, 999);
+        const buttonNode = this.createUIChild(root, 'MahjongFallbackBack', 132, 52, backX, backY, 999);
         this.paintRect(buttonNode, 132, 52, new Color(16, 20, 30, 228), new Color(255, 210, 112, 255), 14);
         const labelNode = this.createUIChild(buttonNode, 'Label', 100, 28, 0, 0, 1);
         const label = labelNode.addComponent(Label);
@@ -1839,6 +1852,63 @@ export class MahjongRoomBase extends RoomBase {
         buttonNode.addComponent(Button);
         buttonNode.on(Node.EventType.TOUCH_END, () => this.onBackClick(), this);
         this.fallbackBackButton = buttonNode;
+    }
+
+    protected getSafeTopCenterY(height: number, padding: number = 15): number {
+        const visibleHeight = view.getVisibleSize().height || 900;
+        return visibleHeight / 2 - padding - height / 2;
+    }
+
+    protected getTopInfoWidth(): number {
+        return 1240;
+    }
+
+    protected getTopInfoHeight(): number {
+        return 74;
+    }
+
+    protected getTopInfoCenterY(): number {
+        return this.getSafeTopCenterY(this.getTopInfoHeight());
+    }
+
+    protected getTopLayoutLeftX(): number {
+        const visibleWidth = view.getVisibleSize().width || 1600;
+        const groupWidth = 132 + 16 + this.getTopInfoWidth();
+        const centeredLeft = -groupWidth / 2;
+        const safeLeft = -visibleWidth / 2 + 15;
+        return Math.max(centeredLeft, safeLeft);
+    }
+
+    protected getTopInfoCenterX(): number {
+        return this.getTopLayoutLeftX() + 132 + 16 + this.getTopInfoWidth() / 2;
+    }
+
+    protected getTopInfoRightX(): number {
+        return this.getTopInfoCenterX() + this.getTopInfoWidth() / 2;
+    }
+
+    protected getLeftChromeCenterX(width: number): number {
+        return this.getTopLayoutLeftX() + width / 2;
+    }
+
+    protected getLeftHudCenterX(width: number): number {
+        return this.getTopLayoutLeftX() + width / 2;
+    }
+
+    protected getTopInfoBottomY(): number {
+        return this.getTopInfoCenterY() - this.getTopInfoHeight() / 2;
+    }
+
+    protected getBelowRoomInfoCenterY(height: number, gap: number = 12): number {
+        return this.getTopInfoBottomY() - gap - height / 2;
+    }
+
+    protected getBelowExitButtonCenterY(height: number, gap: number = 12): number {
+        return this.getTopInfoCenterY() - 52 / 2 - gap - height / 2;
+    }
+
+    protected getRightBelowTopInfoCenterX(width: number): number {
+        return this.getTopInfoRightX() - width / 2;
     }
 
     protected paintRect(node: Node, w: number, h: number, fillColor: Color, strokeColor?: Color, radius: number = 12): void {

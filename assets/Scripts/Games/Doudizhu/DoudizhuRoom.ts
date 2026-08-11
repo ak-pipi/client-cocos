@@ -661,7 +661,7 @@ export class DoudizhuRoom extends PokerRoomBase {
         this.tableBackgroundNode = this.createArea(overlay, 'TableBackground', 0, 0, 1680, 920);
         this.paintRect(this.tableBackgroundNode, 1680, 920, new Color(42, 96, 74, 255), new Color(18, 50, 38, 255), 18);
 
-        const topHud = this.createArea(overlay, 'TopHud', 0, 420, 1240, 74);
+        const topHud = this.createArea(overlay, 'TopHud', 0, 398, 1240, 74);
         this.paintRect(topHud, 1240, 74, new Color(14, 31, 44, 210), new Color(214, 182, 116, 255), 18);
         this.roomInfoLabel = this.createLabel(topHud, 'RoomInfo', '', 22, -380, 0, 360, 40, new Color(255, 240, 202, 255));
         this.statusLabel = this.createLabel(topHud, 'Status', '', 28, 0, 0, 390, 44, new Color(255, 255, 255, 255));

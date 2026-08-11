@@ -112,6 +112,9 @@ export class Client extends Component {
             if (!prefab) return;
             this.login = instantiate(prefab);
             this.login.parent = this.loginLayer;
+            const loadNode = this.node.getChildByName('Load');
+            if (loadNode) loadNode.active = false;
+            AppLayoutAdapter.Instance?.refreshLayout();
         });
     }
 
@@ -124,6 +127,7 @@ export class Client extends Component {
             if (!hall) return;
             this.hall = instantiate(hall);
             this.hall.parent = this.hallLayer;
+            AppLayoutAdapter.Instance?.refreshLayout();
         });
     }
 
@@ -215,6 +219,7 @@ export class Client extends Component {
             if (!prefab) return;
             let tmpNode = instantiate(prefab);
             tmpNode.parent = this.gameLoader;
+            AppLayoutAdapter.Instance?.refreshLayout();
             let comp = tmpNode.getComponent(GameLoader);
             if (comp) {
                 comp.loadGame(name);
@@ -225,6 +230,7 @@ export class Client extends Component {
     public initGameHall(prefab: Prefab) {
         this.gameHallNode = instantiate(prefab);
         this.gameHallNode.parent = this.gameHall;
+        AppLayoutAdapter.Instance?.refreshLayout();
     }
 
     public showNewGameHall(gameId: string, gameName: string) {
@@ -237,6 +243,7 @@ export class Client extends Component {
         const hall = hallNode.addComponent(NewGameHall);
         hall.init(gameId, gameName);
         this.gameHallNode = hallNode;
+        AppLayoutAdapter.Instance?.refreshLayout();
     }
 
     public initGameRoom(prefab?: Prefab | null, beforeAttach?: (node: Node) => void) {
@@ -251,6 +258,7 @@ export class Client extends Component {
         }
         beforeAttach?.(this.gameRoomNode);
         this.gameRoomNode.parent = this.gameRoom;
+        AppLayoutAdapter.Instance?.refreshLayout();
     }
 
     public backToHall() {

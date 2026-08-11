@@ -1447,7 +1447,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     protected buildTaojiangHud(): void {
         if (this.taojiangHudRoot) return;
 
-        this.taojiangHudRoot = this.createUIChild(this.node, 'TaojiangHud', 360, 240, -560, 356, 120);
+        this.taojiangHudRoot = this.createUIChild(this.node, 'TaojiangHud', 360, 240, this.getLeftHudCenterX(360), this.getBelowExitButtonCenterY(240), 120);
         this.paintRect(this.taojiangHudRoot, 360, 240, new Color(29, 35, 52, 214), new Color(238, 198, 116, 255), 18);
 
         const titleNode = this.createUIChild(this.taojiangHudRoot, 'Title', 280, 28, 0, 92, 1);
