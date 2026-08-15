@@ -9,6 +9,7 @@ import { DlgMahjongRecords } from './Dialogs/DlgMahjongRecords';
 import { blockInputOnNode, makeModalLayer, sanitizeAllEditBoxDefaultLabels, sanitizeEditBoxDefaultLabels } from '../UI/UiKit';
 
 const { ccclass } = _decorator;
+const CARRY_SCORE_DECIMAL_DIGITS = 1;
 
 // 桃江麻将默认规则配置
 const TAOJIANG_DEFAULT_RULES = {
@@ -1325,19 +1326,19 @@ export class NewGameHall extends Component {
     }
 
     private async requestCarryScoreByBaseScore(baseScore: any, roundCount?: any, explicitMinCarry?: any): Promise<number | null> {
-        const explicit = Math.floor(Number(explicitMinCarry) || 0);
+        const explicit = this.normalizeCarryScore(explicitMinCarry);
         const minCarry = explicit > 0 ? explicit : this.getMinCarryScore(baseScore, roundCount);
         return this.showCarryScoreInput(minCarry);
     }
 
     private async showCarryScoreInput(minCarry: number): Promise<number | null> {
         await GameManager.Instance.refreshCapital();
-        const available = Math.max(0, Math.floor(Number(GameManager.Instance.Gold) || 0));
-        const min = Math.max(0, Math.floor(Number(minCarry) || 0));
+        const available = this.normalizeCarryScore(GameManager.Instance.Gold);
+        const min = this.normalizeCarryScore(minCarry);
         if (available < min) {
-            const safeBox = GameManager.Instance.Deposit || 0;
+            const safeBox = this.normalizeCarryScore(GameManager.Instance.Deposit);
             Client.Instance.showPromptDialog(
-                `携带积分不足，加入本局至少需要${min}积分。\n当前可用${available}积分，保险柜${safeBox}积分不参与游戏结算，请先从保险柜取出积分。`
+                `携带积分不足，加入本局至少需要${this.formatCarryScore(min)}积分。\n当前可用${this.formatCarryScore(available)}积分，保险柜${this.formatCarryScore(safeBox)}积分不参与游戏结算，请先从保险柜取出积分。`
             );
             return null;
         }
@@ -1387,7 +1388,7 @@ export class NewGameHall extends Component {
             descNode.addComponent(UITransform).setContentSize(460, 54);
             descNode.setPosition(0, 62, 0);
             const desc = descNode.addComponent(Label);
-            desc.string = min > 0 ? `最低 ${min}，当前可用 ${available}` : `当前可用 ${available}`;
+            desc.string = min > 0 ? `最低 ${this.formatCarryScore(min)}，当前可用 ${this.formatCarryScore(available)}` : `当前可用 ${this.formatCarryScore(available)}`;
             desc.fontSize = 21;
             desc.lineHeight = 28;
             desc.horizontalAlign = Label.HorizontalAlign.CENTER;
@@ -1450,11 +1451,11 @@ export class NewGameHall extends Component {
 
             const editBox = inputNode.addComponent(EditBox);
             editBox.maxLength = 12;
-            editBox.inputMode = EditBox.InputMode.NUMERIC;
+            editBox.inputMode = (EditBox.InputMode as any).DECIMAL ?? EditBox.InputMode.ANY;
             editBox.textLabel = textLabel;
             editBox.placeholderLabel = placeholderLabel;
             editBox.placeholder = placeholderLabel.string;
-            editBox.string = String(min > 0 ? min : Math.max(1, Math.min(available, 100)));
+            editBox.string = this.formatCarryScore(min > 0 ? min : Math.max(1, Math.min(available, 100)));
             sanitizeEditBoxDefaultLabels(editBox, [textLabel, placeholderLabel]);
             sanitizeAllEditBoxDefaultLabels(popup);
 
@@ -1466,25 +1467,43 @@ export class NewGameHall extends Component {
             };
 
             const confirm = () => {
-                const value = Math.floor(Number(editBox.string));
+                const value = this.parseCarryScoreInput(editBox.string);
                 if (!isFinite(value) || value <= 0) {
                     Client.Instance.showPromptTip('请输入携带积分');
                     return;
                 }
                 if (value < min) {
-                    Client.Instance.showPromptTip(`至少携带${min}积分`);
+                    Client.Instance.showPromptTip(`至少携带${this.formatCarryScore(min)}积分`);
                     return;
                 }
                 if (value > available) {
                     Client.Instance.showPromptTip('携带积分不能超过当前可用积分');
                     return;
                 }
-                finish(value);
+                finish(this.normalizeCarryScore(value));
             };
 
             this.createInlineButton(panel, '确认', -92, -92, new Color(46, 139, 87, 255), confirm);
             this.createInlineButton(panel, '取消', 92, -92, new Color(160, 82, 45, 255), () => finish(null));
         });
+    }
+
+    private normalizeCarryScore(value: any): number {
+        const numberValue = Number(value);
+        if (!isFinite(numberValue) || numberValue <= 0) return 0;
+        const scale = Math.pow(10, CARRY_SCORE_DECIMAL_DIGITS);
+        return Math.round(numberValue * scale) / scale;
+    }
+
+    private parseCarryScoreInput(text: string): number {
+        const normalizedText = String(text || '').trim();
+        if (!/^\d+(\.\d{1})?$/.test(normalizedText)) return NaN;
+        return this.normalizeCarryScore(Number(normalizedText));
+    }
+
+    private formatCarryScore(value: any): string {
+        const score = this.normalizeCarryScore(value);
+        return Number.isInteger(score) ? String(score) : score.toFixed(CARRY_SCORE_DECIMAL_DIGITS);
     }
 
     private createInlineButton(parent: Node, text: string, x: number, y: number, color: Color, onClick: () => void): void {
@@ -1657,7 +1676,7 @@ export class NewGameHall extends Component {
 
     private createEnteredRoom(result: EnterVenueResult): void {
         const meta = GameFactory.getGameMeta(this.gameId);
-        if (meta?.type === GameType.Mahjong) {
+        if (meta?.type === GameType.Mahjong || this.gameId === GameId.Paodekuai) {
             Client.Instance.initGameRoom(null);
             const room = GameFactory.Instance.createRoom(this.gameId, Client.Instance.getGameRoomNode() || undefined, undefined);
             room.presetRoomNumber(result?.number || null);

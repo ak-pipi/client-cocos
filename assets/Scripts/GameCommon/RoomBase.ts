@@ -588,6 +588,8 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
 
     protected onCapitalChanged(capital: any): void {
         if (!capital) return;
+        const roomGoldValue = capital.roomGold ?? capital.room_gold ?? capital.cashPledge ?? capital.cash_pledge ?? capital.carryScore ?? capital.carry_score;
+        if (roomGoldValue === undefined || roomGoldValue === null) return;
         const playerId = capital.playerId != null ? String(capital.playerId) : GameManager.Instance.PlayerId;
         const seatIndex = this.findPlayerSeat(playerId);
         if (seatIndex < 0) return;
@@ -598,14 +600,9 @@ export class RoomBase extends Component implements NetMsgHandler, ConnectionHand
         const info = this.playerInfos[seatIndex];
         if (!info) return;
 
-        let changed = false;
-        if (capital.gold !== undefined && capital.gold !== null) {
-            const gold = Number(capital.gold);
-            info.gold = isFinite(gold) ? gold : 0;
-            changed = true;
-        }
-        if (!changed) return;
-        this.onPlayerCapitalChanged(seatIndex, capital);
+        const gold = Number(roomGoldValue);
+        info.gold = isFinite(gold) ? gold : 0;
+        this.onPlayerCapitalChanged(seatIndex, { ...capital, gold: info.gold });
     }
 
     protected onPlayerCapitalChanged(seatIndex: number, _capital: any): void {

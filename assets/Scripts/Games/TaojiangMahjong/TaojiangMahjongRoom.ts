@@ -128,6 +128,7 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     start(): void {
         this.syncMsgPrefix = "MsgTJ";
         super.start();
+        this.applyTouchMahjongLayout();
         this.gameId = 'taojiang_mahjong';
         this.buildTaojiangHud();
         this.pendingGangRevealAction = false;
@@ -135,6 +136,56 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
     }
 
     protected getSeatCount(): number { return 2; }
+
+    protected getMyHandTileSize(): { width: number; height: number } {
+        return { width: 82, height: 114 };
+    }
+
+    protected getMyHandTileGap(tileCount: number): number {
+        return tileCount >= 14 ? -3 : 2;
+    }
+
+    protected getMyHandMaxWidth(): number {
+        const visibleWidth = view.getVisibleSize().width || 1600;
+        return Math.min(1340, visibleWidth - 220);
+    }
+
+    private applyTouchMahjongLayout(): void {
+        const visibleWidth = view.getVisibleSize().width || 1600;
+        const halfWidth = visibleWidth / 2;
+        const drawnTileX = Math.min(628, halfWidth - 70);
+        const selfInfoX = Math.max(-halfWidth + 146, -650);
+        const opponentInfoX = Math.min(halfWidth - 161, 560);
+
+        this.resizeAndMove(this.myHandArea, 1340, 136, 0, -400);
+        this.resizeAndMove(this.drawnTileNode, 104, 136, drawnTileX, -400);
+        this.resizeAndMove(this.actionPanel, 860, 104, 0, -260);
+        if (this.actionPanel) {
+            this.paintRect(this.actionPanel, 860, 104, new Color(16, 20, 30, 215), new Color(255, 210, 112, 255), 16);
+        }
+        this.resizeAndMove(this.myMeldArea, 470, 80, -70, -158);
+        this.resizeAndMove(this.myDiscardArea, 450, 156, 0, -36);
+
+        const topHandY = Math.min(318, this.getTopInfoBottomY() - 54);
+        this.resizeAndMove(this.topHandArea, 820, 70, 0, topHandY);
+        this.resizeAndMove(this.topMeldArea, 520, 74, -40, topHandY - 78);
+        this.resizeAndMove(this.topDiscardArea, 430, 154, 0, topHandY - 202);
+
+        if (this.playerInfoCards[0]?.root) this.playerInfoCards[0]!.root.setPosition(selfInfoX, -84, 0);
+        if (this.playerInfoCards[2]?.root) this.playerInfoCards[2]!.root.setPosition(opponentInfoX, topHandY - 92, 0);
+    }
+
+    private resizeAndMove(node: Node | null, width: number, height: number, x: number, y: number): void {
+        if (!node) return;
+        const transform = node.getComponent(UITransform) || node.addComponent(UITransform);
+        transform.setContentSize(width, height);
+        node.setPosition(x, y, 0);
+    }
+
+    protected refreshMahjongPlayerInfo(): void {
+        super.refreshMahjongPlayerInfo();
+        this.applyTouchMahjongLayout();
+    }
 
     protected isAllRoundsFinished(): boolean {
         const currentRound = Number((this as any).currentRound) || 0;
@@ -1335,9 +1386,16 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         this.myHandArea.removeAllChildren();
 
         const displayTiles = this.getHandTilesForDisplay();
-        const tw = 72;
-        const gap = displayTiles.length >= 14 ? 2 : 6;
-        const totalW = displayTiles.length * (tw + gap) - gap;
+        const tileSize = this.getMyHandTileSize();
+        const tw = tileSize.width;
+        const minGap = displayTiles.length >= 14 ? -12 : -6;
+        let gap = this.getMyHandTileGap(displayTiles.length);
+        const maxWidth = this.getMyHandMaxWidth();
+        const naturalW = displayTiles.length * (tw + gap) - gap;
+        if (displayTiles.length > 1 && naturalW > maxWidth) {
+            gap = Math.max(minGap, (maxWidth - displayTiles.length * tw) / (displayTiles.length - 1));
+        }
+        const totalW = displayTiles.length * tw + (displayTiles.length - 1) * gap;
         let startX = -totalW / 2 + tw / 2;
 
         for (let i = 0; i < displayTiles.length; i++) {
@@ -1916,8 +1974,8 @@ export class TaojiangMahjongRoom extends MahjongRoomBase {
         // 桃江特有（高位优先）
         if (huWay & 0x01000000) names.push('天天胡');
         if (huWay & 0x00800000) names.push('报听');
-        if (huWay & 0x40) names.push('地胡');
-        if (huWay & 0x20) names.push('天胡');
+        if ((huWay & 0x04000000) || (huWay & 0x40)) names.push('地胡');
+        if ((huWay & 0x02000000) || (huWay & 0x20)) names.push('天胡');
         if (huWay & 0x80000) names.push('抢杠胡');
         if (huWay & 0x200) names.push('海底炮');
         if (huWay & 0x100) names.push('海底捞月');

@@ -642,6 +642,8 @@ export class DlgMahjongRecords extends Component {
     }
 
     private formatMode(record: MahjongRecordItem): string {
+        const mode = String(record.gameModeText || '').trim();
+        if (mode) return mode;
         const name = record.gameName || getRecordGameName(record.gameId || this.gameId);
         const round = record.roundNo != null ? ` ${record.roundNo}局` : '';
         return `${name}${round}`;

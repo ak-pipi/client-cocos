@@ -14,11 +14,15 @@ import { GameState } from '../../GameCommon/RoomBase';
 import { NetworkManager } from '../../Manager/NetworkManager';
 import { Client } from '../../Game/Client';
 import { GameManager } from '../../Manager/GameManager';
-import { EnterVenueState } from '../../Common/ConstDefines';
 
 const { ccclass, property } = _decorator;
 
 type PdkGenre = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12;
+const PDK_UI_LAYER = 1 << 25;
+const PDK_STAGE_WIDTH = 1920;
+const PDK_STAGE_HEIGHT = 1080;
+const PDK_STANDALONE_MARKER = 'PaodekuaiStandaloneRoomV2_20260812';
+const PDK_PLAY_REQUEST_TIMEOUT_MS = 5000;
 
 const GENRE_TO_PATTERN: Record<number, PokerPattern> = {
     1: PokerPattern.Single,
@@ -29,8 +33,8 @@ const GENRE_TO_PATTERN: Record<number, PokerPattern> = {
     6: PokerPattern.Straight,
     7: PokerPattern.ConsecutivePairs,
     8: PokerPattern.Airplane,
-    9: PokerPattern.Airplane,
-    10: PokerPattern.Airplane,
+    9: PokerPattern.AirplaneWithSingles,
+    10: PokerPattern.AirplaneWithPairs,
     11: PokerPattern.Bomb,
     12: PokerPattern.Rocket,
 };
@@ -42,7 +46,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     protected bombCountThisRound: number = 0;
     protected baseScore: number = 1;
-    protected scoreScale: number = 1;
+    protected scoreScale: number = 10;
     protected roundCount: number = 8;
     protected serverCurrentPlayer: number = -1;
     protected serverLastPlaySeat: number = -1;
@@ -97,6 +101,9 @@ export class PaodekuaiRoom extends PokerRoomBase {
     private dragSelectStartX: number = 0;
     private dragSelectActive: boolean = false;
     private pendingPlayCardIds: number[] = [];
+    private playRequestPending: boolean = false;
+    private playRequestSentAt: number = 0;
+    private autoPassScheduled: boolean = false;
     private lastButtonInvokeKey: string = '';
     private lastButtonInvokeAt: number = 0;
 
@@ -141,6 +148,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     update(deltaTime: number): void {
         super.update(deltaTime);
+        this.updatePendingPlayRequest();
         this.updatePaodekuaiCountdownVisual();
     }
 
@@ -281,6 +289,10 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.roundCount = Number(msg?.roundCount) || this.roundCount;
         this.bombCountThisRound = Number(msg?.bombCount) || 0;
         this.currentMultiplier = Number(msg?.multiplier) || 1;
+        const syncScores = this.arrayLikeToArray(msg?.scores);
+        if (this.seat >= 0 && syncScores[this.seat] !== undefined) {
+            this.updateScore(Number(syncScores[this.seat]) || 0);
+        }
         this.serverCurrentPlayer = Number(msg?.currentPlayer ?? -1);
         this.serverLastPlaySeat = Number(msg?.lastPlaySeat ?? -1);
         this.pdkIsLeader = !!msg?.isFirstPlay;
@@ -360,6 +372,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     public onPlayClick(): void {
+        console.log(`[PaodekuaiRoom] onPlayClick, isMyTurn=${this.isMyTurn}, selected=${this.selectedIndices.size}, hand=${this.myCards.length}`);
         this.playSelectedCards();
     }
 
@@ -372,8 +385,37 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     public playSelectedCards(): void {
+        console.log(`[PaodekuaiRoom] playSelectedCards, isMyTurn=${this.isMyTurn}, selected=${this.selectedIndices.size}, hand=${this.myCards.length}, leader=${this.pdkIsLeader}, current=${this.serverCurrentPlayer}, seat=${this.seat}`);
+        if (this.playRequestPending) {
+            Client.Instance.showPromptTip('上一手出牌确认中，请稍候', 1.1);
+            return;
+        }
         if (!this.isMyTurn) {
             Client.Instance.showPromptTip('还没轮到你出牌', 1.2);
+            return;
+        }
+
+        const selectedIndices = this.getSelectedHandIndices();
+        if (selectedIndices.length > 0) {
+            const selectedCards = selectedIndices.map(i => this.myCards[i]).filter(Boolean);
+            if (selectedCards.length !== selectedIndices.length) {
+                Client.Instance.showPromptTip('手牌同步中，请稍后再出牌', 1.5);
+                NetworkManager.Instance.sendInnerMessage('PaoDeKuai.Sync');
+                return;
+            }
+
+            const cardIds = selectedCards.map(c => Number(c.cardId)).filter(id => Number.isFinite(id));
+            if (cardIds.length !== selectedCards.length) {
+                Client.Instance.showPromptTip('牌数据异常，请重新进入房间', 1.8);
+                return;
+            }
+
+            console.log(`[PaodekuaiRoom] Sending PaoDeKuai.Play cardIds=${cardIds.join(',')}`);
+            if (!this.sendCardIds(cardIds)) return;
+
+            this.previewPendingPlay(selectedCards, this.recognizePattern(selectedCards));
+            this.resetHintCycle();
+            this.markPlayRequestPending();
             return;
         }
 
@@ -404,26 +446,54 @@ export class PaodekuaiRoom extends PokerRoomBase {
             Client.Instance.showPromptTip('牌数据异常，请重新进入房间', 1.8);
             return;
         }
+        console.log(`[PaodekuaiRoom] Sending PaoDeKuai.Play cardIds=${cardIds.join(',')}`);
         if (!this.sendCardIds(cardIds)) return;
 
         this.previewPendingPlay(selectedCards, play);
         this.resetHintCycle();
-        this.isMyTurn = false;
-        this.showPassAndPlayButtons(false);
-        this.stopCountdown();
+        this.markPlayRequestPending();
     }
 
     public pass(): void {
+        if (this.playRequestPending) {
+            Client.Instance.showPromptTip('上一手出牌确认中，请稍候', 1.1);
+            return;
+        }
         if (!this.isMyTurn || !this.pokerActions?.canPass) return;
         if (!this.sendCardIds([])) return;
+        this.markPlayRequestPending();
         this.clearSelection();
         this.resetHintCycle();
-        this.isMyTurn = false;
-        this.showPassAndPlayButtons(false);
-        this.stopCountdown();
+        this.updateStatus('已过牌，等待服务器确认');
+    }
+
+    private scheduleAutoPass(): void {
+        if (this.autoPassScheduled || this.playRequestPending) return;
+        this.autoPassScheduled = true;
+        this.scheduleOnce(() => {
+            this.autoPassScheduled = false;
+            if (!this.shouldAutoPassCurrentTurn()) return;
+            if (!this.sendCardIds([])) return;
+            this.markPlayRequestPending();
+            this.clearSelection();
+            this.resetHintCycle();
+            this.updateStatus('已自动过牌，等待服务器确认');
+        }, 0.15);
+    }
+
+    private shouldAutoPassCurrentTurn(): boolean {
+        if (this.playRequestPending) return false;
+        if (this.seat < 0 || this.serverCurrentPlayer !== this.seat) return false;
+        if (this.gameState !== GameState.Playing) return false;
+        if (this.pdkIsLeader || !this.lastPlay) return false;
+        return !this.findSmallestBeatingPlay(this.lastPlay);
     }
 
     public hint(): void {
+        if (this.playRequestPending) {
+            Client.Instance.showPromptTip('上一手出牌确认中，请稍候', 1.1);
+            return;
+        }
         if (!this.isMyTurn) return;
 
         const target = this.pdkIsLeader ? null : this.lastPlay;
@@ -449,7 +519,8 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     protected sendPlay(play: CardPlay): void {
-        this.sendCardIds(play.cards.map(c => Number(c.cardId)));
+        if (this.playRequestPending) return;
+        if (this.sendCardIds(play.cards.map(c => Number(c.cardId)))) this.markPlayRequestPending();
     }
 
     private sendCardIds(cardIds: number[]): boolean {
@@ -457,11 +528,17 @@ export class PaodekuaiRoom extends PokerRoomBase {
             Client.Instance.showPromptTip('网络未连接，无法出牌', 1.5);
             return false;
         }
-        if (GameManager.Instance.EnterVenueState !== EnterVenueState.Entered || !GameManager.Instance.VenueId) {
+        const venueId = GameManager.Instance.VenueId || this.roomInfo?.roomId;
+        if (!venueId) {
             Client.Instance.showPromptTip('房间连接未就绪，请稍候', 1.5);
             return false;
         }
-        NetworkManager.Instance.sendInnerMessage('PaoDeKuai.Play', { cardIds });
+        const signedMsg = GameManager.Instance.signatureMessage({ venueId, cardIds });
+        if (!signedMsg) {
+            Client.Instance.showPromptTip('登录信息异常，请重新进入房间', 1.8);
+            return false;
+        }
+        NetworkManager.Instance.sendMessage('PaoDeKuai.Play', signedMsg, false);
         return true;
     }
 
@@ -494,11 +571,20 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     protected onPdkPlayNotify(msg: any): void {
+        this.clearPlayRequestPending();
         this.clearPendingPlayPreview();
         const serverSeat = Number(msg?.seat ?? -1);
         const clientSeat = this.server2ClientSeat(serverSeat);
         const cardIds: number[] = Array.isArray(msg?.cardIds) ? msg.cardIds.map((id: any) => Number(id)) : [];
         this.currentMultiplier = Number(msg?.multiplier) || this.currentMultiplier;
+        const hasServerBombCount = msg?.bombCount !== undefined;
+        if (hasServerBombCount) {
+            this.bombCountThisRound = Number(msg.bombCount) || 0;
+        }
+        const scores = this.arrayLikeToArray(msg?.scores);
+        if (this.seat >= 0 && scores[this.seat] !== undefined) {
+            this.updateScore(Number(scores[this.seat]) || 0);
+        }
 
         if (cardIds.length === 0) {
             this.lastPlay = null;
@@ -521,7 +607,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
                 } else {
                     this.showOtherPlay(clientSeat, play);
                 }
-                if (play.pattern === PokerPattern.Bomb) this.bombCountThisRound++;
+                if (play.pattern === PokerPattern.Bomb && !hasServerBombCount) this.bombCountThisRound++;
                 this.playCardSound(play.pattern);
             }
         }
@@ -538,6 +624,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     protected onPdkPlayFailed(msg: any): void {
+        this.clearPlayRequestPending();
         Client.Instance.showPromptTip(msg?.errMsg || '出牌失败', 2.0);
         this.playErrorSound();
         this.restorePendingPlaySelection();
@@ -572,6 +659,17 @@ export class PaodekuaiRoom extends PokerRoomBase {
                 this.updatePlayerCardCount(this.server2ClientSeat(s), remain);
             }
         }
+        const golds = this.arrayLikeToArray(msg?.golds);
+        const winGolds = this.arrayLikeToArray(msg?.winGolds);
+        const balanceCount = golds.length > 0 ? golds.length : winGolds.length;
+        for (let s = 0; s < Math.min(2, balanceCount); s++) {
+            const info = this.playerInfos[s];
+            if (!info) continue;
+            const balance = golds.length > 0
+                ? Number(golds[s] || 0)
+                : Number(info.gold || 0) + Number(winGolds[s] || 0);
+            info.gold = Math.max(0, balance);
+        }
         const winner = Number(msg?.winnerSeat ?? -1);
         const resultText = winner === this.seat ? '胜利' : '失败';
         const springText = msg?.spring ? ' 春天' : '';
@@ -582,7 +680,9 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.refreshPaodekuaiHud();
         const settledRound = Number(msg?.roundNo ?? this.currentRound) || 0;
         const totalRounds = Number(msg?.roundCount ?? this.roundCount ?? this.totalRounds) || 0;
-        const isFinalRound = (totalRounds > 0 && settledRound >= totalRounds) || this.hasFinalFeeSettlement(msg);
+        const isFinalRound = msg?.roomFinished === true ||
+            (totalRounds > 0 && settledRound >= totalRounds) ||
+            this.hasFinalFeeSettlement(msg);
         this.showSettlementPanel(msg, scores, myScore, winner, isFinalRound);
         this.updateReadyButtonState();
         console.log(`[PaodekuaiRoom] Settlement winner=${winner}, multiplier=${this.currentMultiplier}, spring=${!!msg?.spring}`);
@@ -690,7 +790,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     private findBestDragPlay(rangeIndices: number[]): { indices: number[]; play: CardPlay } | null {
-        const indices = [...new Set(rangeIndices)]
+        const indices = Array.from(new Set(rangeIndices))
             .filter(i => i >= 0 && i < this.myCards.length)
             .sort((a, b) => a - b);
         if (indices.length === 0) return null;
@@ -711,7 +811,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         const play = this.recognizePattern(cards);
         if (!play) return null;
         if (target && !this.canBeat(play, target)) return null;
-        return { indices: [...indices], play };
+        return { indices: indices.slice(), play };
     }
 
     private enumerateHintPlaysFromIndices(allowedIndices: number[], target: CardPlay | null): Array<{ indices: number[]; play: CardPlay }> {
@@ -749,6 +849,8 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     private getDragPatternRank(pattern: PokerPattern): number {
         switch (pattern) {
+            case PokerPattern.AirplaneWithPairs: return 92;
+            case PokerPattern.AirplaneWithSingles: return 91;
             case PokerPattern.Airplane: return 90;
             case PokerPattern.ConsecutivePairs: return 80;
             case PokerPattern.Straight: return 70;
@@ -788,6 +890,22 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.isMyTurn = this.seat !== -1 && this.serverCurrentPlayer === this.seat && this.gameState === GameState.Playing;
         if (this.isMyTurn) {
             const canBeat = !this.pdkIsLeader && !!this.lastPlay && !!this.findSmallestBeatingPlay(this.lastPlay);
+            if (!this.pdkIsLeader && !!this.lastPlay && !canBeat) {
+                this.pokerActions = {
+                    canPlay: false,
+                    canHint: false,
+                    canPass: false,
+                    isLeader: false,
+                    mustPlay: false,
+                };
+                this.showPassAndPlayButtons(false);
+                this.stopCountdown();
+                this.clearSelection();
+                this.resetHintCycle();
+                this.updateStatus('要不起，自动过牌');
+                this.scheduleAutoPass();
+                return;
+            }
             const canPass = !this.pdkIsLeader && (!this.forcePlayIfCanBeat || !canBeat);
             const canPlay = this.pdkIsLeader || canBeat || !this.lastPlay;
             const canHint = canPlay || (!!this.lastPlay && !this.pdkIsLeader);
@@ -806,6 +924,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
             this.showPassAndPlayButtons(false);
             this.resetHintCycle();
             this.stopCountdown();
+            this.autoPassScheduled = false;
             if (this.gameState === GameState.Playing && this.serverCurrentPlayer >= 0) {
                 this.updateStatus('等待对手出牌');
             } else {
@@ -826,6 +945,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
 
     protected resetRoundState(): void {
         super.resetRoundState();
+        this.clearPlayRequestPending();
         this.bombCountThisRound = 0;
         this.currentMultiplier = 1;
         this.myRoundScore = 0;
@@ -834,34 +954,42 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.pdkIsLeader = true;
         this.hasFirstPlayed = false;
         this.resetHintCycle();
+        this.autoPassScheduled = false;
     }
 
     protected showPassAndPlayButtons(show: boolean): void {
         const showPass = show && !!this.pokerActions?.canPass;
-        const showPlay = show && (!!this.pokerActions?.canPlay || !!this.pokerActions?.canHint);
+        const showHint = show && !!this.pokerActions?.canHint;
+        const showPlay = show && !!this.pokerActions?.canPlay;
+        const canTouch = !this.playRequestPending;
         this.ensurePaodekuaiActionControls();
         if (this.pdkActionRoot) {
-            const anyVisible = showPass || showPlay;
+            const anyVisible = showPass || showHint || showPlay;
             this.pdkActionRoot.active = anyVisible;
             if (anyVisible && this.overlayRoot) {
                 this.pdkActionRoot.setSiblingIndex(this.overlayRoot.children.length - 1);
             }
 
-            if (this.pdkActionPassButton) {
-                this.pdkActionPassButton.active = showPass;
-                this.setButtonInteractable(this.pdkActionPassButton, showPass);
-                this.pdkActionPassButton.setPosition(showPass && showPlay ? -210 : 0, 0, 0);
-            }
-            if (this.pdkActionHintButton) {
-                this.pdkActionHintButton.active = showPlay;
-                this.setButtonInteractable(this.pdkActionHintButton, showPlay);
-                this.pdkActionHintButton.setPosition(showPass ? -40 : -84, 0, 0);
-            }
-            if (this.pdkActionPlayButton) {
-                this.pdkActionPlayButton.active = showPlay;
-                this.setButtonInteractable(this.pdkActionPlayButton, showPlay);
-                this.pdkActionPlayButton.setPosition(showPass ? 130 : 84, 0, 0);
-            }
+            const visibleButtons = [
+                { node: this.pdkActionPassButton, active: showPass },
+                { node: this.pdkActionHintButton, active: showHint },
+                { node: this.pdkActionPlayButton, active: showPlay },
+            ].filter(item => item.node && item.active);
+            const positions = visibleButtons.length === 3
+                ? [-210, -40, 130]
+                : (visibleButtons.length === 2 ? [-94, 94] : [0]);
+
+            [
+                { node: this.pdkActionPassButton, active: showPass },
+                { node: this.pdkActionHintButton, active: showHint },
+                { node: this.pdkActionPlayButton, active: showPlay },
+            ].forEach(item => {
+                if (!item.node) return;
+                item.node.active = item.active;
+                this.setButtonInteractable(item.node, item.active && canTouch);
+                const visibleIndex = visibleButtons.findIndex(visible => visible.node === item.node);
+                if (visibleIndex >= 0) item.node.setPosition(positions[visibleIndex], 0, 0);
+            });
             return;
         }
         if (this.passGroup) {
@@ -877,6 +1005,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     private setButtonInteractable(node: Node, interactable: boolean): void {
+        (node as any)._pdkDisabled = !interactable;
         const button = node.getComponent(Button);
         if (button) button.interactable = interactable;
     }
@@ -1004,7 +1133,23 @@ export class PaodekuaiRoom extends PokerRoomBase {
             if (this.selectedIndices.has(i)) this.applySelectedStyle(node);
             else this.applyNormalStyle(node);
         }
-        this.pokerCallbacks.onSelectionChanged?.([...this.selectedIndices]);
+        this.pokerCallbacks.onSelectionChanged?.(Array.from(this.selectedIndices));
+    }
+
+    private getSelectedHandIndices(): number[] {
+        const rawIndices = Array.from(this.selectedIndices);
+        const indices = rawIndices
+            .map(i => Number(i))
+            .filter(i => Number.isInteger(i) && i >= 0 && i < this.myCards.length)
+            .sort((a, b) => a - b);
+
+        if (indices.length !== rawIndices.length) {
+            console.warn(`[PaodekuaiRoom] Dropped invalid selected indices: selected=${rawIndices.join(',')}, hand=${this.myCards.length}`);
+            this.selectedIndices = new Set(indices);
+            this.applyCurrentSelectionToHand();
+        }
+
+        return indices;
     }
 
     private getMyHandLayout(): { gap: number; startX: number } {
@@ -1085,10 +1230,15 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     private ensurePaodekuaiUI(): void {
+        this.prepareStandalonePaodekuaiRoot();
+
         if (this.overlayRoot) {
             if (this.overlayRoot.parent !== this.node) {
                 this.overlayRoot.parent = this.node;
             }
+            this.overlayRoot.layer = PDK_UI_LAYER;
+            this.overlayRoot.getComponent(UITransform)?.setContentSize(PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT);
+            if (!this.overlayRoot.getComponent(BlockInputEvents)) this.overlayRoot.addComponent(BlockInputEvents);
             this.hideGuanDanPokerNodes();
             this.overlayRoot.active = true;
             this.overlayRoot.setSiblingIndex(this.node.children.length - 1);
@@ -1103,12 +1253,19 @@ export class PaodekuaiRoom extends PokerRoomBase {
         }
 
         const overlay = new Node('PaodekuaiOverlay');
-        overlay.layer = 1 << 25;
+        overlay.layer = PDK_UI_LAYER;
         overlay.parent = this.node;
-        overlay.addComponent(UITransform).setContentSize(1920, 1080);
+        overlay.addComponent(UITransform).setContentSize(PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT);
+        overlay.addComponent(BlockInputEvents);
         overlay.setPosition(0, 0, 0);
         overlay.setSiblingIndex(this.node.children.length - 1);
+        (overlay as any)._paodekuaiStandaloneMarker = PDK_STANDALONE_MARKER;
         this.overlayRoot = overlay;
+
+        const tableBg = this.createArea(overlay, 'PaodekuaiTableBg', 0, 0, PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT);
+        this.paintRect(tableBg, PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT, new Color(23, 78, 70, 255), undefined, 0);
+        const tableCenter = this.createArea(overlay, 'PaodekuaiTableCenter', 0, 8, 1180, 660);
+        this.paintRect(tableCenter, 1180, 660, new Color(31, 104, 88, 238), new Color(226, 190, 112, 185), 26);
 
         const hud = this.createArea(overlay, 'PaodekuaiHud', -560, 315, 360, 240);
         this.paintRect(hud, 360, 240, new Color(29, 35, 52, 214), new Color(238, 198, 116, 255), 18);
@@ -1179,7 +1336,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
             return;
         }
 
-        const root = this.createArea(this.overlayRoot, 'PaodekuaiActionControls', 0, -236, 610, 82);
+        const root = this.createArea(this.overlayRoot, 'PaodekuaiActionControls', 0, -236, 640, 96);
         root.setSiblingIndex(this.overlayRoot.children.length - 1);
         this.pdkActionRoot = root;
 
@@ -1205,7 +1362,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
             root,
             '出牌',
             130,
-            'playSelectedCards',
+            'onPlayClick',
             new Color(34, 148, 88, 248),
             new Color(167, 244, 190, 255),
             'PaodekuaiFreshPlayButton'
@@ -1272,11 +1429,11 @@ export class PaodekuaiRoom extends PokerRoomBase {
     private ensureSettlementPanel(): void {
         if (!this.overlayRoot || this.settlementPanel) return;
 
-        const overlay = this.createArea(this.overlayRoot, 'SettlementOverlay', 0, 0, 1920, 1080);
+        const overlay = this.createArea(this.overlayRoot, 'SettlementOverlay', 0, 0, PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT);
         overlay.addComponent(BlockInputEvents);
         const mask = overlay.addComponent(Graphics);
         mask.fillColor = new Color(0, 0, 0, 138);
-        mask.roundRect(-960, -540, 1920, 1080, 0);
+        mask.roundRect(-PDK_STAGE_WIDTH / 2, -PDK_STAGE_HEIGHT / 2, PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT, 0);
         mask.fill();
 
         const panel = this.createArea(overlay, 'SettlementPanel', 0, 22, 680, 470);
@@ -1312,11 +1469,11 @@ export class PaodekuaiRoom extends PokerRoomBase {
     private ensurePaodekuaiDissolvePanel(): void {
         if (!this.overlayRoot || this.pdkDissolvePanel) return;
 
-        const overlay = this.createArea(this.overlayRoot, 'DissolveOverlay', 0, 0, 1920, 1080);
+        const overlay = this.createArea(this.overlayRoot, 'DissolveOverlay', 0, 0, PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT);
         overlay.addComponent(BlockInputEvents);
         const mask = overlay.addComponent(Graphics);
         mask.fillColor = new Color(0, 0, 0, 150);
-        mask.roundRect(-960, -540, 1920, 1080, 0);
+        mask.roundRect(-PDK_STAGE_WIDTH / 2, -PDK_STAGE_HEIGHT / 2, PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT, 0);
         mask.fill();
 
         const panel = this.createArea(overlay, 'DissolvePanel', 0, 34, 540, 268);
@@ -1455,6 +1612,23 @@ export class PaodekuaiRoom extends PokerRoomBase {
         return node;
     }
 
+    private prepareStandalonePaodekuaiRoot(): void {
+        this.node.layer = PDK_UI_LAYER;
+        this.ensureNodeTransform(this.node, PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT);
+
+        const host = this.node.parent;
+        if (host) {
+            host.layer = PDK_UI_LAYER;
+            this.ensureNodeTransform(host, PDK_STAGE_WIDTH, PDK_STAGE_HEIGHT);
+        }
+    }
+
+    private ensureNodeTransform(node: Node, width: number, height: number): UITransform {
+        const transform = node.getComponent(UITransform) || node.addComponent(UITransform);
+        transform.setContentSize(width, height);
+        return transform;
+    }
+
     private paintRect(node: Node, w: number, h: number, fill: Color, stroke?: Color, radius: number = 8): void {
         const g = node.getComponent(Graphics) || node.addComponent(Graphics);
         g.clear();
@@ -1499,63 +1673,21 @@ export class PaodekuaiRoom extends PokerRoomBase {
         label.verticalAlign = Label.VerticalAlign.CENTER;
         label.color = new Color(255, 255, 255, 255);
 
-        const button = node.addComponent(Button);
-        button.transition = Button.Transition.SCALE;
-        button.zoomScale = 1.05;
-
-        const clickEvent = new EventHandler();
-        clickEvent.target = this.node;
-        clickEvent.component = 'PaodekuaiRoom';
-        clickEvent.handler = 'onPaodekuaiButtonClick';
-        clickEvent.customEventData = handler;
-        button.clickEvents.push(clickEvent);
-
-        this.bindNodeTouchEnd(node, handler);
-        this.bindNodeTouchEnd(labelNode, handler);
+        this.configurePaodekuaiButton(node, labelNode, handler, 1.05);
         return node;
     }
 
     private createPaodekuaiActionButton(parent: Node, text: string, x: number, handler: string, fill: Color, stroke: Color, nodeName: string): Node {
-        const width = 148;
-        const height = 58;
+        const width = 168;
+        const height = 66;
         const node = this.createArea(parent, nodeName, x, 0, width, height);
         this.paintRect(node, width, height, fill, stroke, 10);
 
         const label = this.createLabel(node, 'Label', text, 24, 0, 1, width - 14, 42, new Color(255, 255, 255, 255));
         label.lineHeight = 30;
 
-        const button = node.addComponent(Button);
-        button.transition = Button.Transition.SCALE;
-        button.zoomScale = 1.06;
-        button.target = node;
-        button.interactable = true;
-
-        const invoke = (event?: EventTouch) => {
-            if (event) event.propagationStopped = true;
-            this.invokePaodekuaiButton(handler);
-        };
-
-        node.on(Node.EventType.TOUCH_START, (event: EventTouch) => {
-            event.propagationStopped = true;
-        }, this);
-        node.on(Node.EventType.TOUCH_END, invoke, this);
-        node.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => {
-            event.propagationStopped = true;
-        }, this);
-        node.on(Button.EventType.CLICK, () => this.invokePaodekuaiButton(handler), this);
-
-        label.node.on(Node.EventType.TOUCH_START, (event: EventTouch) => {
-            event.propagationStopped = true;
-        }, this);
-        label.node.on(Node.EventType.TOUCH_END, invoke, this);
-        label.node.on(Node.EventType.TOUCH_CANCEL, (event: EventTouch) => {
-            event.propagationStopped = true;
-        }, this);
+        this.configurePaodekuaiButton(node, label.node, handler, 1.06);
         return node;
-    }
-
-    public onPaodekuaiButtonClick(_event: unknown, handler: string): void {
-        this.invokePaodekuaiButton(handler);
     }
 
     private invokePaodekuaiButton(handler: string): void {
@@ -1567,20 +1699,79 @@ export class PaodekuaiRoom extends PokerRoomBase {
         if (typeof fn === 'function') fn.call(this);
     }
 
-    private bindNodeTouchEnd(node: Node, handler: string): void {
-        node.on(Node.EventType.TOUCH_END, (event: EventTouch) => {
-            event.propagationStopped = true;
+    public onPaodekuaiButtonClick(_event: unknown, handler: string): void {
+        if (this.playRequestPending && (handler === 'onPlayClick' || handler === 'playSelectedCards' || handler === 'pass' || handler === 'onPassClick' || handler === 'hint' || handler === 'onHintClick')) return;
+        this.invokePaodekuaiButton(handler);
+    }
+
+    private configurePaodekuaiButton(buttonNode: Node, labelNode: Node, handler: string, zoomScale: number): Button {
+        this.bindReliableButtonClick(buttonNode, handler);
+        this.bindReliableButtonClick(labelNode, handler);
+
+        const button = buttonNode.getComponent(Button) || buttonNode.addComponent(Button);
+        button.transition = Button.Transition.SCALE;
+        button.zoomScale = zoomScale;
+        button.target = buttonNode;
+        button.interactable = true;
+        button.clickEvents.length = 0;
+        const clickEvent = new EventHandler();
+        clickEvent.target = this.node;
+        clickEvent.component = 'PaodekuaiRoom';
+        clickEvent.handler = 'onPaodekuaiButtonClick';
+        clickEvent.customEventData = handler;
+        button.clickEvents.push(clickEvent);
+        buttonNode.on(Button.EventType.CLICK, () => {
+            if (this.isPaodekuaiButtonDisabled(buttonNode)) return;
             this.invokePaodekuaiButton(handler);
         }, this);
+        return button;
+    }
+
+    private bindReliableButtonClick(node: Node, handler: string): void {
+        let touchStarted = false;
+        const invoke = (event: EventTouch) => {
+            event.propagationStopped = true;
+            if (!touchStarted) return;
+            touchStarted = false;
+            if (this.isPaodekuaiButtonDisabled(node)) return;
+            this.invokePaodekuaiButton(handler);
+        };
+        const cancel = (event: EventTouch) => {
+            event.propagationStopped = true;
+            touchStarted = false;
+        };
+
+        node.on(Node.EventType.TOUCH_START, (event: EventTouch) => {
+            event.propagationStopped = true;
+            if (this.isPaodekuaiButtonDisabled(node)) {
+                touchStarted = false;
+                return;
+            }
+            touchStarted = true;
+        }, this);
+        node.on(Node.EventType.TOUCH_END, invoke, this);
+        node.on(Node.EventType.TOUCH_CANCEL, cancel, this);
+    }
+
+    private isPaodekuaiButtonDisabled(node: Node): boolean {
+        let cursor: Node | null = node;
+        while (cursor) {
+            if ((cursor as any)._pdkDisabled) return true;
+            cursor = cursor.parent;
+        }
+        return false;
     }
 
     private resolveCardsForPlay(): { cards: PokerCard[]; play: CardPlay } | null {
-        let indices = [...this.selectedIndices].sort((a, b) => a - b);
+        let indices = this.getSelectedHandIndices();
         if (indices.length > 0) {
-            const exact = this.buildPlayFromIndices(indices, this.getTurnTargetPlay());
+            const target = this.getTurnTargetPlay();
+            const exact = this.buildPlayFromIndices(indices, target);
             if (exact) return this.materializePlaySuggestion(exact);
 
-            const bestFromSelection = this.findBestPlayFromIndices(indices, this.getTurnTargetPlay());
+            if (!target) return null;
+
+            const bestFromSelection = this.findBestPlayFromIndices(indices, target);
             if (bestFromSelection) {
                 this.applyPlaySuggestion(bestFromSelection);
                 return this.materializePlaySuggestion(bestFromSelection);
@@ -1589,7 +1780,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
         }
 
         const suggestion = this.pdkIsLeader || !this.lastPlay
-            ? this.findFirstLeadPlay()
+            ? this.findSmallestLeadSingle()
             : this.findSmallestBeatingPlay(this.lastPlay);
         if (!suggestion) {
             if ((this.pdkIsLeader || !this.lastPlay) && this.myCards.length > 0) {
@@ -1613,6 +1804,25 @@ export class PaodekuaiRoom extends PokerRoomBase {
         return this.materializePlaySuggestion(suggestion);
     }
 
+    private findSmallestLeadSingle(): { indices: number[]; play: CardPlay } | null {
+        if (this.myCards.length === 0) return null;
+        let bestIndex = 0;
+        for (let i = 1; i < this.myCards.length; i++) {
+            const card = this.myCards[i];
+            const best = this.myCards[bestIndex];
+            if (card.value < best.value || (card.value === best.value && card.suit < best.suit)) bestIndex = i;
+        }
+        const bestCard = this.myCards[bestIndex];
+        return {
+            indices: [bestIndex],
+            play: {
+                pattern: PokerPattern.Single,
+                cards: [bestCard],
+                weight: bestCard.value || 0,
+            },
+        };
+    }
+
     private getTurnTargetPlay(): CardPlay | null {
         return (!this.pdkIsLeader && this.lastPlay) ? this.lastPlay : null;
     }
@@ -1632,7 +1842,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     private materializePlaySuggestion(suggestion: { indices: number[]; play: CardPlay }): { cards: PokerCard[]; play: CardPlay } | null {
-        const indices = [...suggestion.indices]
+        const indices = suggestion.indices.slice()
             .filter(i => i >= 0 && i < this.myCards.length)
             .sort((a, b) => a - b);
         const cards = indices.map(i => this.myCards[i]).filter(Boolean);
@@ -1651,6 +1861,29 @@ export class PaodekuaiRoom extends PokerRoomBase {
         this.showMyPlay(displayPlay);
         this.updateStatus('已出牌，等待服务器确认');
         this.playCardSound(displayPlay.pattern);
+    }
+
+    private markPlayRequestPending(): void {
+        this.playRequestPending = true;
+        this.playRequestSentAt = Date.now();
+        this.showPassAndPlayButtons(true);
+    }
+
+    private clearPlayRequestPending(): void {
+        this.playRequestPending = false;
+        this.playRequestSentAt = 0;
+    }
+
+    private updatePendingPlayRequest(): void {
+        if (!this.playRequestPending) return;
+        if (Date.now() - this.playRequestSentAt < PDK_PLAY_REQUEST_TIMEOUT_MS) return;
+
+        this.clearPlayRequestPending();
+        this.restorePendingPlaySelection();
+        this.isMyTurn = this.seat !== -1 && this.serverCurrentPlayer === this.seat && this.gameState === GameState.Playing;
+        this.showPassAndPlayButtons(this.isMyTurn);
+        NetworkManager.Instance.sendInnerMessage('PaoDeKuai.Sync');
+        Client.Instance.showPromptTip('出牌响应超时，已重新同步房间', 1.8);
     }
 
     private clearPendingPlayPreview(): void {
@@ -1711,7 +1944,7 @@ export class PaodekuaiRoom extends PokerRoomBase {
             if (this.playerNameLabels[clientSeat]) {
                 this.playerNameLabels[clientSeat]!.string = `${name}${tags.length > 0 ? ` · ${tags.join('/')}` : ''}`;
             }
-            if (this.playerGoldLabels[clientSeat]) this.playerGoldLabels[clientSeat]!.string = gold > 0 ? `金币 ${gold}` : '';
+            if (this.playerGoldLabels[clientSeat]) this.playerGoldLabels[clientSeat]!.string = gold > 0 ? `金币 ${this.formatBalanceValue(gold)}` : '';
             if (this.playerStateLabels[clientSeat]) this.playerStateLabels[clientSeat]!.string = `${clientSeat === 0 ? '自己' : '对手'} · ${readyText}`;
         }
     }
@@ -1883,8 +2116,8 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     private normalizeScoreScale(value: any): number {
-        const scale = Number(value || 1);
-        return Number.isFinite(scale) && scale > 0 ? scale : 1;
+        const scale = Number(value ?? 10);
+        return Number.isFinite(scale) && scale > 0 ? scale : 10;
     }
 
     private resolveMessageScoreScale(msg: any): number {
@@ -1894,7 +2127,11 @@ export class PaodekuaiRoom extends PokerRoomBase {
     private formatScoreValue(value: number, scale: number = this.scoreScale): string {
         const normalizedScale = this.normalizeScoreScale(scale);
         const score = (Number(value) || 0) / normalizedScale;
-        const rounded = Math.round(score * 10) / 10;
+        return this.formatBalanceValue(score);
+    }
+
+    private formatBalanceValue(value: number): string {
+        const rounded = Math.round((Number(value) || 0) * 10) / 10;
         const normalized = Object.is(rounded, -0) ? 0 : rounded;
         return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(1).replace(/\.0$/, '');
     }
@@ -2002,23 +2239,46 @@ export class PaodekuaiRoom extends PokerRoomBase {
     }
 
     private recognizePlane(cards: PokerCard[], values: number[], counts: Map<number, number>): CardPlay | null {
-        const tripleValues = [...counts.entries()]
+        if (values.length >= 6 && values.length % 3 === 0 && this.isStraightTriples(values)) {
+            return { pattern: PokerPattern.Airplane, cards, weight: values[values.length - 1] };
+        }
+
+        if (values.length >= 8 && values.length % 4 === 0) {
+            const weight = this.findPlaneCoreWeight(counts, values.length / 4);
+            if (weight > 0) return { pattern: PokerPattern.AirplaneWithSingles, cards, weight };
+        }
+
+        if (values.length >= 10 && values.length % 5 === 0) {
+            const weight = this.findPlaneCoreWeight(counts, values.length / 5);
+            if (weight > 0) return { pattern: PokerPattern.AirplaneWithPairs, cards, weight };
+        }
+
+        return null;
+    }
+
+    private isStraightTriples(values: number[]): boolean {
+        if (values.length < 6 || values.length % 3 !== 0 || values.some(v => v >= 15)) return false;
+        for (let i = 0; i < values.length; i += 3) {
+            if (values[i] !== values[i + 1] || values[i] !== values[i + 2]) return false;
+            if (i > 0 && values[i] !== values[i - 3] + 1) return false;
+        }
+        return true;
+    }
+
+    private findPlaneCoreWeight(counts: Map<number, number>, planeLen: number): number {
+        if (planeLen < 2) return -1;
+        const tripleValues = Array.from(counts.entries())
             .filter(([value, count]) => count >= 3 && value < 15)
             .map(([value]) => value)
             .sort((a, b) => a - b);
-        if (tripleValues.length < 2) return null;
+        if (tripleValues.length < planeLen) return -1;
 
         let bestWeight = -1;
-        for (let start = 0; start < tripleValues.length; start++) {
-            for (let len = 2; start + len <= tripleValues.length; len++) {
-                const seq = tripleValues.slice(start, start + len);
-                if (!this.isConsecutiveRaw(seq)) break;
-                if (values.length === len * 3 || values.length === len * 4 || values.length === len * 5) {
-                    bestWeight = Math.max(bestWeight, seq[len - 1]);
-                }
-            }
+        for (let start = 0; start + planeLen <= tripleValues.length; start++) {
+            const seq = tripleValues.slice(start, start + planeLen);
+            if (this.isConsecutiveRaw(seq)) bestWeight = Math.max(bestWeight, seq[planeLen - 1]);
         }
-        return bestWeight > 0 ? { pattern: PokerPattern.Airplane, cards, weight: bestWeight } : null;
+        return bestWeight;
     }
 
     private isConsecutiveRaw(values: number[]): boolean {
@@ -2031,6 +2291,8 @@ export class PaodekuaiRoom extends PokerRoomBase {
     private isSequencePattern(pattern: PokerPattern): boolean {
         return pattern === PokerPattern.Straight ||
             pattern === PokerPattern.ConsecutivePairs ||
-            pattern === PokerPattern.Airplane;
+            pattern === PokerPattern.Airplane ||
+            pattern === PokerPattern.AirplaneWithSingles ||
+            pattern === PokerPattern.AirplaneWithPairs;
     }
 }

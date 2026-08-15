@@ -13,7 +13,7 @@
  * - MsgTingTile / MsgHuTile / MsgShowTiles         听/胡/亮牌
  */
 
-import { _decorator, Node, Label, Color, UITransform, Vec3, Graphics, BlockInputEvents } from 'cc';
+import { _decorator, Node, Label, Color, UITransform, Vec3, Graphics, BlockInputEvents, view } from 'cc';
 import { MahjongRoomBase, MahjongTile, AvailableActions, MahjongActionOption, MahjongActionType, MeldType, MahjongMeldGroup, tileDisplayText } from '../../GameCommon/MahjongRoomBase';
 import { RoomInfo, RoundSettlementData, FinalSettlementData } from '../../GameCommon/GameTypes';
 import { GameState } from '../../GameCommon/RoomBase';
@@ -70,6 +70,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     start(): void {
         this.syncMsgPrefix = 'MsgHZ';
         super.start();
+        this.applyTouchMahjongLayout();
         this.gameId = 'hongzhong_mahjong';
         this.buildHongzhongHud();
         this.buildHongzhongTingHint();
@@ -77,6 +78,50 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
     }
 
     protected getSeatCount(): number { return this.playerCount; }
+
+    protected getMyHandTileSize(): { width: number; height: number } {
+        return { width: 80, height: 112 };
+    }
+
+    protected getMyHandTileGap(tileCount: number): number {
+        return tileCount >= 14 ? -3 : 2;
+    }
+
+    protected getMyHandMaxWidth(): number {
+        const visibleWidth = view.getVisibleSize().width || 1600;
+        return Math.min(1320, visibleWidth - 220);
+    }
+
+    private applyTouchMahjongLayout(): void {
+        const visibleWidth = view.getVisibleSize().width || 1600;
+        const halfWidth = visibleWidth / 2;
+        const drawnTileX = Math.min(620, halfWidth - 70);
+        const selfInfoX = Math.max(-halfWidth + 146, -650);
+
+        this.resizeAndMove(this.myHandArea, 1320, 136, 0, -400);
+        this.resizeAndMove(this.drawnTileNode, 104, 136, drawnTileX, -400);
+        this.resizeAndMove(this.actionPanel, 860, 104, 0, -260);
+        if (this.actionPanel) {
+            this.paintRect(this.actionPanel, 860, 104, new Color(16, 20, 30, 215), new Color(255, 210, 112, 255), 16);
+        }
+        this.resizeAndMove(this.myMeldArea, 500, 80, -70, -158);
+        this.resizeAndMove(this.myDiscardArea, 460, 156, 0, -36);
+        if (this.playerInfoCards[0]?.root) this.playerInfoCards[0]!.root.setPosition(selfInfoX, -84, 0);
+
+        if (this.getSeatCount() === 2) {
+            const topHandY = Math.min(318, this.getTopInfoBottomY() - 54);
+            this.resizeAndMove(this.topHandArea, 820, 70, 0, topHandY);
+            this.resizeAndMove(this.topMeldArea, 520, 74, -40, topHandY - 78);
+            this.resizeAndMove(this.topDiscardArea, 430, 154, 0, topHandY - 202);
+        }
+    }
+
+    private resizeAndMove(node: Node | null, width: number, height: number, x: number, y: number): void {
+        if (!node) return;
+        const transform = node.getComponent(UITransform) || node.addComponent(UITransform);
+        transform.setContentSize(width, height);
+        node.setPosition(x, y, 0);
+    }
 
     protected isAllRoundsFinished(): boolean {
         const currentRound = Number((this as any).currentRound) || 0;
@@ -757,6 +802,7 @@ export class HongzhongMahjongRoom extends MahjongRoomBase {
 
     protected refreshMahjongPlayerInfo(): void {
         super.refreshMahjongPlayerInfo();
+        this.applyTouchMahjongLayout();
         this.layoutHongzhongOpponentInfo();
     }
 

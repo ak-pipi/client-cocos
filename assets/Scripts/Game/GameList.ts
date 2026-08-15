@@ -860,7 +860,7 @@ export class GameList extends Component {
     }
 
     private createEnteredRoom(game: GameMetaInfo, result: EnterVenueResult): void {
-        if (game.type === GameType.Mahjong) {
+        if (game.type === GameType.Mahjong || game.id === GameId.Paodekuai) {
             Client.Instance.initGameRoom(null);
             const room = GameFactory.Instance.createRoom(game.id, Client.Instance.getGameRoomNode() || undefined, undefined);
             room.presetRoomNumber(result?.number || null);

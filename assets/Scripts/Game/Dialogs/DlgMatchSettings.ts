@@ -32,6 +32,7 @@ interface MatchPlayerRow {
     commissionRateBp?: number;
     feeAmount?: number;
     commissionAmount?: number;
+    self?: boolean;
 }
 
 interface MatchLedgerRow {
@@ -233,6 +234,7 @@ export class DlgMatchSettings extends Component {
     private renderControls(): void {
         if (!this.controlNode) return;
         this.controlNode.removeAllChildren();
+        this.searchInput = null;
         createButton(this.controlNode, '<', 38, 38, COLORS.panelLight, this.node, 'DlgMatchSettings', 'onPrevDateClicked')
             .setPosition(-520, 0, 0);
         const dateNode = new Node('Date');
@@ -249,7 +251,7 @@ export class DlgMatchSettings extends Component {
         let x = -160;
         if (this.currentTab === 'detail' && this.detailMode) {
             const filters: Array<{ key: DetailFilter; text: string }> = [
-                { key: 'wash', text: '洗牌分' },
+                { key: 'wash', text: '洗牌分分成' },
                 { key: 'all', text: '全部' },
                 { key: 'transfer', text: '转移分' },
                 { key: 'gift', text: '赠送分' },
@@ -273,10 +275,12 @@ export class DlgMatchSettings extends Component {
             });
         }
 
-        this.searchInput = this.createEditBox(this.controlNode, 210, 42);
-        this.searchInput.node.setPosition(350, 0, 0);
-        createButton(this.controlNode, this.currentTab === 'gift' ? '快速查询' : '查询', 112, 42, COLORS.orange, this.node, 'DlgMatchSettings', 'onSearchClicked')
-            .setPosition(520, 0, 0);
+        if (!(this.currentTab === 'detail' && this.detailMode)) {
+            this.searchInput = this.createEditBox(this.controlNode, 210, 42);
+            this.searchInput.node.setPosition(350, 0, 0);
+            createButton(this.controlNode, this.currentTab === 'gift' ? '快速查询' : '查询', 112, 42, COLORS.orange, this.node, 'DlgMatchSettings', 'onSearchClicked')
+                .setPosition(520, 0, 0);
+        }
         this.scrubEditBoxLabels();
     }
 
@@ -559,9 +563,12 @@ export class DlgMatchSettings extends Component {
                 ? `${this.amountText(row.score)}\n分成${this.amountText(row.commissionAmount)}`
                 : this.amountText(row.score);
             const isShareTab = this.currentTab === 'share' || this.currentTab === 'shuffleShare';
+            const isSelf = row.self || String(row.playerId || '') === String(GameManager.Instance.PlayerId || '');
             this.centerLabel(item, scoreText, 160, 130, isShareTab ? 18 : 22);
             if (isShareTab) {
                 this.centerLabel(item, this.rateText(row.commissionRateBp), 410, 160);
+            } else if (isSelf) {
+                this.centerLabel(item, '-', 420, 180);
             } else {
                 createButton(item, '上下分', 120, 42, COLORS.accent, this.node, 'DlgMatchSettings', 'onAdjustClicked', String(index))
                     .setPosition(420, 0, 0);
@@ -577,7 +584,7 @@ export class DlgMatchSettings extends Component {
         }
         this.rows.forEach((row: MatchLedgerRow, index) => {
             const item = this.createRow(index);
-            this.centerLabel(item, this.amountText(row.matchScore), -430, 150);
+            this.centerLabel(item, this.signedAmountText(row.matchScore), -430, 150);
             this.centerLabel(item, this.amountText(row.balanceAfter), -190, 170);
             this.centerLabel(item, row.bizTypeText || row.changeType || '-', 50, 180);
             this.centerLabel(item, row.gameName || '-', 275, 170);
@@ -590,7 +597,7 @@ export class DlgMatchSettings extends Component {
         this.rows.forEach((row: MatchLogRow, index) => {
             const item = this.createRow(index);
             this.centerLabel(item, `${row.operatorNickname || '-'}\n${row.operatorPlayerId || '-'}`, -360, 250, 18);
-            this.centerLabel(item, `${row.changeType || '-'}\n${this.amountText(row.changeAmount)}`, -90, 150, 18);
+            this.centerLabel(item, `${row.changeType || '-'}\n${this.signedAmountText(row.changeAmount)}`, -90, 150, 18);
             this.centerLabel(item, `${row.targetNickname || '-'}\n${row.targetPlayerId || '-'}`, 180, 250, 18);
             this.centerLabel(item, this.formatTime(row.time), 450, 210, 18);
         });
@@ -604,7 +611,7 @@ export class DlgMatchSettings extends Component {
             this.infoLabel(item, row, -260, 250);
             this.centerLabel(item, String(row.juniorCount || 0), -40, 120);
             this.centerLabel(item, this.amountText(row.giftTimes), 180, 150);
-            this.centerLabel(item, this.amountText(row.giftScore), 420, 150);
+            this.centerLabel(item, this.signedAmountText(row.giftScore), 420, 150);
         });
         resizeScrollContent(this.content!, 1160, this.rows.length, 72, 8);
     }
@@ -802,6 +809,12 @@ export class DlgMatchSettings extends Component {
     private amountText(value: number | undefined): string {
         if (value == null || isNaN(Number(value))) return '0';
         return String(Math.floor(Number(value)));
+    }
+
+    private signedAmountText(value: number | undefined): string {
+        if (value == null || isNaN(Number(value))) return '0';
+        const amount = Math.floor(Number(value));
+        return amount > 0 ? `+${amount}` : String(amount);
     }
 
     private rateText(value: number | undefined): string {

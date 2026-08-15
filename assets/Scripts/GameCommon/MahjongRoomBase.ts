@@ -545,9 +545,16 @@ export class MahjongRoomBase extends RoomBase {
         if (!this.myHandArea) return;
         this.myHandArea.removeAllChildren();
 
-        const tw = 72;
-        const gap = this.myHandTiles.length >= 14 ? 2 : 6;
-        const totalW = this.myHandTiles.length * (tw + gap) - gap;
+        const tileSize = this.getMyHandTileSize();
+        const tw = tileSize.width;
+        const minGap = this.myHandTiles.length >= 14 ? -10 : -4;
+        let gap = this.getMyHandTileGap(this.myHandTiles.length);
+        const maxWidth = this.getMyHandMaxWidth();
+        const naturalW = this.myHandTiles.length * (tw + gap) - gap;
+        if (this.myHandTiles.length > 1 && naturalW > maxWidth) {
+            gap = Math.max(minGap, (maxWidth - this.myHandTiles.length * tw) / (this.myHandTiles.length - 1));
+        }
+        const totalW = this.myHandTiles.length * tw + (this.myHandTiles.length - 1) * gap;
         let startX = -totalW / 2 + tw / 2;
 
         for (let i = 0; i < this.myHandTiles.length; i++) {
@@ -960,6 +967,19 @@ export class MahjongRoomBase extends RoomBase {
 
     // ==================== 工具方法 ====================
 
+    protected getMyHandTileSize(): { width: number; height: number } {
+        return { width: 72, height: 100 };
+    }
+
+    protected getMyHandTileGap(tileCount: number): number {
+        return tileCount >= 14 ? 2 : 6;
+    }
+
+    protected getMyHandMaxWidth(): number {
+        const visibleWidth = view.getVisibleSize().width || 1600;
+        return Math.min(1320, visibleWidth - 220);
+    }
+
     protected initOpponentHandCounts(): void {
         if (!this.opponentHandCounts) {
             this.opponentHandCounts = new Map<number, number>();
@@ -1140,8 +1160,9 @@ export class MahjongRoomBase extends RoomBase {
             return instantiate(this.tilePrefab);
         }
 
-        const tw = seatIndex === 0 && interactive ? 72 : 48;
-        const th = seatIndex === 0 && interactive ? 100 : 66;
+        const handTileSize = this.getMyHandTileSize();
+        const tw = seatIndex === 0 && interactive ? handTileSize.width : 48;
+        const th = seatIndex === 0 && interactive ? handTileSize.height : 66;
         const node = new Node(`tile_${tile.id || 0}_${tile.tile?.pattern || 0}_${tile.tile?.number || 0}`);
         node.layer = 1 << 25; // UI_2D layer
         (node as any)._tileData = tile;

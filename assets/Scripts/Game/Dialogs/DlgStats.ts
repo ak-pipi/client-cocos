@@ -28,6 +28,7 @@ interface AgencyStatsRow {
     parentNickname?: string;
     score?: number;
     scoreDelta?: number;
+    matchScore?: number;
     roundCount?: number;
     totalConsume?: number;
     giftReceived?: number;
@@ -184,10 +185,11 @@ export class DlgStats extends Component {
         header.setPosition(0, 178, 0);
         header.addComponent(UITransform).setContentSize(1180, 44);
         fillRoundRect(header, 1180, 44, COLORS.header, 8);
-        this.headerLabel(header, '个人信息', -405, 390);
-        this.headerLabel(header, '输赢比赛分', -80, 170);
-        this.headerLabel(header, '场次', 170, 120);
-        this.headerLabel(header, '操作', 430, 170);
+        this.headerLabel(header, '个人信息', -405, 330);
+        this.headerLabel(header, '比赛分', -160, 130);
+        this.headerLabel(header, '输赢比赛分', 55, 150);
+        this.headerLabel(header, '场次', 245, 90);
+        this.headerLabel(header, '操作', 445, 150);
 
         const scroll = createScrollArea(table, 1180, 365, -30);
         this.content = scroll.content;
@@ -367,16 +369,17 @@ export class DlgStats extends Component {
             const id = createLabel(item, `ID:${row.playerId || '-'}`, 18, COLORS.muted, 240, 24);
             id.node.setPosition(-405, -13, 0);
 
-            this.amountLabel(item, this.scoreValue(row), -80, 170);
-            this.amountLabel(item, row.roundCount, 170, 120);
+            this.amountLabel(item, row.matchScore, -160, 130);
+            this.amountLabel(item, this.scoreValue(row), 55, 150);
+            this.amountLabel(item, row.roundCount, 245, 90);
 
             if (this.currentTab === 'group' && !entry.isSelf) {
                 createButton(item, '查看玩家', 106, 38, COLORS.teal, this.node, 'DlgStats', 'onViewJuniorClicked', String(entry.rowIndex))
-                    .setPosition(430, 0, 0);
+                    .setPosition(445, 0, 0);
             } else {
                 const dash = createLabel(item, '-', 22, COLORS.muted, 110, 36);
                 dash.horizontalAlign = Label.HorizontalAlign.CENTER;
-                dash.node.setPosition(430, 0, 0);
+                dash.node.setPosition(445, 0, 0);
             }
         });
 
@@ -387,15 +390,18 @@ export class DlgStats extends Component {
         totalRow.addComponent(UITransform).setContentSize(width, itemHeight);
         fillRoundRect(totalRow, width, itemHeight, COLORS.header, 8);
         const totalTitleText = this.selfStats ? '下级总计' : '总计';
-        const totalTitle = createLabel(totalRow, totalTitleText, 22, COLORS.title, 390, 36);
+        const totalTitle = createLabel(totalRow, totalTitleText, 22, COLORS.title, 330, 36);
         totalTitle.horizontalAlign = Label.HorizontalAlign.CENTER;
         totalTitle.node.setPosition(-405, 0, 0);
-        const totalScore = createLabel(totalRow, this.amountText(this.summaryScoreDelta), 22, COLORS.title, 170, 36);
+        const totalMatchScore = createLabel(totalRow, '-', 22, COLORS.title, 130, 36);
+        totalMatchScore.horizontalAlign = Label.HorizontalAlign.CENTER;
+        totalMatchScore.node.setPosition(-160, 0, 0);
+        const totalScore = createLabel(totalRow, this.amountText(this.summaryScoreDelta), 22, COLORS.title, 150, 36);
         totalScore.horizontalAlign = Label.HorizontalAlign.CENTER;
-        totalScore.node.setPosition(-80, 0, 0);
-        const totalRounds = createLabel(totalRow, this.amountText(this.summaryRounds), 22, COLORS.title, 120, 36);
+        totalScore.node.setPosition(55, 0, 0);
+        const totalRounds = createLabel(totalRow, this.amountText(this.summaryRounds), 22, COLORS.title, 90, 36);
         totalRounds.horizontalAlign = Label.HorizontalAlign.CENTER;
-        totalRounds.node.setPosition(170, 0, 0);
+        totalRounds.node.setPosition(245, 0, 0);
 
         resizeScrollContent(this.content, 1180, entries.length + 1, itemHeight, gap);
     }

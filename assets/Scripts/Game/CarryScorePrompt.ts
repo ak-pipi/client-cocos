@@ -6,6 +6,7 @@ import { GameId, resolveMinCarryScore } from '../App/GameEnums';
 
 export class CarryScorePrompt {
     private static activePopup: Node | null = null;
+    private static readonly DECIMAL_DIGITS = 1;
 
     public static getMinCarryScore(baseScore: any, gameId?: GameId | string | null, roundCount?: any): number {
         return resolveMinCarryScore(gameId, baseScore, roundCount);
@@ -22,7 +23,7 @@ export class CarryScorePrompt {
         roundCount?: any,
         explicitMinCarry?: any,
     ): Promise<number | null> {
-        const explicit = Math.floor(Number(explicitMinCarry) || 0);
+        const explicit = this.normalizeScore(explicitMinCarry);
         return this.request(parent, explicit > 0 ? explicit : this.getMinCarryScore(baseScore, gameId, roundCount));
     }
 
@@ -33,12 +34,12 @@ export class CarryScorePrompt {
             console.warn('[CarryScorePrompt] Refresh capital failed:', err);
         }
 
-        const available = Math.max(0, Math.floor(Number(GameManager.Instance.Gold) || 0));
-        const min = Math.max(0, Math.floor(Number(minCarry) || 0));
+        const available = this.normalizeScore(GameManager.Instance.Gold);
+        const min = this.normalizeScore(minCarry);
         if (available < min) {
-            const safeBox = Math.max(0, Math.floor(Number(GameManager.Instance.Deposit) || 0));
+            const safeBox = this.normalizeScore(GameManager.Instance.Deposit);
             Client.Instance.showPromptDialog(
-                `携带积分不足，加入本局至少需要${min}积分。\n当前可用${available}积分，保险柜${safeBox}积分不参与游戏结算，请先从保险柜取出积分。`
+                `携带积分不足，加入本局至少需要${this.formatScore(min)}积分。\n当前可用${this.formatScore(available)}积分，保险柜${this.formatScore(safeBox)}积分不参与游戏结算，请先从保险柜取出积分。`
             );
             return null;
         }
@@ -71,7 +72,7 @@ export class CarryScorePrompt {
             this.createLabel(panel, '携带积分', 28, 0, 112, 460, 38, new Color(255, 255, 255, 255));
             this.createLabel(
                 panel,
-                min > 0 ? `最低 ${min}，当前可用 ${available}` : `当前可用 ${available}`,
+                min > 0 ? `最低 ${this.formatScore(min)}，当前可用 ${this.formatScore(available)}` : `当前可用 ${this.formatScore(available)}`,
                 21,
                 0,
                 62,
@@ -90,20 +91,20 @@ export class CarryScorePrompt {
             };
 
             const confirm = () => {
-                const value = Math.floor(Number(editBox.string));
+                const value = this.parseScoreInput(editBox.string);
                 if (!isFinite(value) || value <= 0) {
                     Client.Instance.showPromptTip('请输入携带积分');
                     return;
                 }
                 if (value < min) {
-                    Client.Instance.showPromptTip(`至少携带${min}积分`);
+                    Client.Instance.showPromptTip(`至少携带${this.formatScore(min)}积分`);
                     return;
                 }
                 if (value > available) {
                     Client.Instance.showPromptTip('携带积分不能超过当前可用积分');
                     return;
                 }
-                finish(value);
+                finish(this.normalizeScore(value));
             };
 
             this.createButton(panel, '确认', -92, -92, new Color(46, 139, 87, 255), confirm);
@@ -152,14 +153,32 @@ export class CarryScorePrompt {
 
         const editBox = inputNode.addComponent(EditBox);
         editBox.maxLength = 12;
-        editBox.inputMode = EditBox.InputMode.NUMERIC;
+        editBox.inputMode = (EditBox.InputMode as any).DECIMAL ?? EditBox.InputMode.ANY;
         editBox.textLabel = textLabel;
         editBox.placeholderLabel = placeholderLabel;
         editBox.placeholder = placeholderLabel.string;
-        editBox.string = String(defaultValue);
+        editBox.string = this.formatScore(defaultValue);
         sanitizeEditBoxDefaultLabels(editBox, [textLabel, placeholderLabel]);
         sanitizeAllEditBoxDefaultLabels(parent);
         return editBox;
+    }
+
+    private static normalizeScore(value: any): number {
+        const numberValue = Number(value);
+        if (!isFinite(numberValue) || numberValue <= 0) return 0;
+        const scale = Math.pow(10, this.DECIMAL_DIGITS);
+        return Math.round(numberValue * scale) / scale;
+    }
+
+    private static parseScoreInput(text: string): number {
+        const normalizedText = String(text || '').trim();
+        if (!/^\d+(\.\d{1})?$/.test(normalizedText)) return NaN;
+        return this.normalizeScore(Number(normalizedText));
+    }
+
+    private static formatScore(value: any): string {
+        const score = this.normalizeScore(value);
+        return Number.isInteger(score) ? String(score) : score.toFixed(this.DECIMAL_DIGITS);
     }
 
     private static createEditLabel(parent: Node, name: string, text: string, color: Color, fontSize: number): Label {

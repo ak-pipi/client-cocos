@@ -154,6 +154,8 @@ export interface MahjongRecordItem {
     gameId?: GameId | string;
     gameType?: number;
     gameName?: string;
+    districtId?: number;
+    gameModeText?: string;
     players: Array<{ playerId: string; nickname: string; headUrl?: string } | null>;
     scores: number[];
     winGolds: number[];
@@ -173,6 +175,8 @@ export interface MahjongPlaybackResult {
     banker?: number;
     gameType?: number;
     gameName?: string;
+    districtId?: number;
+    gameModeText?: string;
     players?: Array<{ playerId: string; nickname: string; headUrl?: string } | null>;
     base64?: string;
     hasReplay: boolean;

@@ -441,7 +441,7 @@ export class GameManager {
         this.enterVenue(wsAddress, venueId, gameType, () => {
             const meta = GameFactory.getGameMeta(gameId);
             GameFactory.ensureRoomClassLoaded(gameId).then(() => {
-                if (meta?.type === GameType.Mahjong) {
+                if (meta?.type === GameType.Mahjong || gameId === GameId.Paodekuai) {
                     Client.Instance.initGameRoom(null);
                     const room = GameFactory.Instance.createRoom(gameId, Client.Instance.getGameRoomNode() || undefined, undefined);
                     room.presetRoomNumber(number);
