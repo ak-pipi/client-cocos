@@ -48,7 +48,7 @@ export interface StakeOption {
     roundCount: number;      // 局数
     districtId: number;      // 对应的 district ID
     label: string;          // 显示文本，如 "底注1 · 4局"
-    minCarryScore?: number; // 最低携带积分
+    minCarryScore?: number; // 最低入场积分
     zhaNiao?: boolean;      // 跑得快扎鸟局
 }
 
@@ -137,7 +137,7 @@ function matchCarryScore(baseScore: number, rules: Record<number, number>): numb
     return score != null ? score : null;
 }
 
-/** 入场携带积分规则，需与 web_server GameServiceImpl 保持一致。 */
+/** 入场积分限制规则，需与 web_server GameServiceImpl 保持一致。 */
 export function resolveMinCarryScore(gameId: GameId | string | null | undefined, baseScore: any, roundCount?: any): number {
     const base = Number(baseScore);
     if (!isFinite(base) || base <= 0) return 0;

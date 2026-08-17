@@ -746,7 +746,7 @@ export class GameManager {
     // 当前正在进入的场地游戏类型
     private enteringGameType: number = 0;
 
-    // 本次进入场地的额外参数，服务端用于读取携带积分
+    // 本次进入场地的额外参数，服务端用于读取背包积分快照
     private enteringVenueBase64: string = '';
 
     // 进入场地成功后的回调函数

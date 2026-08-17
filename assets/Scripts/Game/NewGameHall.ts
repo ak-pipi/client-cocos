@@ -127,7 +127,6 @@ export class NewGameHall extends Component {
     private tableCardContainer: Node | null = null;
     private tableCardLabels: Map<number, Label> = new Map();  // districtId -> 在线人数 Label
     private selectTablePopup: Node | null = null;
-    private carryScorePopup: Node | null = null;
 
     public init(gameId: string, gameName: string): void {
         this.gameId = gameId as GameId;
@@ -155,10 +154,6 @@ export class NewGameHall extends Component {
 
     protected onDestroy(): void {
         this._refreshTimer = 0;
-        if (this.carryScorePopup) {
-            this.carryScorePopup.destroy();
-            this.carryScorePopup = null;
-        }
     }
 
     private buildUI(): void {
@@ -1338,154 +1333,12 @@ export class NewGameHall extends Component {
         if (available < min) {
             const safeBox = this.normalizeCarryScore(GameManager.Instance.Deposit);
             Client.Instance.showPromptDialog(
-                `携带积分不足，加入本局至少需要${this.formatCarryScore(min)}积分。\n当前可用${this.formatCarryScore(available)}积分，保险柜${this.formatCarryScore(safeBox)}积分不参与游戏结算，请先从保险柜取出积分。`
+                `积分不足，加入本局至少需要${this.formatCarryScore(min)}积分。\n当前背包${this.formatCarryScore(available)}积分，保险柜${this.formatCarryScore(safeBox)}积分不参与游戏结算，请先从保险柜取出积分。`
             );
             return null;
         }
 
-        if (this.carryScorePopup) {
-            this.carryScorePopup.destroy();
-            this.carryScorePopup = null;
-        }
-
-        return new Promise<number | null>((resolve) => {
-            const popup = new Node('CarryScorePopup');
-            popup.parent = this.node;
-            makeModalLayer(popup);
-            this.carryScorePopup = popup;
-
-            const mask = new Node('Mask');
-            mask.parent = popup;
-            blockInputOnNode(mask, 1920, 1080);
-            const maskGraphics = mask.addComponent(Graphics);
-            maskGraphics.fillColor = new Color(0, 0, 0, 170);
-            maskGraphics.roundRect(-960, -540, 1920, 1080, 0);
-            maskGraphics.fill();
-
-            const panel = new Node('Panel');
-            panel.parent = popup;
-            panel.addComponent(UITransform).setContentSize(520, 320);
-            blockInputOnNode(panel);
-            const panelGraphics = panel.addComponent(Graphics);
-            panelGraphics.fillColor = new Color(30, 70, 110, 255);
-            panelGraphics.roundRect(-260, -160, 520, 320, 12);
-            panelGraphics.fill();
-
-            const titleNode = new Node('Title');
-            titleNode.parent = panel;
-            titleNode.addComponent(UITransform).setContentSize(460, 38);
-            titleNode.setPosition(0, 112, 0);
-            const title = titleNode.addComponent(Label);
-            title.string = '携带积分';
-            title.fontSize = 28;
-            title.lineHeight = 34;
-            title.horizontalAlign = Label.HorizontalAlign.CENTER;
-            title.verticalAlign = Label.VerticalAlign.CENTER;
-            title.color = new Color(255, 255, 255, 255);
-
-            const descNode = new Node('Desc');
-            descNode.parent = panel;
-            descNode.addComponent(UITransform).setContentSize(460, 54);
-            descNode.setPosition(0, 62, 0);
-            const desc = descNode.addComponent(Label);
-            desc.string = min > 0 ? `最低 ${this.formatCarryScore(min)}，当前可用 ${this.formatCarryScore(available)}` : `当前可用 ${this.formatCarryScore(available)}`;
-            desc.fontSize = 21;
-            desc.lineHeight = 28;
-            desc.horizontalAlign = Label.HorizontalAlign.CENTER;
-            desc.verticalAlign = Label.VerticalAlign.CENTER;
-            desc.overflow = Label.Overflow.SHRINK;
-            desc.color = new Color(235, 214, 156, 255);
-
-            const inputNode = new Node('CarryInput');
-            inputNode.parent = panel;
-            inputNode.addComponent(UITransform).setContentSize(360, 54);
-            inputNode.setPosition(0, 4, 0);
-
-            const inputBg = new Node('InputBg');
-            inputBg.parent = inputNode;
-            inputBg.addComponent(UITransform).setContentSize(360, 54);
-            const inputGraphics = inputBg.addComponent(Graphics);
-            inputGraphics.fillColor = new Color(255, 255, 255, 255);
-            inputGraphics.roundRect(-180, -27, 360, 54, 8);
-            inputGraphics.fill();
-
-            const textNode = new Node('Text');
-            textNode.parent = inputNode;
-            const textTransform = textNode.addComponent(UITransform);
-            textTransform.setContentSize(330, 54);
-            textTransform.anchorX = 0;
-            textTransform.anchorY = 0.5;
-            const textWidget = textNode.addComponent(Widget);
-            textWidget.isAlignLeft = true;
-            textWidget.left = 15;
-            textWidget.isAlignVerticalCenter = true;
-            textWidget.verticalCenter = -2;
-            const textLabel = textNode.addComponent(Label);
-            textLabel.string = '';
-            textLabel.fontSize = 26;
-            textLabel.lineHeight = 32;
-            textLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
-            textLabel.verticalAlign = Label.VerticalAlign.CENTER;
-            textLabel.overflow = Label.Overflow.CLAMP;
-            textLabel.color = new Color(20, 20, 20, 255);
-
-            const placeholderNode = new Node('Placeholder');
-            placeholderNode.parent = inputNode;
-            const placeholderTransform = placeholderNode.addComponent(UITransform);
-            placeholderTransform.setContentSize(330, 54);
-            placeholderTransform.anchorX = 0;
-            placeholderTransform.anchorY = 0.5;
-            const placeholderWidget = placeholderNode.addComponent(Widget);
-            placeholderWidget.isAlignLeft = true;
-            placeholderWidget.left = 15;
-            placeholderWidget.isAlignVerticalCenter = true;
-            placeholderWidget.verticalCenter = -2;
-            const placeholderLabel = placeholderNode.addComponent(Label);
-            placeholderLabel.string = '输入本房间携带积分';
-            placeholderLabel.fontSize = 22;
-            placeholderLabel.lineHeight = 28;
-            placeholderLabel.horizontalAlign = Label.HorizontalAlign.LEFT;
-            placeholderLabel.verticalAlign = Label.VerticalAlign.CENTER;
-            placeholderLabel.overflow = Label.Overflow.CLAMP;
-            placeholderLabel.color = new Color(120, 120, 120, 255);
-
-            const editBox = inputNode.addComponent(EditBox);
-            editBox.maxLength = 12;
-            editBox.inputMode = (EditBox.InputMode as any).DECIMAL ?? EditBox.InputMode.ANY;
-            editBox.textLabel = textLabel;
-            editBox.placeholderLabel = placeholderLabel;
-            editBox.placeholder = placeholderLabel.string;
-            editBox.string = this.formatCarryScore(min > 0 ? min : Math.max(1, Math.min(available, 100)));
-            sanitizeEditBoxDefaultLabels(editBox, [textLabel, placeholderLabel]);
-            sanitizeAllEditBoxDefaultLabels(popup);
-
-            const finish = (value: number | null) => {
-                if (this.carryScorePopup === popup)
-                    this.carryScorePopup = null;
-                popup.destroy();
-                resolve(value);
-            };
-
-            const confirm = () => {
-                const value = this.parseCarryScoreInput(editBox.string);
-                if (!isFinite(value) || value <= 0) {
-                    Client.Instance.showPromptTip('请输入携带积分');
-                    return;
-                }
-                if (value < min) {
-                    Client.Instance.showPromptTip(`至少携带${this.formatCarryScore(min)}积分`);
-                    return;
-                }
-                if (value > available) {
-                    Client.Instance.showPromptTip('携带积分不能超过当前可用积分');
-                    return;
-                }
-                finish(this.normalizeCarryScore(value));
-            };
-
-            this.createInlineButton(panel, '确认', -92, -92, new Color(46, 139, 87, 255), confirm);
-            this.createInlineButton(panel, '取消', 92, -92, new Color(160, 82, 45, 255), () => finish(null));
-        });
+        return available;
     }
 
     private normalizeCarryScore(value: any): number {
@@ -1495,37 +1348,9 @@ export class NewGameHall extends Component {
         return Math.round(numberValue * scale) / scale;
     }
 
-    private parseCarryScoreInput(text: string): number {
-        const normalizedText = String(text || '').trim();
-        if (!/^\d+(\.\d{1})?$/.test(normalizedText)) return NaN;
-        return this.normalizeCarryScore(Number(normalizedText));
-    }
-
     private formatCarryScore(value: any): string {
         const score = this.normalizeCarryScore(value);
         return Number.isInteger(score) ? String(score) : score.toFixed(CARRY_SCORE_DECIMAL_DIGITS);
-    }
-
-    private createInlineButton(parent: Node, text: string, x: number, y: number, color: Color, onClick: () => void): void {
-        const btnNode = new Node(text);
-        btnNode.parent = parent;
-        btnNode.addComponent(UITransform).setContentSize(130, 46);
-        btnNode.setPosition(x, y, 0);
-        const graphics = btnNode.addComponent(Graphics);
-        graphics.fillColor = color;
-        graphics.roundRect(-65, -23, 130, 46, 8);
-        graphics.fill();
-        const labelNode = new Node('Label');
-        labelNode.parent = btnNode;
-        const label = labelNode.addComponent(Label);
-        label.string = text;
-        label.fontSize = 22;
-        label.lineHeight = 28;
-        label.horizontalAlign = Label.HorizontalAlign.CENTER;
-        label.verticalAlign = Label.VerticalAlign.CENTER;
-        label.color = new Color(255, 255, 255, 255);
-        btnNode.addComponent(Button);
-        btnNode.on(Node.EventType.TOUCH_END, onClick);
     }
 
     // ==================== 事件处理 ====================
@@ -1660,7 +1485,7 @@ export class NewGameHall extends Component {
         if (carry >= required) return true;
         const safeBox = GameManager.Instance.Deposit || 0;
         Client.Instance.showPromptDialog(
-            `携带积分不足，加入本局至少需要${required}积分。\n当前携带${carry}积分，保险柜${safeBox}积分不参与游戏结算，请先从保险柜取出积分。`
+            `积分不足，加入本局至少需要${required}积分。\n当前背包${carry}积分，保险柜${safeBox}积分不参与游戏结算，请先从保险柜取出积分。`
         );
         return false;
     }

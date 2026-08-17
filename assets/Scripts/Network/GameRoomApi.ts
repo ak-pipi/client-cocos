@@ -676,7 +676,7 @@ export class GameRoomApi {
             errMsg = '房间不存在或已解散';
         }
         if (this.isInsufficientCarryError(errCode, errMsg)) {
-            errMsg = '携带积分不足，保险柜中的积分不参与游戏结算，请先从保险柜取出积分后再加入';
+            errMsg = '积分不足，保险柜中的积分不参与游戏结算，请先从保险柜取出积分后再加入';
         }
         Client.Instance.showPromptDialog(`${defaultError}: ${errMsg}`);
         return null;

@@ -196,7 +196,7 @@ export class DlgBank extends DlgBase {
             return;
         }
         if (num > GameManager.Instance.Gold) {
-            Client.Instance.showPromptTip("存入数量大于当前携带积分", 2.0);
+            Client.Instance.showPromptTip("存入数量大于当前背包积分", 2.0);
             return;
         }
         let data = {
