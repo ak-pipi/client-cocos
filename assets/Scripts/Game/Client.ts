@@ -207,7 +207,6 @@ export class Client extends Component {
         if (this.login) {
             let comp: Login = this.login.getComponent(Login);
             if (comp) {
-                comp.onCodeClicked1();
                 comp.playBackgroundMusic();
             }
         }

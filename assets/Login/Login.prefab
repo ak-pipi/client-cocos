@@ -2052,7 +2052,7 @@
         "__id__": 121
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 127
@@ -9140,7 +9140,7 @@
         "__id__": 406
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 412
@@ -10992,12 +10992,6 @@
     "editPassword": {
       "__id__": 71
     },
-    "editCode": {
-      "__id__": 109
-    },
-    "spriteCode": {
-      "__id__": 115
-    },
     "editNicknameReg": {
       "__id__": 184
     },
@@ -11009,12 +11003,6 @@
     },
     "editPasswordReg2": {
       "__id__": 298
-    },
-    "editCodeReg": {
-      "__id__": 394
-    },
-    "spriteCodeReg": {
-      "__id__": 400
     },
     "toggleMale": {
       "__id__": 331

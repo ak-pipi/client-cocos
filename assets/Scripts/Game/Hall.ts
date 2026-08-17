@@ -16,11 +16,16 @@ import { DlgFamilyInvite } from './Dialogs/DlgFamilyInvite';
 import { DlgStats } from './Dialogs/DlgStats';
 import { DlgMatchSettings } from './Dialogs/DlgMatchSettings';
 import { DlgIncomeBox } from './Dialogs/DlgIncomeBox';
+import { HomeNoticeDialog } from './Dialogs/HomeNoticeDialog';
+import { GameplayIntroductionDialog } from './Dialogs/GameplayIntroductionDialog';
 import { makeModalLayer, sanitizeAllEditBoxDefaultLabels } from '../UI/UiKit';
 const { ccclass, property } = _decorator;
 
 @ccclass('Hall')
 export class Hall extends Component {
+    /** 当前客户端运行期间只展示一次首页公告。 */
+    private static hasShownHomeNotice = false;
+
     @property({ type: Label })
     private labelName: Label = null;
 
@@ -75,6 +80,8 @@ export class Hall extends Component {
 
     private dlgFamilyInvite: Node = null;
 
+    private dlgGameplayIntroduction: Node = null;
+
     private guestEntryRoot: Node = null;
 
     private incomeBoxButton: Node = null;
@@ -93,6 +100,7 @@ export class Hall extends Component {
         this.createIncomeBoxButton();
         this.createGuestEntryPanel();
         this.refreshPermissionViews();
+        this.scheduleOnce(this.showHomeNoticeOnFirstEntry, 0);
     }
 
     update(deltaTime: number) {
@@ -344,6 +352,18 @@ export class Hall extends Component {
         this.showDialogNode(this.dlgMatchSettings);
     }
 
+    public onGameplayIntroductionClicked() {
+        if (this.dlgGameplayIntroduction?.isValid) {
+            this.dlgGameplayIntroduction.active = true;
+            this.bringNodeToFront(this.dlgGameplayIntroduction);
+            return;
+        }
+        this.dlgGameplayIntroduction = new Node('GameplayIntroductionDialog');
+        this.dlgGameplayIntroduction.parent = this.getDialogParent();
+        this.dlgGameplayIntroduction.addComponent(GameplayIntroductionDialog);
+        this.bringNodeToFront(this.dlgGameplayIntroduction);
+    }
+
     public onRecordsClicked() {
         this.showMahjongRecords();
     }
@@ -388,6 +408,16 @@ export class Hall extends Component {
         sanitizeAllEditBoxDefaultLabels(dialog);
     }
 
+    private showHomeNoticeOnFirstEntry = (): void => {
+        if (Hall.hasShownHomeNotice) return;
+        Hall.hasShownHomeNotice = true;
+
+        const notice = new Node('HomeNoticeDialog');
+        notice.parent = this.getDialogParent();
+        notice.addComponent(HomeNoticeDialog);
+        this.bringNodeToFront(notice);
+    };
+
     private bringNodeToFront(node: Node | null): void {
         if (!node || !node.parent) return;
         node.setSiblingIndex(node.parent.children.length - 1);
@@ -421,6 +451,7 @@ export class Hall extends Component {
 
     private createShortcutButtons() {
         this.createMatchSettingsButton();
+        this.createGameplayIntroductionButton();
         this.createAgencyMenuButtons();
     }
 
@@ -508,6 +539,43 @@ export class Hall extends Component {
         this.agencyMenuButtons.set('onMatchSettingsClicked', btnNode);
     }
 
+    private createGameplayIntroductionButton(): void {
+        const host = this.node;
+        const exists = host.getChildByName('onGameplayIntroductionClicked');
+        if (exists) return;
+
+        const btnNode = new Node('onGameplayIntroductionClicked');
+        btnNode.parent = host;
+        btnNode.setPosition(685, 400, 0);
+        btnNode.addComponent(UITransform).setContentSize(104, 72);
+
+        const graphics = btnNode.addComponent(Graphics);
+        graphics.fillColor = new Color(226, 124, 58, 250);
+        graphics.roundRect(-52, -36, 104, 72, 34);
+        graphics.fill();
+
+        const labelNode = new Node('Label');
+        labelNode.parent = btnNode;
+        labelNode.addComponent(UITransform).setContentSize(88, 56);
+        const label = labelNode.addComponent(Label);
+        label.string = '玩法\n介绍';
+        label.fontSize = 24;
+        label.lineHeight = 27;
+        label.color = new Color(255, 255, 255, 255);
+        label.horizontalAlign = Label.HorizontalAlign.CENTER;
+        label.verticalAlign = Label.VerticalAlign.CENTER;
+        labelNode.setPosition(0, 0, 0);
+
+        const button = btnNode.addComponent(Button);
+        button.transition = Button.Transition.SCALE;
+        button.zoomScale = 1.08;
+        const evt = new EventHandler();
+        evt.target = this.node;
+        evt.component = 'Hall';
+        evt.handler = 'onGameplayIntroductionClicked';
+        button.clickEvents.push(evt);
+    }
+
     private createAgencyMenuButtons() {
         const host = this.node.getChildByName('Buttons') || this.node;
         const buttons = [
@@ -535,13 +603,14 @@ export class Hall extends Component {
 
             const labelNode = new Node('Label');
             labelNode.parent = btnNode;
+            // Label 会自动附加 UITransform；先显式创建并设置尺寸，避免重复添加组件。
+            labelNode.addComponent(UITransform).setContentSize(72, 42);
             const label = labelNode.addComponent(Label);
             label.string = item.text;
             label.fontSize = 22;
             label.color = new Color(255, 255, 255, 255);
             label.horizontalAlign = Label.HorizontalAlign.CENTER;
             label.verticalAlign = Label.VerticalAlign.CENTER;
-            labelNode.addComponent(UITransform).setContentSize(72, 42);
             labelNode.setPosition(0, 0, 0);
 
             const button = btnNode.addComponent(Button);

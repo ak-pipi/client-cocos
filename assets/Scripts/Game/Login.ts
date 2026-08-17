@@ -3,7 +3,7 @@
 // Email 393817707@qq.com
 // Date 2025.10.22
 
-import { _decorator, Component, EditBox, Label, Node, Sprite, sys, ImageAsset, Texture2D, SpriteFrame, Toggle, AudioClip, assetManager } from 'cc';
+import { _decorator, Component, EditBox, Node, sys, Toggle, AudioClip } from 'cc';
 import { ResourceLoader } from '../Manager/ResourceLoader';
 import { AesUtils } from '../Utils/AesUtils';
 import { CommonUtils } from '../Utils/CommonUtils';
@@ -20,12 +20,6 @@ export class Login extends Component {
     private editPassword: EditBox = null;
 
     @property({ type: EditBox })
-    private editCode: EditBox = null;
-
-    @property({ type: Sprite })
-    private spriteCode: Sprite = null;
-
-    @property({ type: EditBox })
     private editNicknameReg: EditBox = null;
 
     @property({ type: EditBox })
@@ -36,12 +30,6 @@ export class Login extends Component {
 
     @property({ type: EditBox })
     private editPasswordReg2: EditBox = null;
-
-    @property({ type: EditBox })
-    private editCodeReg: EditBox = null;
-
-    @property({ type: Sprite })
-    private spriteCodeReg: Sprite = null;
 
     @property({ type: Toggle })
     private toggleMale: Toggle = null;
@@ -55,11 +43,7 @@ export class Login extends Component {
     @property({ type: Node })
     private registerGroup: Node = null;
 
-    private uuidCode: string = null;
-
     private sex: number = 1;
-
-    private captchaLoading: boolean = false;
 
     private loginSubmitting: boolean = false;
 
@@ -76,7 +60,6 @@ export class Login extends Component {
             // 先校验 token，通过后再写入 GameManager，避免过期 token 触发心跳弹窗
             this.getPlayerInfo(userData.token);
         }
-        this.getCaptchaCode1();
         this.playBackgroundMusic();
     }
 
@@ -88,74 +71,6 @@ export class Login extends Component {
         });
     }
     
-    private getCaptchaCode1() {
-        this.getCaptchaCode((spriteFrame: SpriteFrame) => {
-            this.spriteCode.spriteFrame = spriteFrame;
-        });
-    }
-
-    private getCaptchaCode2() {
-        this.getCaptchaCode((spriteFrame: SpriteFrame) => {
-            this.spriteCodeReg.spriteFrame = spriteFrame;
-        });
-    }
-
-    private getCaptchaCode(onGetaptchaCode: Function) {
-        if (this.captchaLoading) return;
-        this.captchaLoading = true;
-        GameManager.Instance.get('/player/captcha-image').then((dto) => {
-            if (!dto || dto.code === 429) {
-                Client.Instance.showPromptTip(dto?.msg || "请求过于频繁，请稍后再试");
-                return;
-            }
-            this.uuidCode = dto.uuid;
-            let base64Img = "data:image/jpg;base64," + dto.img;
-            this.loadCaptchaSpriteFrame(base64Img, onGetaptchaCode);
-        }, (err) => {
-            console.log("获取验证码失败: ", err);
-            Client.Instance.showPromptTip("获取验证码失败，请检查网络或稍后重试");
-        }).then(() => {
-            this.captchaLoading = false;
-        });
-    }
-
-    private loadCaptchaSpriteFrame(base64Img: string, onGetaptchaCode: Function): void {
-        const createSpriteFrame = (imageAsset: ImageAsset) => {
-            let texture = new Texture2D();
-            texture.image = imageAsset;
-            let spriteFrame = new SpriteFrame();
-            spriteFrame.texture = texture;
-            onGetaptchaCode(spriteFrame);
-        };
-
-        if (typeof Image !== 'undefined') {
-            let image = new Image();
-            image.onload = function() {
-                createSpriteFrame(new ImageAsset(image));
-            }
-            image.src = base64Img;
-            return;
-        }
-
-        assetManager.loadRemote<ImageAsset>(base64Img, { ext: '.jpg' } as any, (err, imageAsset) => {
-            if (err || !imageAsset) {
-                console.log("加载验证码图片失败: ", err);
-                return;
-            }
-            createSpriteFrame(imageAsset);
-        });
-    }
-
-    public onCodeClicked1() {
-        this.editCode.string = "";
-        this.getCaptchaCode1();
-    }
-
-    public onCodeClicked2() {
-        this.editCodeReg.string = "";
-        this.getCaptchaCode2();
-    }
-
     public onLoginClicked() {
         if (this.loginSubmitting) {
             Client.Instance.showPromptTip("正在登录，请稍候");
@@ -172,15 +87,9 @@ export class Login extends Component {
             Client.Instance.showPromptTip("请输入密码");
             return;
         }
-        if (CommonUtils.isStringEmpty(this.editCode.string)) {
-            Client.Instance.showPromptTip("请输入验证码");
-            return;
-        }
         let data = {
             name: AesUtils.encrypt1(username),
-            password: AesUtils.encrypt1(password),
-            code: this.editCode.string,
-            uuid: this.uuidCode
+            password: AesUtils.encrypt1(password)
         };
         this.loginSubmitting = true;
         GameManager.Instance.post("/player/login", data).then((dto) => {
@@ -198,12 +107,10 @@ export class Login extends Component {
             } else {
                 const errMsg = this.getLoginErrorMessage(dto);
                 console.warn("Login failed: ", dto);
-                this.getCaptchaCode1();
                 Client.Instance.showPromptDialog("登录失败：" + errMsg);
             }
         }, (err) => {
             const errMsg = this.getLoginErrorMessage(err);
-            this.getCaptchaCode1();
             console.warn("Login request error: ", err);
             Client.Instance.showPromptDialog("登录失败：" + errMsg);
         }).then(() => {
@@ -224,7 +131,6 @@ export class Login extends Component {
     public onRegisterClicked1() {
         this.loginGroup.active = false;
         this.registerGroup.active = true;
-        this.getCaptchaCode2();
     }
 
     public onRegisterClicked2() {
@@ -240,10 +146,6 @@ export class Login extends Component {
             Client.Instance.showPromptTip("请输入密码");
             return;
         }
-        if (CommonUtils.isStringEmpty(this.editCodeReg.string)) {
-            Client.Instance.showPromptTip("请输入验证码");
-            return;
-        }
         let errMsg: string = CommonUtils.isPasswordValid(this.editPasswordReg1.string);
         if (!CommonUtils.isStringEmpty(errMsg)) {
             Client.Instance.showPromptTip(errMsg);
@@ -253,9 +155,7 @@ export class Login extends Component {
             nickname: this.editNicknameReg.string,
             name: AesUtils.encrypt1(this.editNameReg.string),
             password: AesUtils.encrypt1(this.editPasswordReg1.string),
-            sex: this.sex,
-            code: this.editCodeReg.string,
-            uuid: this.uuidCode
+            sex: this.sex
         };
         GameManager.Instance.post("/player/register", data).then((dto) => {
             if (dto.code === '00000000') {
@@ -265,11 +165,9 @@ export class Login extends Component {
                 this.editPassword.string = this.editPasswordReg1.string;
                 this.onBackClicked();
             } else {
-                this.getCaptchaCode2();
                 Client.Instance.showPromptDialog("注册失败：" + dto.msg);
             }
         }).catch((err) => {
-            this.getCaptchaCode2();
             console.log("Register error: ", err);
             Client.Instance.showPromptDialog("注册失败：" + err.toString());
         });
@@ -278,7 +176,6 @@ export class Login extends Component {
     public onBackClicked() {
         this.loginGroup.active = true;
         this.registerGroup.active = false;
-        this.getCaptchaCode1();
     }
 
     public onMaleToggle(event: Event) {
@@ -305,7 +202,6 @@ export class Login extends Component {
                 errMsg = "unknown error";
             }
             if (errMsg) {
-                this.getCaptchaCode1();
                 sys.localStorage.removeItem('userData');
                 console.log("Get player info error: ", errMsg);
                 return;
@@ -316,7 +212,6 @@ export class Login extends Component {
             GameManager.Instance.setPlayerInfo(dto);
             Client.Instance.onLoginSucceed();
         }).catch((err) => {
-            this.getCaptchaCode1();
             sys.localStorage.removeItem('userData');
             console.log("Get player info error: ", err);
         });
